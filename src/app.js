@@ -22,7 +22,7 @@ app.get('/api/health', (req, res) => {
 // Importar rutas reales
 app.use('/api/prices', require('./routes/prices'));
 app.use('/api/withdrawals', require('./routes/withdrawals'));
-app.use('/api/ipn/vita', require('./routes/ipnVita'));
+app.use('/api/ipn', require('./routes/ipn')); 
 app.use('/api/fx', require('./routes/fxQuote'));
 
 module.exports = app;
