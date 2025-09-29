@@ -1,0 +1,55 @@
+// backend/src/routes/fx.js
+// Fuente Vita: GET /api/businesses/prices
+// Justificación: usamos solo prices para tasas, mínimos y métodos de pago.
+
+const router = require('express').Router();
+const { getListPrices } = require('../services/vitaService');
+const { getPercent } = require('../services/markupService');
+const { findPrice } = require('../utils/normalize');
+
+router.get('/quote', async (req, res, next) => {
+  try {
+    const origin = (req.query.origin || 'CLP').toUpperCase();
+    const destCountry = (req.query.destCountry || '').toUpperCase();
+    const amountIn = Number(req.query.amount || 0);
+
+    if (!destCountry) return res.status(400).json({ ok:false, error:'destCountry requerido' });
+    if (!amountIn || amountIn <= 0) return res.status(400).json({ ok:false, error:'amount debe ser > 0' });
+
+    const prices = await getListPrices();
+    const price = findPrice(prices, { originCurrency: origin, destCountry });
+
+    if (!price) return res.status(404).json({ ok:false, error:`No se encontró tasa para ${origin} → ${destCountry}` });
+
+    const baseRate = Number(price.sell_price || 0);
+    if (!baseRate) return res.status(422).json({ ok:false, error:'Tasa base inválida en Vita Prices' });
+
+    const markupPercent = await getPercent(origin, destCountry);
+    const rateWithMarkup = baseRate * (1 - (markupPercent/100));
+    const amountOut = Math.floor(amountIn * rateWithMarkup);
+
+    const validations = [];
+    if (price.min_amount && amountOut < price.min_amount) {
+      validations.push(`El monto destino (${amountOut}) es menor al mínimo (${price.min_amount}).`);
+    }
+
+    return res.json({
+      ok: true,
+      data: {
+        origin,
+        destCountry,
+        amountIn,
+        baseRate,
+        markupPercent,
+        rateWithMarkup,
+        amountOut,
+        minAmount: price.min_amount,
+        fixedCost: price.fixed_cost,
+        validations,
+        paymentMethods: price.payment_methods
+      }
+    });
+  } catch (e) { next(e); }
+});
+
+module.exports = router;
