@@ -2,10 +2,10 @@
 const mongoose = require('mongoose');
 
 async function connectMongo() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGO_URI;
 
   if (!uri) {
-    console.error('[mongo] ERROR: No está definida la variable MONGODB_URI');
+    console.error('[mongo] ERROR: No está definida la variable MONGO_URI');
     process.exit(1);
   }
 
@@ -21,4 +21,4 @@ async function connectMongo() {
   }
 }
 
-module.exports = connectMongo; // ✅ exportación directa
+module.exports = connectMongo;
