@@ -5,7 +5,8 @@ async function connectMongo() {
   const uri = process.env.MONGODB_URI;
 
   if (!uri) {
-    throw new Error('[mongo] No está definida la variable MONGODB_URI');
+    console.error('[mongo] ERROR: No está definida la variable MONGODB_URI');
+    process.exit(1);
   }
 
   try {
@@ -20,4 +21,4 @@ async function connectMongo() {
   }
 }
 
-module.exports = connectMongo;
+module.exports = connectMongo; // ✅ exportación directa

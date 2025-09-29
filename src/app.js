@@ -1,37 +1,28 @@
 // backend/src/app.js
 const express = require('express');
+const morgan = require('morgan');
 const cors = require('cors');
-const { connectMongo } = require('./config/mongo');
-const { mongoURI } = require('./config/env');
-const errorHandler = require('./middleware/errorHandler');
-
-const prices = require('./routes/prices');
-const fx = require('./routes/fx');
-const withdrawals = require('./routes/withdrawals');
-const ipn = require('./routes/ipn');
-const withdrawalRules = require('./routes/withdrawalRules');
+const connectMongo = require('./config/mongo'); // ✅ importación directa
 
 const app = express();
+
+// Middlewares
 app.use(cors());
+app.use(morgan('dev'));
 app.use(express.json());
 
-// Rutas API (aditivas)
-app.use('/api/prices', prices);
-app.use('/api/fx', fx);
-app.use('/api/withdrawals', withdrawals);
-app.use('/api/ipn', ipn);
-app.use('/api/withdrawal_rules', withdrawalRules);
+// Conexión a Mongo
+connectMongo(); // ✅ ejecutamos la función exportada
 
-// Health
-app.get('/api/health', (_, res) => res.json({ ok: true }));
-
-// Errores
-app.use(errorHandler);
-
-// Init Mongo
-connectMongo(mongoURI).catch((e) => {
-  console.error('[mongo] error', e);
-  process.exit(1);
+// Rutas
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, message: 'Backend funcionando 🚀' });
 });
+
+// Importar rutas reales
+app.use('/api/prices', require('./routes/prices'));
+app.use('/api/withdrawals', require('./routes/withdrawals'));
+app.use('/api/ipn/vita', require('./routes/ipnVita'));
+app.use('/api/fx', require('./routes/fxQuote'));
 
 module.exports = app;
