@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 
 async function connectMongo() {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI;   // 👈 usar siempre MONGO_URI
 
   if (!uri) {
     console.error('[mongo] ERROR: No está definida la variable MONGO_URI');
