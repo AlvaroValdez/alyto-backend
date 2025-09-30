@@ -6,6 +6,7 @@ const router = require('express').Router();
 const { createWithdrawal } = require('../services/vitaService');
 const { vita } = require('../config/env');
 const { validateWithdrawalPayload } = require('../services/withdrawalValidator');
+const Transaction = require('../models/Transaction');
 
 router.post('/', async (req, res, next) => {
   try {
@@ -52,7 +53,7 @@ router.post('/', async (req, res, next) => {
     // ✅ Construcción del payload final
     const payload = {
       url_notify: process.env.VITA_NOTIFY_URL || 'http://localhost:5000/api/ipn/vita',
-  //    url_notify: '/api/ipn/vita',
+      //    url_notify: '/api/ipn/vita',
       country,
       currency,
       amount,
@@ -83,6 +84,21 @@ router.post('/', async (req, res, next) => {
     console.log('[withdrawals] Payload final enviado a Vita:', JSON.stringify(payload, null, 2));
 
     const data = await createWithdrawal(payload);
+    // Guardar en Mongo como transacción "pending"
+    await Transaction.create({
+      order: payload.order,
+      country,
+      currency,
+      amount,
+      beneficiary_type: req.body.beneficiary_type,
+      beneficiary_first_name,
+      beneficiary_last_name,
+      company_name: req.body.company_name,
+      beneficiary_email,
+      status: 'pending',
+      vitaResponse: data,
+    });
+
     res.status(201).json({ ok: true, data });
   } catch (e) {
     console.error('[withdrawals] Error en POST /api/withdrawals:', e);
