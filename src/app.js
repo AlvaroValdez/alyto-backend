@@ -29,6 +29,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/prices', require('./routes/prices'));
 app.use('/api/withdrawals', require('./routes/withdrawals'));
 app.use('/api/ipn', require('./routes/ipn')); 
+app.use('/api/ipn', require('./routes/ipnEvents'));
 app.use('/api/fx', require('./routes/fx'));
 
 module.exports = app;
