@@ -14,6 +14,12 @@ app.use(express.json());
 // Conexión a Mongo
 connectMongo(); // ✅ ejecutamos la función exportada
 
+app.post('/api/ipn/vita/raw', (req, res) => {
+  console.log('[raw] Headers:', req.headers);
+  res.json({ ok: true });
+});
+
+
 // Rutas
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'Backend funcionando 🚀' });

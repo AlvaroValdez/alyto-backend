@@ -1,3 +1,4 @@
+// backend/src/routes/ipn.js
 const router = require('express').Router();
 const { verifyVitaSignature } = require('../middleware/vitaSignature');
 const VitaEvent = require('../models/VitaEvent');
@@ -5,9 +6,9 @@ const VitaEvent = require('../models/VitaEvent');
 router.post('/vita', verifyVitaSignature, async (req, res) => {
   const event = req.body;
 
-  // 🔎 Log forzado aunque esté vacío
-  console.log('[ipn] Headers recibidos:', req.headers);
-  console.log('[ipn] Body recibido (raw):', JSON.stringify(event));
+  // 🔎 Logs forzados para Render
+  process.stdout.write('[ipn] Headers recibidos: ' + JSON.stringify(req.headers) + '\n');
+  process.stdout.write('[ipn] Body recibido (raw): ' + JSON.stringify(event) + '\n');
 
   try {
     // Guardar en Mongo
@@ -19,12 +20,11 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       verified: true
     });
 
-    console.log('[ipn] Evento Vita guardado en DB:', vitaEvent._id);
+    process.stdout.write('[ipn] Evento Vita guardado en DB: ' + vitaEvent._id + '\n');
 
-    // Responder OK
     res.json({ ok: true, id: vitaEvent._id });
   } catch (err) {
-    console.error('[ipn] Error guardando evento Vita:', err);
+    process.stderr.write('[ipn] Error guardando evento Vita: ' + err.message + '\n');
     res.status(500).json({ ok: false, error: 'Error al persistir evento' });
   }
 });
