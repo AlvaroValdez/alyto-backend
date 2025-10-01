@@ -32,5 +32,10 @@ app.use('/api/ipn', require('./routes/ipn'));
 app.use('/api/ipn', require('./routes/ipnEvents'));
 app.use('/api/fx', require('./routes/fx'));
 app.use('/api/transactions', require('./routes/transactions'));
+app.use("/api/auth", require("./routes/auth"));
+
+// Rutas admin
+app.use('/api/admin', require('./routes/adminMarkup'));
+
 
 module.exports = app;
