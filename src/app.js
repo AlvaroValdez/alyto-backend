@@ -2,7 +2,7 @@
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
-const connectMongo = require('./config/mongo'); // ✅ importación directa
+const connectMongo = require('./config/mongo'); 
 
 const app = express();
 
@@ -33,6 +33,7 @@ app.use('/api/ipn', require('./routes/ipnEvents'));
 app.use('/api/fx', require('./routes/fx'));
 app.use('/api/transactions', require('./routes/transactions'));
 app.use("/api/auth", require("./routes/auth"));
+app.use('/api/withdrawal-rules', require('./routes/withdrawalRules')); 
 
 // Rutas admin
 app.use('/api/admin', require('./routes/adminMarkup'));

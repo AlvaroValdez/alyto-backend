@@ -19,7 +19,7 @@ router.post('/', async (req, res, next) => {
       order,
       purpose,
       purpose_comentary,
-      beneficiary_type,                // ⚡ ahora lo desestructuramos
+      beneficiary_type,                
       beneficiary_first_name,
       beneficiary_last_name,
       beneficiary_email,
@@ -102,6 +102,19 @@ router.post('/', async (req, res, next) => {
     res.status(201).json({ ok: true, data });
   } catch (e) {
     console.error('[withdrawals] Error en POST /api/withdrawals:', e);
+    
+    // --- NUEVO MANEJO DE ERRORES ---
+    // Si el error viene de Axios (de Vita), extraemos los detalles
+    if (e.isAxiosError && e.response) {
+      console.error('[withdrawals] Error recibido de Vita Wallet:', e.response.data);
+      return res.status(e.response.status).json({
+        ok: false,
+        error: 'Error de validación de Vita Wallet',
+        details: e.response.data.error || 'No se proporcionaron detalles.'
+      });
+    }
+
+    // Para cualquier otro error, usamos el manejador por defecto
     next(e);
   }
 });
