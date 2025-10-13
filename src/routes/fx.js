@@ -75,7 +75,7 @@ router.get('/quote', async (req, res, next) => {
     // 6. Obtención de la moneda de destino (la corrección clave)
     const destCurrency = countryToCurrencyMap[destCountry];
     if (!destCurrency) {
-      return res.status(404).json({ ok: false, error: `La moneda para el país ${destCountry} no está configurada en el backend.` });
+      return res.status(404).json({ ok: false, error: `La moneda para el país ${destCountry} no está configurada.` });
     }
 
     // 7. Construcción de la respuesta final y completa
@@ -84,6 +84,7 @@ router.get('/quote', async (req, res, next) => {
       data: {
         origin,
         destCountry,
+        destCurrency,
         amountIn,
         baseRate,
         markupPercent,
