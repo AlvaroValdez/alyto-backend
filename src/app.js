@@ -1,10 +1,31 @@
 // backend/src/app.js
 const express = require('express');
-const morgan = require('morgan');
 const cors = require('cors');
+const morgan = require('morgan');
 const connectMongo = require('./config/mongo'); 
-
 const app = express();
+
+// --- CONFIGURACIÓN DE CORS MEJORADA ---
+// Lista de orígenes permitidos
+const allowedOrigins = [
+  'http://localhost:5173', // Tu frontend en desarrollo local
+  // Aquí puedes añadir la URL de tu frontend cuando lo despliegues, ej:
+  // 'https://avf-remesas-frontend.onrender.com'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permite peticiones sin origen (como las de Postman o apps móviles) y las de la lista blanca
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions)); // Usa las opciones configuradas
 
 // Middlewares
 app.use(cors());
