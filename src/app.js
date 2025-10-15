@@ -1,63 +1,64 @@
-// backend/src/app.js
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const connectMongo = require('./config/mongo'); 
+import express from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import connectMongo from './config/mongo.js';
+
+// Importación de todas las rutas al inicio del archivo
+import pricesRoutes from './routes/prices.js';
+import withdrawalsRoutes from './routes/withdrawals.js';
+import ipnRoutes from './routes/ipn.js';
+import ipnEventsRoutes from './routes/ipnEvents.js';
+import fxRoutes from './routes/fx.js';
+import transactionsRoutes from './routes/transactions.js';
+import authRoutes from './routes/auth.js';
+import withdrawalRulesRoutes from './routes/withdrawalRules.js';
+import adminMarkupRoutes from './routes/adminMarkup.js';
+import paymentOrdersRoutes from './routes/paymentOrders.js'; // <-- Ruta nueva añadida
+
 const app = express();
 
-// --- CONFIGURACIÓN DE CORS MEJORADA ---
-// Lista de orígenes permitidos
+// Conexión a la base de datos
+connectMongo();
+
+// --- Configuración de CORS ---
 const allowedOrigins = [
-  'http://localhost:5173', // Tu frontend en desarrollo local
-  // Aquí puedes añadir la URL de tu frontend cuando lo despliegues, ej:
-  // 'https://avf-remesas-frontend.onrender.com'
+  'http://localhost:5173', // Frontend en desarrollo
+  // 'https://tu-frontend-en-produccion.com' // Añadir la URL del frontend en producción
 ];
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Permite peticiones sin origen (como las de Postman o apps móviles) y las de la lista blanca
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error('Acceso no permitido por CORS'));
     }
   },
-  optionsSuccessStatus: 200
 };
 
-app.use(cors(corsOptions)); // Usa las opciones configuradas
-
-// Middlewares
-app.use(cors());
+// --- Middlewares ---
+app.use(cors(corsOptions)); // Usa la configuración de CORS personalizada
 app.use(morgan('dev'));
-app.use(express.json());
+// La ruta del IPN necesita el "cuerpo crudo", por lo que se monta ANTES de express.json()
+app.use('/api/ipn', ipnRoutes);
+app.use(express.json()); // Middleware para parsear JSON para el resto de las rutas
 
-// Conexión a Mongo
-connectMongo(); // ✅ ejecutamos la función exportada
-
-app.post('/api/ipn/vita/raw', (req, res) => {
-  console.log('[raw] Headers:', req.headers);
-  res.json({ ok: true });
-});
-
-
-// Rutas
+// --- Rutas de la API ---
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'Backend funcionando 🚀' });
 });
 
-// Importar rutas reales
-app.use('/api/prices', require('./routes/prices'));
-app.use('/api/withdrawals', require('./routes/withdrawals'));
-app.use('/api/ipn', require('./routes/ipn')); 
-app.use('/api/ipn', require('./routes/ipnEvents'));
-app.use('/api/fx', require('./routes/fx'));
-app.use('/api/transactions', require('./routes/transactions'));
-app.use("/api/auth", require("./routes/auth"));
-app.use('/api/withdrawal-rules', require('./routes/withdrawalRules')); 
+app.use('/api/prices', pricesRoutes);
+app.use('/api/withdrawals', withdrawalsRoutes);
+app.use('/api/ipn/events', ipnEventsRoutes); // <-- Ruta corregida
+app.use('/api/fx', fxRoutes);
+app.use('/api/transactions', transactionsRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
+app.use('/api/admin', adminMarkupRoutes);
+app.use('/api/payment-orders', paymentOrdersRoutes); // <-- Ruta nueva montada
 
-// Rutas admin
-app.use('/api/admin', require('./routes/adminMarkup'));
+// Aquí iría el middleware de manejo de errores al final
+// app.use(errorHandler);
 
-
-module.exports = app;
+export default app;
