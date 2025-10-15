@@ -1,29 +1,18 @@
-// backend/src/config/env.js
-const required = [
-  'VITA_BASE_URL',
-  'VITA_LOGIN',
-  'VITA_TRANS_KEY',
-  'VITA_SECRET',
-  'VITA_BUSINESS_WALLET_UUID',
-  'MONGO_URI'
-];
+import 'dotenv/config'; // Usamos import en lugar de require
 
-for (const k of required) {
-  if (!process.env[k]) {
-    throw new Error(`[env] Falta variable requerida: ${k}`);
-  }
-}
+// Exportamos cada constante directamente
+export const port = process.env.PORT || 5000;
 
-module.exports = {
-  port: process.env.PORT || 5000,
-  isProd: process.env.NODE_ENV === 'production',
-  vita: {
-    baseURL: process.env.VITA_BASE_URL,
-    login: process.env.VITA_LOGIN,
-    transKey: process.env.VITA_TRANS_KEY,
-    secret: process.env.VITA_SECRET,
-    walletUUID: process.env.VITA_BUSINESS_WALLET_UUID,
-  },
-  mongoURI: process.env.MONGO_URI,
-  verifyIpn: process.env.VITA_IPN_VERIFY_SIGNATURE === '1',
+export const isProd = process.env.NODE_ENV === 'production';
+
+export const vita = {
+  baseURL: process.env.VITA_BASE_URL,
+  login: process.env.VITA_LOGIN,
+  transKey: process.env.VITA_TRANS_KEY,
+  secret: process.env.VITA_SECRET,
+  walletUUID: process.env.VITA_BUSINESS_WALLET_UUID,
 };
+
+export const mongoURI = process.env.MONGO_URI;
+
+// Ya no necesitas module.exports al final

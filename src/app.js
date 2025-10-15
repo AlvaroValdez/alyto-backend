@@ -2,11 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import connectMongo from './config/mongo.js';
+import ipnRoutes from './routes/ipn.js';
 
 // Importación de todas las rutas al inicio del archivo
 import pricesRoutes from './routes/prices.js';
 import withdrawalsRoutes from './routes/withdrawals.js';
-import ipnRoutes from './routes/ipn.js';
 import ipnEventsRoutes from './routes/ipnEvents.js';
 import fxRoutes from './routes/fx.js';
 import transactionsRoutes from './routes/transactions.js';
@@ -39,6 +39,7 @@ const corsOptions = {
 // --- Middlewares ---
 app.use(cors(corsOptions)); // Usa la configuración de CORS personalizada
 app.use(morgan('dev'));
+
 // La ruta del IPN necesita el "cuerpo crudo", por lo que se monta ANTES de express.json()
 app.use('/api/ipn', ipnRoutes);
 app.use(express.json()); // Middleware para parsear JSON para el resto de las rutas
