@@ -1,62 +1,35 @@
-// backend/src/services/withdrawalValidator.js
-// Fuente Vita: GET /api/businesses/withdrawal_rules
-// Justificación: validar payload antes de enviarlo a Vita, según reglas dinámicas.
+import { getWithdrawalRules } from './vitaService.js'; // Usa import
 
-const { getWithdrawalRules } = require('./vitaService');
+// Usa 'export const' para exportar la función por su nombre
+export const validateWithdrawalPayload = async (country, payload) => {
+  try {
+    const rules = await getWithdrawalRules();
+    const countryRules = rules.rules[country]?.fields; // Accede a la estructura correcta
 
-async function validateWithdrawalPayload(countryKey, payload) {
-  const rulesResponse = await getWithdrawalRules();
-  const rules = rulesResponse?.rules?.[countryKey];
-  if (!rules) {
-    return { ok: false, errors: [`No hay reglas configuradas para ${countryKey}`] };
+    if (!countryRules) {
+      return { ok: false, errors: [`No se encontraron reglas de validación para el país: ${country}`] };
+    }
+
+    const errors = [];
+    const visibleFields = countryRules.filter(field => {
+        if (!field.when) return true;
+        return payload[field.when.key] === field.when.value;
+    });
+
+    for (const rule of visibleFields) {
+      const isRequired = rule.min > 0 || rule.required === true;
+      if (isRequired && !payload[rule.key]) {
+        errors.push(`Falta el campo obligatorio: ${rule.key}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return { ok: false, errors };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error('[withdrawalValidator] Error:', error);
+    return { ok: false, errors: ['Error interno al validar el payload.'] };
   }
-
-  const errors = [];
-  const fields = rules.fields || [];
-
-  for (const field of fields) {
-    const value = payload[field.key];
-
-    // ⚡ Evaluar condiciones "when"
-    if (field.when) {
-      const whenKey = field.when.key;
-      const whenValue = field.when.value.toLowerCase();
-      const actual = String(payload[whenKey] || '').toLowerCase();
-      if (actual !== whenValue) {
-        // Si la condición no se cumple, saltamos esta validación
-        continue;
-      }
-    }
-
-    // Validar obligatoriedad
-    if (!value || value === '') {
-      errors.push(`Falta el campo obligatorio: ${field.key}`);
-      continue;
-    }
-
-    // Validar selects
-    if (field.type === 'select' && Array.isArray(field.options)) {
-      const validOptions = field.options.map(o => o.value.toLowerCase());
-      if (!validOptions.includes(String(value).toLowerCase())) {
-        errors.push(`El campo ${field.key} debe ser uno de: ${validOptions.join(', ')}`);
-      }
-    }
-
-    // Validar longitudes
-    if (field.type === 'text' || field.type === 'email') {
-      if (field.min && String(value).length < field.min) {
-        errors.push(`El campo ${field.key} debe tener al menos ${field.min} caracteres`);
-      }
-      if (field.max && String(value).length > field.max) {
-        errors.push(`El campo ${field.key} debe tener máximo ${field.max} caracteres`);
-      }
-    }
-  }
-
-  return {
-    ok: errors.length === 0,
-    errors
-  };
-}
-
-module.exports = { validateWithdrawalPayload };
+};
