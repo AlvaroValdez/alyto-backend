@@ -1,15 +1,15 @@
-// backend/src/services/markupService.js
-const Markup = require('../models/Markup');
+import Markup from '../models/Markup.js';
 
-async function getOrInit() {
+const getOrInit = async () => {
   let doc = await Markup.findOne();
-  if (!doc) doc = await Markup.create({ defaultPercent: 0, pairs: [] });
+  if (!doc) {
+    doc = await Markup.create({ defaultPercent: 0, pairs: [] });
+  }
   return doc;
-}
+};
 
-const getPercent = async (origin, dest) => {
+export const getPercent = async (origin, dest) => {
   try {
-    // Busca la primera configuración de markup que encuentre (debería haber solo una)
     const markupConfig = await Markup.findOne();
 
     if (!markupConfig) {
@@ -17,36 +17,39 @@ const getPercent = async (origin, dest) => {
       return 0;
     }
 
-    // Por ahora, solo usamos el markup por defecto.
-    // En el futuro, aquí iría la lógica para buscar en el array 'pairs'.
     const defaultMarkup = markupConfig.defaultPercent || 0;
-    
     console.log(`✅ [markupService] Markup por defecto encontrado: ${defaultMarkup}%.`);
     return defaultMarkup;
 
   } catch (error) {
     console.error('❌ [markupService] Error al obtener el markup:', error);
-    return 0; // En caso de error, siempre devuelve 0 para no detener la operación.
+    return 0; // Devuelve 0 en caso de error para no detener la operación.
   }
 };
 
-async function upsertDefault(percent) {
+export const upsertDefault = async (percent) => {
   const doc = await getOrInit();
   doc.defaultPercent = percent;
   await doc.save();
   return doc;
-}
+};
 
-async function upsertPair(originCurrency, destCountry, percent) {
+export const upsertPair = async (originCurrency, destCountry, percent) => {
   const doc = await getOrInit();
   const idx = doc.pairs.findIndex(p =>
     p.originCurrency.toUpperCase() === originCurrency.toUpperCase() &&
     p.destCountry.toUpperCase() === destCountry.toUpperCase()
   );
-  if (idx >= 0) doc.pairs[idx].percent = percent;
-  else doc.pairs.push({ originCurrency, destCountry, percent });
+
+  if (idx >= 0) {
+    doc.pairs[idx].percent = percent;
+  } else {
+    doc.pairs.push({ originCurrency, destCountry, percent });
+  }
+  
   await doc.save();
   return doc;
-}
+};
 
-module.exports = { getPercent, upsertDefault, upsertPair, getOrInit };
+// Se exporta getOrInit si es necesario en otros archivos. Si no, se puede quitar.
+export { getOrInit };
