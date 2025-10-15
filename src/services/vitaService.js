@@ -35,10 +35,21 @@ const createWithdrawal = async (payload) => {
   return data;
 };
 
+// --- NUEVA FUNCIÓN PARA PAY-IN ---
+/**
+ * Crea una orden de pago en Vita Wallet.
+ * @param {object} payload - Debe contener amount, country_iso_code, issue, success_redirect_url.
+ * @returns {Promise<object>} La respuesta de la API de Vita.
+ */
+const createPaymentOrder = async (payload) => {
+  console.log('💰 [vitaService] Creando orden de pago con payload:', payload);
+  const { data } = await client.post('/api/businesses/payment_orders', payload);
+  return data;
+};
+
 module.exports = {
   getListPrices,
   getWithdrawalRules,
   createWithdrawal,
+  createPaymentOrder, // <-- Exportamos la nueva función
 };
-
-
