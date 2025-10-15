@@ -1,10 +1,10 @@
 // backend/src/models/Markup.js
-const { Schema, model } = require('mongoose');
+import { Schema, model } from 'mongoose';
 
 const PairSchema = new Schema({
-  originCurrency: { type: String, required: true }, // e.g., CLP
-  destCountry: { type: String, required: true },    // e.g., CO
-  percent: { type: Number, required: true },        // e.g., 3 => 3%
+  originCurrency: { type: String, required: true }, // ej: CLP
+  destCountry: { type: String, required: true },    // ej: CO
+  percent: { type: Number, required: true },        // ej: 3 => 3%
 }, { _id: false });
 
 const MarkupSchema = new Schema({
@@ -12,4 +12,6 @@ const MarkupSchema = new Schema({
   pairs: { type: [PairSchema], default: [] },
 }, { timestamps: true });
 
-module.exports = model('Markup', MarkupSchema);
+const Markup = model('Markup', MarkupSchema);
+
+export default Markup;

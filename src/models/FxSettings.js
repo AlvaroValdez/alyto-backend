@@ -2,7 +2,7 @@
 // Justificación: almacenar la configuración de FX (markup) global
 // Fuente: lógica interna AVF (no en Vita), se aplica en /api/fx/quote
 
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const fxSettingsSchema = new mongoose.Schema(
   {
@@ -11,4 +11,6 @@ const fxSettingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('FxSettings', fxSettingsSchema);
+const FxSettings = mongoose.model('FxSettings', fxSettingsSchema);
+
+export default FxSettings;
