@@ -44,10 +44,3 @@ export const createPaymentOrder = async (payload) => {
   const { data } = await client.post('/api/businesses/payment_orders', payload);
   return data;
 };
-
-export default {
-  getListPrices,
-  getWithdrawalRules,
-  createWithdrawal,
-  createPaymentOrder, // <-- Exportamos la nueva función
-};

@@ -1,69 +1,37 @@
-// backend/src/services/vitaClient.js
-const crypto = require('crypto');
-const axios = require('axios');
-const { vita, isProd } = require('../config/env');
+import axios from 'axios';
+import crypto from 'crypto';
+import { vita } from '../config/env.js';
 
-function buildAuthSignature(xLogin, xDate, body) {
-  let sortedBody = '';
-  if (body && Object.keys(body).length > 0) {
-    const sorted = Object.keys(body).sort().map(k => `${k}${body[k]}`).join('');
-    sortedBody = sorted;
-  }
-  const raw = `${xLogin}${xDate}${sortedBody}`;
-  const signature = crypto.createHmac('sha256', vita.secret).update(raw).digest('hex');
-
-  // 🟠 Log temporal de debug
-  if (!isProd) {
-    console.log('[vitaClient] Signing payload:', raw);
-    console.log('[vitaClient] Generated signature:', signature);
-  }
-
-  return signature;
-}
-
+// Crea la instancia de Axios con la configuración base
 const client = axios.create({
   baseURL: vita.baseURL,
   timeout: 15000,
 });
 
-client.interceptors.request.use((config) => {
+// Interceptor para firmar todas las peticiones salientes a Vita
+client.interceptors.request.use(config => {
   const xDate = new Date().toISOString();
+  const xLogin = vita.login;
+  let sortedRequestBody = '';
+
+  if (config.data) {
+    const sortedData = Object.keys(config.data).sort().reduce((acc, key) => {
+      acc[key] = config.data[key];
+      return acc;
+    }, {});
+    sortedRequestBody = JSON.stringify(sortedData).replace(/\//g, '\\/');
+  }
+  
+  const signatureString = `${xLogin}${xDate}${sortedRequestBody}`;
+  const signature = crypto.createHmac('sha256', vita.secret).update(signatureString).digest('hex');
+
   config.headers['X-Date'] = xDate;
-  config.headers['X-Login'] = vita.login;
+  config.headers['X-Login'] = xLogin;
   config.headers['X-Trans-Key'] = vita.transKey;
-  config.headers['Content-Type'] = 'application/json';
-
-  let bodyForSig = null;
-  if (config.data && typeof config.data === 'object') {
-    bodyForSig = config.data;
-  }
-  const signature = buildAuthSignature(vita.login, xDate, bodyForSig);
   config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-
-  // 🟠 Log de request saliente
-  if (!isProd) {
-    console.log(`[vitaClient] ${config.method?.toUpperCase()} ${config.url}`);
-    console.log('[vitaClient] Headers enviados:', {
-      'X-Date': xDate,
-      'X-Login': vita.login,
-      'X-Trans-Key': vita.transKey,
-      Authorization: config.headers['Authorization'],
-    });
-  }
 
   return config;
 });
 
-function bubbleAxiosError(err) {
-  if (err.response) {
-    const { status, data } = err.response;
-    const message = typeof data === 'string' ? data : (data?.message || JSON.stringify(data));
-    const e = new Error(`Vita API error: HTTP ${status} - ${message}`);
-    e.status = status;
-    e.data = data;
-    throw e;
-  }
-  throw new Error(`Vita API network error: ${err.message}`);
-}
-
-module.exports = { client, bubbleAxiosError };
+// Exporta la instancia de Axios configurada
+export { client };
