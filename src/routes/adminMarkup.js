@@ -2,16 +2,19 @@
 // Justificación: permitir al admin leer y actualizar el markup FX
 // Fuente: lógica interna AVF (no en Vita)
 
-const router = require('express').Router();
-const FxSettings = require('../models/FxSettings');
+import { Router } from 'express';
+import FxSettings from '../models/FxSettings.js';
+
+const router = Router();
 
 // GET /api/admin/markup
 router.get('/markup', async (req, res) => {
   try {
-    let settings = await FxSettings.findOne();
-    if (!settings) {
-      settings = await FxSettings.create({ markup: 0.03 }); // valor inicial
-    }
+    const settings = await FxSettings.findOneAndUpdate(
+      {}, // Busca cualquier documento
+      { $setOnInsert: { markup: 0.03 } }, // Si no existe, lo crea con este valor
+      { upsert: true, new: true } // Opciones: crea si no existe y devuelve el documento nuevo
+    );
     res.json({ ok: true, markup: settings.markup });
   } catch (err) {
     console.error('[adminMarkup] Error al obtener markup:', err);
@@ -27,13 +30,11 @@ router.put('/markup', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Markup inválido, debe ser numérico' });
     }
 
-    let settings = await FxSettings.findOne();
-    if (!settings) {
-      settings = await FxSettings.create({ markup });
-    } else {
-      settings.markup = markup;
-      await settings.save();
-    }
+    const settings = await FxSettings.findOneAndUpdate(
+      {},
+      { $set: { markup: markup } },
+      { upsert: true, new: true }
+    );
 
     res.json({ ok: true, markup: settings.markup });
   } catch (err) {
@@ -42,4 +43,4 @@ router.put('/markup', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

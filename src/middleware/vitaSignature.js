@@ -1,9 +1,8 @@
 // backend/src/middleware/vitaSignature.js
 // Fuente: Vita Wallet docs - Webhooks V2-HMAC-SHA256
 // Justificación: verificar que los IPN sean auténticos.
-
-const crypto = require('crypto');
-const { vita } = require('../config/env');
+import crypto from 'crypto';
+import { vita } from '../config/env.js';
 
 function verifyVitaSignature(req, res, next) {
   try {
@@ -43,4 +42,4 @@ function verifyVitaSignature(req, res, next) {
   }
 }
 
-module.exports = { verifyVitaSignature };
+export { verifyVitaSignature };

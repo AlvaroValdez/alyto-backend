@@ -1,19 +1,21 @@
 // backend/src/routes/ipn.js
-const router = require('express').Router();
-const { verifyVitaSignature } = require('../middleware/vitaSignature');
-const VitaEvent = require('../models/VitaEvent');
-const Transaction = require('../models/Transaction');
+import { Router } from 'express';
+import { verifyVitaSignature } from '../middleware/vitaSignature.js';
+import VitaEvent from '../models/VitaEvent.js';
+import Transaction from '../models/Transaction.js';
+
+const router = Router();
 
 router.post('/vita', verifyVitaSignature, async (req, res) => {
   const event = req.body;
 
-  // 🔎 Logs forzados para Render
+  // Logs para depuración en Render
   process.stdout.write('[ipn] Evento Vita recibido: ' + JSON.stringify(event) + '\n');
   process.stdout.write('[ipn] Headers recibidos: ' + JSON.stringify(req.headers) + '\n');
   process.stdout.write('[ipn] Body recibido (raw): ' + JSON.stringify(event) + '\n');
 
   try {
-    // Guardar en Mongo
+    // Guardar el evento en la base de datos
     const vitaEvent = await VitaEvent.create({
       vitaId: event?.id,
       type: event?.type || 'unknown',
@@ -22,7 +24,7 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       verified: true,
     });
 
-    // Actualizar transacción si aplica
+    // Actualizar el estado de la transacción correspondiente
     if (event?.type === 'payment.succeeded') {
       await Transaction.findOneAndUpdate(
         { order: event?.object?.order },
@@ -42,4 +44,4 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

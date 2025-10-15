@@ -2,7 +2,9 @@
 // Justificación: esqueleto de autenticación (login/register)
 // Por ahora responde placeholders.
 
-const router = require("express").Router();
+import { Router } from "express";
+
+const router = Router();
 
 // POST /api/auth/login
 router.post("/login", (req, res) => {
@@ -14,4 +16,4 @@ router.post("/register", (req, res) => {
   res.json({ ok: true, message: "🚧 Registro no implementado (placeholder)" });
 });
 
-module.exports = router;
+export default router;

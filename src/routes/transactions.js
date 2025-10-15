@@ -1,15 +1,15 @@
 // backend/src/routes/transactions.js
-const router = require('express').Router();
-const Transaction = require('../models/Transaction');
+import { Router } from 'express';
+import Transaction from '../models/Transaction.js';
 
-// GET /api/transactions?page=1&limit=20&status=succeeded&country=CO&order=ORD-123
+const router = Router();
+
 router.get('/', async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // 🔎 Construcción de filtros dinámicos
     const filters = {};
     if (req.query.status) filters.status = req.query.status;
     if (req.query.country) filters.country = req.query.country;
@@ -22,17 +22,11 @@ router.get('/', async (req, res) => {
       .limit(limit)
       .populate('ipnEvents');
 
-    res.json({
-      ok: true,
-      page,
-      total,
-      filters,
-      transactions,
-    });
+    res.json({ ok: true, page, total, filters, transactions });
   } catch (err) {
     console.error('[transactions] Error listando transacciones:', err);
     res.status(500).json({ ok: false, error: 'Error al listar transacciones' });
   }
 });
 
-module.exports = router;
+export default router;

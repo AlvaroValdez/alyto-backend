@@ -1,12 +1,13 @@
 // backend/src/routes/withdrawals.js
 // Fuente Vita: POST /api/businesses/transactions (transaction_type=withdrawal)
 // Justificación: crea retiros desde la wallet empresarial hacia cuentas bancarias.
+import { Router } from 'express';
+import { createWithdrawal } from '../services/vitaService.js';
+import { vita } from '../config/env.js';
+import { validateWithdrawalPayload } from '../services/withdrawalValidator.js';
+import Transaction from '../models/Transaction.js';
 
-const router = require('express').Router();
-const { createWithdrawal } = require('../services/vitaService');
-const { vita } = require('../config/env');
-const { validateWithdrawalPayload } = require('../services/withdrawalValidator');
-const Transaction = require('../models/Transaction');
+const router = Router();
 
 router.post('/', async (req, res, next) => {
   try {
@@ -19,7 +20,7 @@ router.post('/', async (req, res, next) => {
       order,
       purpose,
       purpose_comentary,
-      beneficiary_type,                
+      beneficiary_type,
       beneficiary_first_name,
       beneficiary_last_name,
       beneficiary_email,
@@ -35,12 +36,11 @@ router.post('/', async (req, res, next) => {
       fc_document_number
     } = req.body || {};
 
-    // ✅ Validación contra withdrawal_rules
+    // Validación contra withdrawal_rules
     const countryKey = (country || '').toLowerCase();
     console.log('[withdrawals] Ejecutando validador para país:', countryKey);
 
     const validation = await validateWithdrawalPayload(countryKey, req.body);
-
     if (!validation.ok) {
       console.warn('[withdrawals] Errores de validación:', validation.errors);
       return res.status(422).json({
@@ -50,17 +50,16 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // ✅ Construcción del payload final
+    // Construcción del payload final para Vita
     const payload = {
-      url_notify: process.env.VITA_NOTIFY_URL || 'http://localhost:5000/api/ipn/vita',
-      //    url_notify: '/api/ipn/vita',
+      url_notify: process.env.VITA_NOTIFY_URL,
       country,
       currency,
       amount,
       order: order || `ORD-${Date.now()}`,
       transactions_type: 'withdrawal',
       wallet: vita.walletUUID,
-      beneficiary_type,                // ⚡ ahora sí se incluye
+      beneficiary_type,
       beneficiary_first_name,
       beneficiary_last_name,
       beneficiary_email,
@@ -74,16 +73,15 @@ router.post('/', async (req, res, next) => {
       purpose_comentary
     };
 
-    // ⚡ Agregar fc_* si existen
     if (fc_customer_type) payload.fc_customer_type = fc_customer_type;
     if (fc_legal_name) payload.fc_legal_name = fc_legal_name;
     if (fc_document_type) payload.fc_document_type = fc_document_type;
     if (fc_document_number) payload.fc_document_number = fc_document_number;
 
-    // 🔎 Log clave para debugging
     console.log('[withdrawals] Payload final enviado a Vita:', JSON.stringify(payload, null, 2));
 
     const data = await createWithdrawal(payload);
+    
     // Guardar en Mongo como transacción "pending"
     await Transaction.create({
       order: payload.order,
@@ -103,8 +101,7 @@ router.post('/', async (req, res, next) => {
   } catch (e) {
     console.error('[withdrawals] Error en POST /api/withdrawals:', e);
     
-    // --- NUEVO MANEJO DE ERRORES ---
-    // Si el error viene de Axios (de Vita), extraemos los detalles
+    // Manejo de errores de Axios
     if (e.isAxiosError && e.response) {
       console.error('[withdrawals] Error recibido de Vita Wallet:', e.response.data);
       return res.status(e.response.status).json({
@@ -114,9 +111,8 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // Para cualquier otro error, usamos el manejador por defecto
     next(e);
   }
 });
 
-module.exports = router;
+export default router;

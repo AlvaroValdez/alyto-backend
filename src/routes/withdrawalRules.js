@@ -2,14 +2,18 @@
 // Fuente Vita: GET /api/businesses/withdrawal_rules
 // Justificación: proxy directo para exponer campos dinámicos de retiro
 
-const router = require('express').Router();
-const { getWithdrawalRules } = require('../services/vitaService');
+import { Router } from 'express';
+import { getWithdrawalRules } from '../services/vitaService.js';
+
+const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
     const data = await getWithdrawalRules();
     res.json({ ok: true, data });
-  } catch (e) { next(e); }
+  } catch (e) { 
+    next(e); 
+  }
 });
 
-module.exports = router;
+export default router;

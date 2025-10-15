@@ -1,9 +1,10 @@
-const router = require('express').Router();
-const { getListPrices } = require('../services/vitaService');
+import { Router } from 'express';
+import { getListPrices } from '../services/vitaService.js';
+
+const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    // La caché ahora está dentro de getListPrices(), por lo que esta llamada es segura y rápida.
     const data = await getListPrices();
     res.json({ ok: true, data });
   } catch (e) { 
@@ -11,4 +12,4 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

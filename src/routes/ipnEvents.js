@@ -2,8 +2,10 @@
 // Fuente: Vita IPN - docs V2 HMAC
 // Justificación: permitir al admin listar los eventos recibidos de Vita
 
-const router = require('express').Router();
-const VitaEvent = require('../models/VitaEvent');
+import { Router } from 'express';
+import VitaEvent from '../models/VitaEvent.js';
+
+const router = Router();
 
 // GET /api/ipn/events?page=1&limit=20
 router.get('/events', async (req, res) => {
@@ -18,16 +20,11 @@ router.get('/events', async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    res.json({
-      ok: true,
-      page,
-      total,
-      events,
-    });
+    res.json({ ok: true, page, total, events });
   } catch (err) {
     console.error('[ipnEvents] Error listando eventos Vita:', err);
     res.status(500).json({ ok: false, error: 'Error al listar eventos Vita' });
   }
 });
 
-module.exports = router;
+export default router;
