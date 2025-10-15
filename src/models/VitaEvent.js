@@ -14,4 +14,4 @@ const vitaEventSchema = new mongoose.Schema({
 
 const VitaEvent = mongoose.model('VitaEvent', vitaEventSchema);
 
-export default VitaEvent;
+export default VitaEvent; // Se usa 'export default' en lugar de module.exports
