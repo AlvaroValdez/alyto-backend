@@ -1,8 +1,8 @@
 // backend/src/config/mongo.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-async function connectMongo() {
-  const uri = process.env.MONGO_URI;   // 👈 usar siempre MONGO_URI
+const connectMongo = async () => {
+  const uri = process.env.MONGO_URI;
 
   if (!uri) {
     console.error('[mongo] ERROR: No está definida la variable MONGO_URI');
@@ -10,15 +10,13 @@ async function connectMongo() {
   }
 
   try {
-    await mongoose.connect(uri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    // Las opciones useNewUrlParser y useUnifiedTopology ya no son necesarias
+    await mongoose.connect(uri);
     console.log('[mongo] Conectado a MongoDB');
   } catch (err) {
     console.error('[mongo] Error de conexión:', err);
     process.exit(1);
   }
-}
+};
 
-module.exports = connectMongo;
+export default connectMongo;
