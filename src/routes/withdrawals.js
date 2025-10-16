@@ -97,7 +97,13 @@ router.post('/', async (req, res, next) => {
       vitaResponse: data,
     });
 
-    res.status(201).json({ ok: true, data });
+    res.status(201).json({ 
+      ok: true, 
+      data: {
+        ...data, // Mantenemos la respuesta original de Vita
+        order: payload.order // Añadimos el 'order' ID
+      } 
+    });
   } catch (e) {
     console.error('[withdrawals] Error en POST /api/withdrawals:', e);
     
