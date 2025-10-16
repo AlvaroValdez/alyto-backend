@@ -23,11 +23,21 @@ router.post('/', async (req, res, next) => {
       issue: `Pago de remesa, orden #${orderId}`,
       success_redirect_url: successRedirectUrl,
     };
-
     const paymentOrderResponse = await createPaymentOrder(payload);
     res.status(201).json({ ok: true, data: paymentOrderResponse });
   } catch (e) {
     console.error('❌ Error creando la orden de pago:', e);
+    // --- MANEJO DE ERRORES MEJORADO ---
+    // Si el error viene de Axios (de la API de Vita), extraemos los detalles
+    if (e.isAxiosError && e.response) {
+      console.error('Error recibido de Vita Wallet:', e.response.data);
+      // Devolvemos el error específico de Vita al frontend
+      return res.status(e.response.status).json({
+        ok: false,
+        error: 'Error de validación de Vita Wallet',
+        details: e.response.data.error || 'No se proporcionaron detalles.'
+      });
+    }
     next(e);
   }
 });
