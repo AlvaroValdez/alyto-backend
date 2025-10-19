@@ -1,45 +1,59 @@
-// backend/src/routes/adminMarkup.js
-// Justificación: permitir al admin leer y actualizar el markup FX
-// Fuente: lógica interna AVF (no en Vita)
-
 import { Router } from 'express';
-import FxSettings from '../models/FxSettings.js';
+import Markup from '../models/Markup.js'; // Asegúrate que la importación del modelo sea correcta
+import { getOrInit, upsertDefault, upsertPair } from '../services/markupService.js';
 
 const router = Router();
 
-// GET /api/admin/markup
+// --- Ruta para el markup por defecto (sin cambios) ---
 router.get('/markup', async (req, res) => {
   try {
-    const settings = await FxSettings.findOneAndUpdate(
-      {}, // Busca cualquier documento
-      { $setOnInsert: { markup: 0.03 } }, // Si no existe, lo crea con este valor
-      { upsert: true, new: true } // Opciones: crea si no existe y devuelve el documento nuevo
-    );
-    res.json({ ok: true, markup: settings.markup });
+    const settings = await getOrInit();
+    res.json({ ok: true, markup: settings.defaultPercent });
   } catch (err) {
-    console.error('[adminMarkup] Error al obtener markup:', err);
-    res.status(500).json({ ok: false, error: 'Error al obtener markup' });
+    console.error('[adminMarkup] Error al obtener markup por defecto:', err);
+    res.status(500).json({ ok: false, error: 'Error al obtener markup por defecto' });
   }
 });
 
-// PUT /api/admin/markup
 router.put('/markup', async (req, res) => {
   try {
     const { markup } = req.body;
     if (markup === undefined || typeof markup !== 'number') {
-      return res.status(400).json({ ok: false, error: 'Markup inválido, debe ser numérico' });
+      return res.status(400).json({ ok: false, error: 'Markup inválido' });
     }
-
-    const settings = await FxSettings.findOneAndUpdate(
-      {},
-      { $set: { markup: markup } },
-      { upsert: true, new: true }
-    );
-
-    res.json({ ok: true, markup: settings.markup });
+    const settings = await upsertDefault(markup);
+    res.json({ ok: true, markup: settings.defaultPercent });
   } catch (err) {
-    console.error('[adminMarkup] Error al actualizar markup:', err);
-    res.status(500).json({ ok: false, error: 'Error al actualizar markup' });
+    console.error('[adminMarkup] Error al actualizar markup por defecto:', err);
+    res.status(500).json({ ok: false, error: 'Error al actualizar markup por defecto' });
+  }
+});
+
+// --- NUEVAS RUTAS PARA COMISIONES POR PAR ---
+
+// GET /api/admin/markup/pairs - Devuelve la lista de pares configurados
+router.get('/markup/pairs', async (req, res) => {
+  try {
+    const settings = await getOrInit();
+    res.json({ ok: true, pairs: settings.pairs });
+  } catch (err) {
+    console.error('[adminMarkup] Error al obtener pares de markup:', err);
+    res.status(500).json({ ok: false, error: 'Error al obtener pares de markup' });
+  }
+});
+
+// PUT /api/admin/markup/pairs - Añade o actualiza un par específico
+router.put('/markup/pairs', async (req, res) => {
+  try {
+    const { originCurrency, destCountry, percent } = req.body;
+    if (!originCurrency || !destCountry || percent === undefined || typeof percent !== 'number') {
+      return res.status(400).json({ ok: false, error: 'Datos de par inválidos (originCurrency, destCountry, percent requeridos)' });
+    }
+    const settings = await upsertPair(originCurrency, destCountry, percent);
+    res.json({ ok: true, pairs: settings.pairs });
+  } catch (err) {
+    console.error('[adminMarkup] Error al actualizar par de markup:', err);
+    res.status(500).json({ ok: false, error: 'Error al actualizar par de markup' });
   }
 });
 
