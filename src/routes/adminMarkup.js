@@ -47,10 +47,16 @@ router.put('/markup/pairs', async (req, res) => {
   try {
     const { originCurrency, destCountry, percent } = req.body;
     if (!originCurrency || !destCountry || percent === undefined || typeof percent !== 'number') {
-      return res.status(400).json({ ok: false, error: 'Datos de par inválidos (originCurrency, destCountry, percent requeridos)' });
+      return res.status(400).json({ ok: false, error: 'Datos de par inválidos' });
     }
-    const settings = await upsertPair(originCurrency, destCountry, percent);
-    res.json({ ok: true, pairs: settings.pairs });
+    
+    // --- CORRECCIÓN CLAVE ---
+    // Capturamos el documento actualizado devuelto por upsertPair
+    const updatedSettings = await upsertPair(originCurrency, destCountry, percent);
+    
+    // Usamos el documento actualizado para enviar la respuesta
+    res.json({ ok: true, pairs: updatedSettings.pairs }); 
+    
   } catch (err) {
     console.error('[adminMarkup] Error al actualizar par de markup:', err);
     res.status(500).json({ ok: false, error: 'Error al actualizar par de markup' });
