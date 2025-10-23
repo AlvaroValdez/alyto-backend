@@ -23,8 +23,8 @@ connectMongo();
 
 // --- Configuración de CORS ---
 const allowedOrigins = [
-  'http://localhost:5173', // Frontend en desarrollo
   'https://avf-vita-fe10.onrender.com' // Frontend en producción
+  //'http://localhost:5173', // Frontend en desarrollo
 ];
 
 const corsOptions = {
