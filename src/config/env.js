@@ -1,5 +1,10 @@
-import 'dotenv/config'; // Usamos import en lugar de require
+import 'dotenv/config'; 
+export const jwtSecret = process.env.JWT_SECRET;
 
+if (!jwtSecret) {
+  console.error('❌ ERROR: La variable de entorno JWT_SECRET no está definida.');
+  process.exit(1);
+}
 // Exportamos cada constante directamente
 export const port = process.env.PORT || 5000;
 
@@ -15,4 +20,3 @@ export const vita = {
 
 export const mongoURI = process.env.MONGO_URI;
 
-// Ya no necesitas module.exports al final
