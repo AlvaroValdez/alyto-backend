@@ -49,9 +49,9 @@ app.use(express.json());
 // --- Rutas de la API ---
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'Backend funcionando 🚀' }));
 app.use('/api/auth', authRoutes); // Rutas públicas de autenticación
-app.use('/api/prices', protect, pricesRoutes);
-app.use('/api/withdrawal-rules', protect, withdrawalRulesRoutes);
-app.use('/api/fx', protect, fxRoutes);
+app.use('/api/prices', pricesRoutes);
+app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
+app.use('/api/fx', fxRoutes);
 
 // --- Rutas Protegidas ---
 app.use('/api/withdrawals', protect, withdrawalsRoutes);
