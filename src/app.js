@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import connectMongo from './config/mongo.js';
-import { protect } from './middleware/authMiddleware.js'; // Asumiendo que existe
+import { protect } from './middleware/authMiddleware.js';
 
 // Importación de rutas
 import pricesRoutes from './routes/prices.js';
@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.js';
 import withdrawalRulesRoutes from './routes/withdrawalRules.js';
 import adminMarkupRoutes from './routes/adminMarkup.js';
 import paymentOrdersRoutes from './routes/paymentOrders.js';
+import adminUsersRoutes from './routes/adminUsers.js'
 
 const app = express();
 
@@ -59,5 +60,6 @@ app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', protect, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
 app.use('/api/admin', protect, adminMarkupRoutes);
+app.use('/api/admin', protect, adminUsersRoutes); // Rutas de administración de usuarios
 
 export default app;
