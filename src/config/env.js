@@ -1,10 +1,5 @@
 import 'dotenv/config'; 
-export const jwtSecret = process.env.JWT_SECRET;
 
-if (!jwtSecret) {
-  console.error('❌ ERROR: La variable de entorno JWT_SECRET no está definida.');
-  process.exit(1);
-}
 // Exportamos cada constante directamente
 export const port = process.env.PORT || 5000;
 
@@ -19,4 +14,17 @@ export const vita = {
 };
 
 export const mongoURI = process.env.MONGO_URI;
+export const jwtSecret = process.env.JWT_SECRET;
+// --- ASEGÚRATE DE QUE ESTA LÍNEA EXISTA Y SEA CORRECTA ---
+export const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1d'; // Exporta jwtExpiresIn
+
+// Verificaciones
+if (!jwtSecret) {
+  console.error('❌ ERROR: La variable de entorno JWT_SECRET no está definida.');
+  process.exit(1);
+}
+if (!mongoURI) { // Añade verificación para mongoURI también
+    console.error('❌ ERROR: La variable de entorno MONGO_URI no está definida.');
+    process.exit(1);
+}
 
