@@ -2,41 +2,47 @@ import jwt from 'jsonwebtoken';
 import { jwtSecret } from '../config/env.js';
 import User from '../models/User.js';
 
-/**
- * Middleware para verificar el token JWT y autenticar al usuario.
- */
-const protect = async (req, res, next) => {
+export const protect = async (req, res, next) => {
   let token;
+  const authHeader = req.headers.authorization;
 
-  // Busca el token en la cabecera 'Authorization' (formato: Bearer TOKEN)
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+  console.log('[authMiddleware] Verificando autorización...'); // Log inicial
+
+  if (authHeader && authHeader.startsWith('Bearer')) {
     try {
-      // Extrae el token (quita 'Bearer ')
-      token = req.headers.authorization.split(' ')[1];
+      token = authHeader.split(' ')[1];
+      console.log('[authMiddleware] Token extraído:', token ? 'Sí' : 'No'); // Verifica si se extrajo
 
-      // Verifica el token usando la clave secreta
+      // --- LOGGING DETALLADO ---
+      console.log('[authMiddleware] Intentando verificar token con secreto:', jwtSecret ? 'Secreto presente' : '¡SECRETO AUSENTE!'); 
+      
+      // Verifica el token
       const decoded = jwt.verify(token, jwtSecret);
+      console.log('[authMiddleware] Token decodificado:', decoded); // Muestra el payload del token
 
-      // Busca al usuario en la BD usando el ID del token (sin la contraseña)
+      // Busca al usuario (sin contraseña)
       req.user = await User.findById(decoded.userId).select('-password');
+      console.log('[authMiddleware] Usuario encontrado:', req.user ? req.user.email : 'No encontrado');
 
       if (!req.user) {
+         console.error('[authMiddleware] Usuario del token no existe en BD.');
          return res.status(401).json({ ok: false, error: 'Usuario no encontrado.' });
       }
 
-      next(); // Si todo es correcto, pasa al siguiente middleware o a la ruta
+      next(); // Pasa al siguiente
     } catch (error) {
-      console.error('[authMiddleware] Error de token:', error.message);
-      res.status(401).json({ ok: false, error: 'No autorizado, token inválido o expirado.' });
+      // --- LOGGING DE ERRORES ESPECÍFICO ---
+      console.error('[authMiddleware] ¡ERROR DE TOKEN!', error); // Muestra el error completo de jwt.verify
+      if (error.name === 'JsonWebTokenError') {
+        res.status(401).json({ ok: false, error: 'Token inválido.' });
+      } else if (error.name === 'TokenExpiredError') {
+        res.status(401).json({ ok: false, error: 'Token expirado.' });
+      } else {
+        res.status(401).json({ ok: false, error: 'No autorizado.' });
+      }
     }
-  }
-
-  if (!token) {
+  } else {
+    console.warn('[authMiddleware] No se encontró cabecera Bearer.');
     res.status(401).json({ ok: false, error: 'No autorizado, no se proporcionó token.' });
   }
 };
-
-// Podríamos añadir un middleware 'isAdmin' en el futuro
-// const isAdmin = (req, res, next) => { ... };
-
-export { protect };
