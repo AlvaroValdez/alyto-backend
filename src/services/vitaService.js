@@ -8,17 +8,42 @@ let cachedPrices = null;
 let cacheTimestamp = null;
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutos
 
+// Variables para manejar la concurrencia al buscar precios
+let pricesPromise = null;
+
 export const getListPrices = async () => {
+  // 1. Devolver desde caché si es válida
   if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
     console.log('⚡️ [vitaService] Devolviendo precios desde la caché.');
     return cachedPrices;
   }
 
+  // 2. Si ya hay una promesa de búsqueda en curso, devolver esa promesa
+  //    Esto evita que múltiples peticiones simultáneas llamen a Vita.
+  if (pricesPromise) {
+    console.log('🔄 [vitaService] Petición de precios ya en curso. Esperando resultado...');
+    return pricesPromise;
+  }
+
+  // 3. Si no hay caché ni promesa, iniciar una nueva búsqueda
   console.log('⏳ [vitaService] Obteniendo nuevos precios desde Vita Wallet...');
-  const { data } = await client.get('/api/businesses/prices');
-  cachedPrices = data;
-  cacheTimestamp = Date.now();
-  return cachedPrices;
+  
+  // Guardamos la promesa de la llamada a la API
+  pricesPromise = client.get('/api/businesses/prices')
+    .then(({ data }) => {
+      cachedPrices = data;
+      cacheTimestamp = Date.now();
+      pricesPromise = null; // Limpiamos la promesa una vez resuelta
+      console.log('✅ [vitaService] Precios actualizados y cacheados.');
+      return cachedPrices;
+    })
+    .catch(error => {
+      pricesPromise = null; // Limpiamos la promesa también en caso de error
+      console.error('❌ [vitaService] Error al obtener precios de Vita:', error);
+      throw error; // Propagamos el error
+    });
+
+  return pricesPromise; // Devuelve la promesa
 };
 
 // --- FUNCIÓN CORREGIDA ---
