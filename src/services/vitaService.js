@@ -9,7 +9,7 @@ let cacheTimestamp = null;
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutos
 
 // Variables para manejar la concurrencia al buscar precios
-let pricesPromise = null;
+let pricesPromise = null; 
 
 export const getListPrices = async () => {
   // 1. Devolver desde caché si es válida
