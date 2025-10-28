@@ -2,6 +2,10 @@ import jwt from 'jsonwebtoken';
 import { jwtSecret } from '../config/env.js';
 import User from '../models/User.js';
 
+/**
+ * Middleware para verificar el token JWT y autenticar al usuario.
+ * Si el token es válido, adjunta los datos del usuario (sin contraseña) a req.user.
+ */
 export const protect = async (req, res, next) => {
   let token;
   const authHeader = req.headers.authorization;
@@ -10,6 +14,7 @@ export const protect = async (req, res, next) => {
 
   if (authHeader && authHeader.startsWith('Bearer')) {
     try {
+      // Extrae el token: 'Bearer TOKEN_STRING' -> 'TOKEN_STRING'
       token = authHeader.split(' ')[1];
       console.log('[authMiddleware] Token extraído:', token ? 'Sí' : 'No'); // Verifica si se extrajo
 
@@ -20,7 +25,8 @@ export const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, jwtSecret);
       console.log('[authMiddleware] Token decodificado:', decoded); // Muestra el payload del token
 
-      // Busca al usuario (sin contraseña)
+      // Busca al usuario asociado al ID del token en la BD
+      // .select('-password') excluye el campo de la contraseña del resultado
       req.user = await User.findById(decoded.userId).select('-password');
       console.log('[authMiddleware] Usuario encontrado:', req.user ? req.user.email : 'No encontrado');
 
