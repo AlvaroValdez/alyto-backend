@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import connectMongo from './config/mongo.js';
-import { protect } from './middleware/authMiddleware.js';
+import { protect, isAdmin } from './middleware/authMiddleware.js';
 
 // Importación de rutas
 import pricesRoutes from './routes/prices.js';
@@ -24,7 +24,7 @@ connectMongo();
 // --- Configuración de CORS ---
 const allowedOrigins = [
   'http://localhost:5173', // Frontend dev
-  'https://avf-vita-fe10.onrender.com' // Frontend producción - VERIFICA ESTA URL
+  'https://avf-vita-fe10.onrender.com' // Frontend producción
 ];
 
 const corsOptions = {
@@ -59,7 +59,7 @@ app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', protect, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
-app.use('/api/admin', protect, adminMarkupRoutes);
-app.use('/api/admin', protect, adminUsersRoutes); // Rutas de administración de usuarios
+app.use('/api/admin', protect, isAdmin, adminMarkupRoutes);
+app.use('/api/admin', protect, isAdmin, adminUsersRoutes);
 
 export default app;
