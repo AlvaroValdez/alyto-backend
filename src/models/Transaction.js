@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema({
   order: { type: String, required: true, unique: true },
+  createdBy: { type: String, required: true },
   country: { type: String, required: true },
   currency: { type: String, required: true },
   amount: { type: Number, required: true },
