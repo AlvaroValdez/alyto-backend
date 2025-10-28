@@ -52,3 +52,16 @@ export const protect = async (req, res, next) => {
     res.status(401).json({ ok: false, error: 'No autorizado, no se proporcionó token.' });
   }
 };
+
+/**
+ * Middleware para verificar si el usuario autenticado tiene rol de administrador.
+ * Debe usarse SIEMPRE DESPUÉS del middleware 'protect'.
+ */
+export const isAdmin = (req, res, next) => {
+  // 'protect' ya debería haber adjuntado req.user
+  if (req.user && req.user.role === 'admin') {
+    next(); // Es admin, permite continuar
+  } else {
+    res.status(403).json({ ok: false, error: 'Acceso denegado. Se requiere rol de administrador.' }); // Error 403 Forbidden
+  }
+};
