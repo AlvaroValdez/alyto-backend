@@ -17,11 +17,22 @@ router.get('/', async (req, res) => {
     if (req.query.country) filters.country = req.query.country;
     if (req.query.order) filters.order = req.query.order;
 
+    // --- LÓGICA DE ROLES ---
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    // Campos a seleccionar. Por defecto, los básicos.
+    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status'; 
+    if (isAdmin) {
+      // Si es admin, seleccionamos más campos (ajusta según necesites)
+      projection += ' order country vitaResponse ipnEvents'; 
+    }
+
     // 3. Consulta a la Base de Datos: Realiza dos consultas eficientes
     //    a) Obtiene el conteo total de documentos que coinciden con los filtros
     const total = await Transaction.countDocuments(filters);
     //    b) Obtiene los documentos de la página actual, ordenados y con datos relacionados
     const transactions = await Transaction.find(filters)
+      .select(projection)
       .sort({ createdAt: -1 }) // Ordena por fecha de creación descendente
       .skip(skip)               // Salta los documentos de páginas anteriores
       .limit(limit)             // Limita al número de resultados por página
