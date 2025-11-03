@@ -28,7 +28,7 @@ const transporter = nodemailer.createTransport({
 export const sendEmail = async (options) => {
   // Define las opciones del correo, incluyendo el remitente desde las variables de entorno
   const mailOptions = {
-    from: process.env.EMAIL_FROM, // Ej: '"AVF Remesas" <no-reply@avf.com>'
+    from: process.env.EMAIL_FROM, // Ej: '"AVF Remesas" <noreply@avfinance.net>'
     to: options.to,
     subject: options.subject,
     text: options.text,
