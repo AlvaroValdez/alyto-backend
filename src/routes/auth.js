@@ -5,47 +5,75 @@ import { jwtSecret, jwtExpiresIn } from '../config/env.js'; // Importamos la con
 
 const router = Router();
 
-// --- Registro de Nuevo Usuario ---
-// POST /api/auth/register
+// --- Registro de Nuevo Usuario con Verificación ---
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
-    // 1. Validaciones básicas de entrada
+    // 1. Validaciones básicas (sin cambios)
     if (!name || !email || !password) {
-      return res.status(400).json({ ok: false, error: 'Nombre, correo y contraseña son obligatorios.' });
+      return res.status(400).json({ ok: false, error: 'Todos los campos son obligatorios.' });
     }
     if (password.length < 6) {
       return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' });
     }
-    // Podríamos añadir validación de formato de email aquí si el modelo no fuera suficiente
-
-    // 2. Verificar si el correo electrónico ya existe en la base de datos
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ ok: false, error: 'El correo electrónico ya está registrado.' });
     }
 
-    // 3. Crear el nuevo usuario
-    // La contraseña se hasheará automáticamente gracias al middleware pre('save') en el modelo User.js
+    // 2. Crear instancia del nuevo usuario
     const newUser = new User({ name, email, password });
+
+    // 3. Generar el token de verificación de email
+    const verificationToken = newUser.generateEmailVerificationToken();
+    // En este punto, newUser ya tiene emailVerificationToken (hash) y emailVerificationExpires
+
+    // 4. Guardar el usuario en la BD (esto hashea la contraseña y guarda el token)
     await newUser.save();
 
-    // 4. Respuesta exitosa (no devolvemos datos sensibles)
-    res.status(201).json({ ok: true, message: 'Usuario registrado exitosamente.' });
+    // 5. Enviar el correo de verificación
+    try {
+      // Construye la URL de verificación (asegúrate que FRONTEND_URL esté en tus .env)
+      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+      
+      const message = `
+        <p>¡Bienvenido a AVF Remesas!</p>
+        <p>Por favor, haz clic en el siguiente enlace para verificar tu dirección de correo electrónico:</p>
+        <p><a href="${verificationUrl}" target="_blank">Verificar mi correo</a></p>
+        <p>Si no te registraste en AVF Remesas, por favor ignora este mensaje.</p>
+        <p>Este enlace expirará en 10 minutos.</p>
+      `;
+
+      await sendEmail({
+        to: newUser.email,
+        subject: 'Verificación de Correo Electrónico - AVF Remesas',
+        text: `Por favor, verifica tu correo copiando y pegando este enlace en tu navegador: ${verificationUrl}`,
+        html: message,
+      });
+
+      console.log(`[auth/register] Correo de verificación enviado a ${newUser.email}`);
+    } catch (emailError) {
+      console.error(`[auth/register] Fallo al enviar correo de verificación a ${newUser.email}:`, emailError);
+      // Decide si quieres fallar el registro completo o solo loguear el error de email
+      // Por ahora, solo logueamos, el usuario está creado pero no verificado.
+    }
+
+    // 6. Respuesta exitosa indicando que se envió el correo
+    res.status(201).json({ 
+        ok: true, 
+        message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.' 
+    });
 
   } catch (error) {
     console.error('[auth/register] Error:', error);
-    // Manejo específico para errores de validación de Mongoose (ej: email inválido)
     if (error.name === 'ValidationError') {
         const messages = Object.values(error.errors).map(val => val.message);
         return res.status(400).json({ ok: false, error: messages.join(', ') });
     }
-    // Error genérico para otros problemas
-    res.status(500).json({ ok: false, error: 'Error interno del servidor al registrar el usuario.' });
+    res.status(500).json({ ok: false, error: 'Error interno del servidor al registrar.' });
   }
 });
-
 // --- Inicio de Sesión ---
 // POST /api/auth/login
 router.post('/login', async (req, res) => {

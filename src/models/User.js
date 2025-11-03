@@ -1,61 +1,77 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto'; // Importa el módulo crypto de Node.js
 
-// Definición del esquema del usuario
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'El nombre es obligatorio.'], // Campo requerido con mensaje de error
-    trim: true, // Elimina espacios en blanco al inicio y final
+    required: [true, 'El nombre es obligatorio.'],
+    trim: true,
   },
   email: {
     type: String,
     required: [true, 'El correo electrónico es obligatorio.'],
-    unique: true, // Asegura que no haya emails duplicados
-    lowercase: true, // Guarda el email siempre en minúsculas
+    unique: true,
+    lowercase: true,
     trim: true,
-    // Validación básica de formato de email
     match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Por favor, introduce un correo válido.'],
   },
   password: {
     type: String,
     required: [true, 'La contraseña es obligatoria.'],
-    minlength: [6, 'La contraseña debe tener al menos 6 caracteres.'], // Longitud mínima
+    minlength: [6, 'La contraseña debe tener al menos 6 caracteres.'],
   },
   role: {
     type: String,
-    enum: ['user', 'admin'], // Solo permite estos dos valores
-    default: 'user', // Asigna 'user' por defecto si no se especifica
+    enum: ['user', 'admin'],
+    default: 'user',
   },
+  // --- NUEVOS CAMPOS PARA VERIFICACIÓN DE EMAIL ---
+  isEmailVerified: {
+    type: Boolean,
+    default: false, // Por defecto, el email no está verificado
+  },
+  emailVerificationToken: String, // Almacenará el hash del token
+  emailVerificationExpires: Date, // Almacenará la fecha de expiración del token
 }, { 
-  timestamps: true // Añade automáticamente campos createdAt y updatedAt
+  timestamps: true 
 });
 
-// Middleware (hook) que se ejecuta ANTES de guardar un usuario en la BD
+// Middleware para hashear contraseña (sin cambios)
 userSchema.pre('save', async function(next) {
-  // Si la contraseña no ha sido modificada (ej: al actualizar el nombre), no hace nada
-  if (!this.isModified('password')) {
-    return next();
-  }
-
-  // Si la contraseña es nueva o se modificó, la hashea
+  if (!this.isModified('password')) return next();
   try {
-    const salt = await bcrypt.genSalt(10); // Genera un "salt" aleatorio
-    this.password = await bcrypt.hash(this.password, salt); // Hashea la contraseña con el salt
-    next(); // Continúa con el proceso de guardado
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
   } catch (error) {
-    next(error); // Si hay un error, lo pasa al manejador de errores
+    next(error);
   }
 });
 
-// Método personalizado para comparar la contraseña ingresada con la guardada (hasheada)
+// Método para comparar contraseña (sin cambios)
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  // Compara la contraseña candidata con el hash almacenado en this.password
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Crea el modelo a partir del esquema
+// --- NUEVO MÉTODO PARA GENERAR EL TOKEN DE VERIFICACIÓN ---
+userSchema.methods.generateEmailVerificationToken = function() {
+  // 1. Genera un token aleatorio seguro (será el que se envíe por email)
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+
+  // 2. Hashea el token antes de guardarlo en la base de datos por seguridad
+  this.emailVerificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+
+  // 3. Establece la fecha de expiración (ej: 10 minutos desde ahora)
+  this.emailVerificationExpires = Date.now() + 10 * 60 * 1000; 
+
+  // 4. Devuelve el token original (sin hashear) para enviarlo por email
+  return verificationToken; 
+};
+
 const User = mongoose.model('User', userSchema);
 
-// Exporta el modelo para que pueda ser usado en otros archivos (ej: en las rutas de autenticación)
 export default User;
