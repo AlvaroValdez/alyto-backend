@@ -43,9 +43,6 @@ export const sendEmail = async (options) => {
     return { success: true, messageId: info.messageId }; 
   } catch (error) {
     console.error(`❌ Error enviando email a ${options.to}:`, error);
-    // Podrías lanzar el error para que la función que llama lo maneje,
-    // o devolver un objeto indicando el fallo.
-    // throw error; // Opción 1: Lanzar el error
     return { success: false, error: error.message }; // Opción 2: Devolver fallo
   }
 };
