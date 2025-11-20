@@ -47,7 +47,7 @@ app.use('/api/ipn', ipnRoutes);
 // 3. express.json() DESPUÉS de IPN pero ANTES de otras rutas API
 app.use(express.json()); 
 
-// --- Rutas de la API ---
+// --- Rutas Publicas API ---
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'Backend funcionando 🚀' }));
 app.use('/api/auth', authRoutes); // Rutas públicas de autenticación
 app.use('/api/prices', pricesRoutes);
@@ -59,6 +59,9 @@ app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', protect, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
+
+// --- Rutas de Administración (Requieren rol 'admin') ---
+// Usan 'protect' (para verificar token) y LUEGO 'isAdmin' (para verificar rol)
 app.use('/api/admin', protect, isAdmin, adminMarkupRoutes);
 app.use('/api/admin', protect, isAdmin, adminUsersRoutes);
 

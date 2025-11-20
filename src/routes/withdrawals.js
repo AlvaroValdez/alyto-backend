@@ -1,6 +1,3 @@
-// backend/src/routes/withdrawals.js
-// Fuente Vita: POST /api/businesses/transactions (transaction_type=withdrawal)
-// Justificación: crea retiros desde la wallet empresarial hacia cuentas bancarias.
 import { Router } from 'express';
 import { createWithdrawal } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
@@ -11,6 +8,9 @@ const router = Router();
 
 router.post('/', async (req, res, next) => {
   try {
+    // El middleware 'protect' ya ha adjuntado el usuario autenticado a req.user
+    const userId = req.user._id; 
+    
     console.log('[withdrawals] req.body recibido:', JSON.stringify(req.body, null, 2));
 
     const {
@@ -82,7 +82,7 @@ router.post('/', async (req, res, next) => {
 
     const data = await createWithdrawal(payload);
     
-    // Guardar en Mongo como transacción "pending"
+    // --- CORRECCIÓN CRUCIAL: Se añade el ID del usuario autenticado ---
     await Transaction.create({
       order: payload.order,
       country,
@@ -95,13 +95,14 @@ router.post('/', async (req, res, next) => {
       beneficiary_email,
       status: 'pending',
       vitaResponse: data,
+      createdBy: userId, // <-- ¡SOLUCIÓN DEL ERROR!
     });
 
     res.status(201).json({ 
       ok: true, 
       data: {
-        ...data, // Mantenemos la respuesta original de Vita
-        order: payload.order // Añadimos el 'order' ID
+        ...data,
+        order: payload.order
       } 
     });
   } catch (e) {
@@ -112,7 +113,7 @@ router.post('/', async (req, res, next) => {
       console.error('[withdrawals] Error recibido de Vita Wallet:', e.response.data);
       return res.status(e.response.status).json({
         ok: false,
-        error: 'Error de validación de Vita Wallet',
+        error: 'Validación fallida de Vita Wallet',
         details: e.response.data.error || 'No se proporcionaron detalles.'
       });
     }
