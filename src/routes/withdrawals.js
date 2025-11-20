@@ -10,6 +10,10 @@ import Transaction from '../models/Transaction.js';
 const router = Router();
 
 router.post('/', async (req, res, next) => {
+  let userId = null;
+  if (req.user && req.user._id) {
+    userId = req.user._id;
+  }
   try {
     console.log('[withdrawals] req.body recibido:', JSON.stringify(req.body, null, 2));
 
@@ -95,6 +99,7 @@ router.post('/', async (req, res, next) => {
       beneficiary_email,
       status: 'pending',
       vitaResponse: data,
+      createdBy: userId,
     });
 
     res.status(201).json({ 
