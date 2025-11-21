@@ -16,6 +16,7 @@ import withdrawalRulesRoutes from './routes/withdrawalRules.js';
 import adminMarkupRoutes from './routes/adminMarkup.js';
 import paymentOrdersRoutes from './routes/paymentOrders.js';
 import adminUsersRoutes from './routes/adminUsers.js'
+import beneficiariesRoutes from './routes/beneficiaries.js';
 
 const app = express();
 
@@ -59,6 +60,7 @@ app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', protect, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
+app.use('/api/beneficiaries', protect, beneficiariesRoutes);
 app.use('/api/admin', protect, isAdmin, adminMarkupRoutes);
 app.use('/api/admin', protect, isAdmin, adminUsersRoutes);
 
