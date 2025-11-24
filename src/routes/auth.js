@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import User from '../models/User.js';
 import { jwtSecret, jwtExpiresIn } from '../config/env.js';
 import { sendEmail } from '../services/emailService.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
@@ -76,7 +77,6 @@ router.get('/verify-email', async (req, res) => {
   }
 });
 
-
 // --- RUTA DE LOGIN (ACTUALIZADA) ---
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -123,13 +123,57 @@ router.post('/login', async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        isProfileComplete: user.isProfileComplete 
       },
     });
 
   } catch (error) {
     console.error('[auth/login] Error:', error);
     res.status(500).json({ ok: false, error: 'Error interno del servidor al iniciar sesión.' });
+  }
+});
+// PUT /api/auth/profile
+router.put('/profile', protect, async (req, res) => {
+  try {
+    const { firstName, lastName, documentType, documentNumber, phoneNumber, address, birthDate } = req.body;
+
+    // Buscamos al usuario por el ID del token
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+    }
+
+    // Actualizamos los campos
+    user.firstName = firstName || user.firstName;
+    user.lastName = lastName || user.lastName;
+    user.documentType = documentType || user.documentType;
+    user.documentNumber = documentNumber || user.documentNumber;
+    user.phoneNumber = phoneNumber || user.phoneNumber;
+    user.address = address || user.address;
+    user.birthDate = birthDate || user.birthDate;
+
+    const updatedUser = await user.save();
+
+    res.json({
+      ok: true,
+      message: 'Perfil actualizado correctamente.',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        // Devolvemos el estado del perfil
+        isProfileComplete: updatedUser.isProfileComplete, 
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName
+      }
+    });
+
+  } catch (error) {
+    console.error('[auth/profile] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al actualizar el perfil.' });
   }
 });
 
