@@ -75,7 +75,7 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
-// Métodos existentes (sin cambios)
+// Métodos existentes (con cambios)
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
