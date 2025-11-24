@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import { jwtSecret, jwtExpiresIn } from '../config/env.js';
 import { sendEmail } from '../services/emailService.js';
 import { protect } from '../middleware/authMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
 
 const router = Router();
 
@@ -133,6 +134,7 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ ok: false, error: 'Error interno del servidor al iniciar sesión.' });
   }
 });
+
 // PUT /api/auth/profile
 router.put('/profile', protect, async (req, res) => {
   try {
@@ -176,5 +178,58 @@ router.put('/profile', protect, async (req, res) => {
     res.status(500).json({ ok: false, error: 'Error al actualizar el perfil.' });
   }
 });
+
+// --- SUBIDA DE DOCUMENTOS KYC (Nivel 2) ---
+// POST /api/auth/kyc-documents
+// Acepta multipart/form-data con campos: idFront, idBack, selfie
+router.post(
+  '/kyc-documents',
+  protect, // Usuario debe estar logueado
+  upload.fields([
+    { name: 'idFront', maxCount: 1 },
+    { name: 'idBack', maxCount: 1 },
+    { name: 'selfie', maxCount: 1 }
+  ]),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user._id);
+      if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+
+      // Verificar qué archivos se subieron y actualizar el modelo
+      const files = req.files; // Objeto con los archivos subidos
+      
+      if (!files || Object.keys(files).length === 0) {
+        return res.status(400).json({ ok: false, error: 'No se subieron archivos.' });
+      }
+
+      // Inicializar el objeto kyc y documents si no existen (aunque el modelo ya tiene defaults)
+      if (!user.kyc) user.kyc = {};
+      if (!user.kyc.documents) user.kyc.documents = {};
+
+      // Actualizar URLs de los documentos subidos
+      // Cloudinary devuelve la URL en 'path'
+      if (files.idFront) user.kyc.documents.idFront = files.idFront[0].path;
+      if (files.idBack) user.kyc.documents.idBack = files.idBack[0].path;
+      if (files.selfie) user.kyc.documents.selfie = files.selfie[0].path;
+
+      // Actualizar estado del KYC
+      user.kyc.status = 'pending'; // Pasa a estado "pendiente de revisión"
+      user.kyc.submittedAt = new Date();
+      user.kyc.level = 2; // Intentando subir a Nivel 2
+
+      await user.save();
+
+      res.json({
+        ok: true,
+        message: 'Documentos subidos correctamente. Tu cuenta está en revisión.',
+        kyc: user.kyc
+      });
+
+    } catch (error) {
+      console.error('[auth/kyc-documents] Error:', error);
+      res.status(500).json({ ok: false, error: 'Error al procesar los documentos.' });
+    }
+  }
+);
 
 export default router;

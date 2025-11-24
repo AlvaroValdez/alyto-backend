@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto'; // Importa el módulo crypto de Node.js
+import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema({
+  // --- DATOS BÁSICOS (Nivel 0/Registro) ---
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true, minlength: 6 },
@@ -11,54 +12,80 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
 
-  // --- NUEVOS CAMPOS DE KYC (PERFIL) ---
-  firstName: { type: String, trim: true }, // Nombre legal
-  lastName: { type: String, trim: true },  // Apellido legal
+  // --- DATOS PERSONALES (Nivel 1 - Declarativo) ---
+  firstName: { type: String, trim: true },
+  lastName: { type: String, trim: true },
   documentType: { type: String, enum: ['RUT', 'DNI', 'CE', 'PASSPORT'], uppercase: true },
   documentNumber: { type: String, trim: true },
   phoneNumber: { type: String, trim: true },
   address: { type: String, trim: true },
   birthDate: { type: Date },
 
-  // Bandera virtual para saber si completó el perfil
+  // --- ESTADO Y DOCUMENTOS DE KYC (Niveles 2 y 3) ---
+  kyc: {
+    level: { type: Number, default: 1 }, // 1: Básico, 2: Documental, 3: Reforzado
+    status: {
+      type: String,
+      enum: ['unverified', 'pending', 'approved', 'rejected', 'review'],
+      default: 'unverified'
+    },
+    documents: {
+      idFront: { type: String }, // URL de la imagen en Cloudinary
+      idBack: { type: String },  // URL de la imagen
+      selfie: { type: String },  // URL de la imagen
+      proofOfAddress: { type: String } // URL de la imagen (Nivel 3)
+    },
+    rejectionReason: { type: String }, // Mensaje para el usuario si falla
+    submittedAt: { type: Date }, // Fecha de envío de documentos
+    verifiedAt: { type: Date }   // Fecha de aprobación
+  },
+
+  // Bandera virtual para compatibilidad con lógica anterior
   isProfileComplete: { type: Boolean, default: false }
 }, {
   timestamps: true
 });
 
-// Middleware para hashear contraseña (sin cambios)
-userSchema.pre('save', function(next) {
-  if (this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address) {
+// Middleware pre-save
+userSchema.pre('save', async function(next) {
+  // Hash de contraseña
+  if (this.isModified('password')) {
+    try {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  // Lógica automática Nivel 1: Si tiene datos básicos, es Nivel 1
+  const hasBasicData = this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address;
+  
+  if (hasBasicData) {
     this.isProfileComplete = true;
+    // Si estaba en nivel 0, lo subimos a 1 automáticamente
+    if (this.kyc.level < 1) {
+        this.kyc.level = 1;
+        this.kyc.status = 'approved'; // El nivel 1 es automático
+    }
   } else {
     this.isProfileComplete = false;
   }
+
   next();
 });
 
-// Método para comparar contraseña (sin cambios)
-userSchema.methods.comparePassword = async function (candidatePassword) {
+// Métodos existentes (sin cambios)
+userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// --- NUEVO MÉTODO PARA GENERAR EL TOKEN DE VERIFICACIÓN ---
-userSchema.methods.generateEmailVerificationToken = function () {
-  // 1. Genera un token aleatorio seguro (será el que se envíe por email)
+userSchema.methods.generateEmailVerificationToken = function() {
   const verificationToken = crypto.randomBytes(32).toString('hex');
-
-  // 2. Hashea el token antes de guardarlo en la base de datos por seguridad
-  this.emailVerificationToken = crypto
-    .createHash('sha256')
-    .update(verificationToken)
-    .digest('hex');
-
-  // 3. Establece la fecha de expiración (ej: 10 minutos desde ahora)
+  this.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
   this.emailVerificationExpires = Date.now() + 10 * 60 * 1000;
-
-  // 4. Devuelve el token original (sin hashear) para enviarlo por email
   return verificationToken;
 };
 
 const User = mongoose.model('User', userSchema);
-
 export default User;
