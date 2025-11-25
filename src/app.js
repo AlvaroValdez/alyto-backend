@@ -17,6 +17,7 @@ import adminMarkupRoutes from './routes/adminMarkup.js';
 import paymentOrdersRoutes from './routes/paymentOrders.js';
 import adminUsersRoutes from './routes/adminUsers.js'
 import beneficiariesRoutes from './routes/beneficiaries.js';
+import adminKycRoutes from './routes/adminKyc.js';
 
 const app = express();
 
@@ -61,7 +62,10 @@ app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', protect, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
 app.use('/api/beneficiaries', protect, beneficiariesRoutes);
+
+// --- Rutas de Administración ---
 app.use('/api/admin', protect, isAdmin, adminMarkupRoutes);
 app.use('/api/admin', protect, isAdmin, adminUsersRoutes);
+app.use('/api/admin/kyc', protect, isAdmin, adminKycRoutes);
 
 export default app;
