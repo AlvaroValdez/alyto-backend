@@ -9,51 +9,64 @@ import upload from '../middleware/uploadMiddleware.js';
 
 const router = Router();
 
-// --- Ruta de Registro (sin cambios) ---
+// --- REGISTRO DE USUARIO ---
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
-    // ... (Validaciones y creación de usuario)
+    // 1. Validaciones
+    if (!name || !email || !password) {
+      return res.status(400).json({ ok: false, error: 'Todos los campos son obligatorios.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' });
+    }
+
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ ok: false, error: 'El correo electrónico ya está registrado.' });
     }
-    
+
+    // 2. Crear usuario
     const newUser = new User({ name, email, password });
     const verificationToken = newUser.generateEmailVerificationToken();
-    await newUser.save(); // El usuario se guarda
+    await newUser.save();
 
-    // --- MEJORA DE ROBUSTEZ: ENVÍO ASÍNCRONO ---
+    // 3. Enviar correo (Asíncrono - No bloqueante)
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
-    const message = `<p>¡Bienvenido a AVF Remesas!...</p><p><a href="${verificationUrl}">Verificar mi correo</a></p>`;
+    const message = `
+      <p>¡Bienvenido a AVF Remesas!</p>
+      <p>Por favor, haz clic en el siguiente enlace para verificar tu cuenta:</p>
+      <p><a href="${verificationUrl}" target="_blank">Verificar mi correo</a></p>
+      <p>Este enlace expirará en 10 minutos.</p>
+    `;
 
-    // NO usamos 'await' aquí.
     sendEmail({
       to: newUser.email,
       subject: 'Verificación de Correo Electrónico - AVF Remesas',
       html: message,
-    }).catch(emailError => {
-       // Si el envío falla (como ahora), solo lo registramos en el log del backend.
-       // El usuario ya recibió su mensaje de éxito y puede continuar.
-       console.error(`[auth/register] FALLO ASÍNCRONO al enviar correo a ${newUser.email}:`, emailError.message);
-    });
+    }).catch(err => console.error('[auth/register] Error envío email:', err.message));
 
-    // 6. Respuesta INMEDIATA al Frontend
-    // La respuesta ahora se envía en ~100ms en lugar de 121 segundos.
     res.status(201).json({ 
         ok: true, 
         message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.' 
     });
 
   } catch (error) {
-    // ... (manejo de errores de registro)
+    console.error('[auth/register] Error:', error);
+    if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(val => val.message);
+        return res.status(400).json({ ok: false, error: messages.join(', ') });
+    }
+    res.status(500).json({ ok: false, error: 'Error interno del servidor al registrar.' });
   }
 });
 
-// --- Ruta de Verificación de Email (sin cambios) ---
+// --- VERIFICACIÓN DE EMAIL ---
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
+  if (!token) return res.status(400).json({ ok: false, error: 'Token no proporcionado.' });
+
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     const user = await User.findOne({
@@ -62,7 +75,7 @@ router.get('/verify-email', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({ ok: false, error: 'El token de verificación es inválido o ha expirado.' });
+      return res.status(400).json({ ok: false, error: 'Token inválido o expirado.' });
     }
 
     user.isEmailVerified = true;
@@ -70,15 +83,14 @@ router.get('/verify-email', async (req, res) => {
     user.emailVerificationExpires = undefined;
     await user.save();
 
-    console.log(`[auth/verify] Email verificado exitosamente para: ${user.email}`);
-    res.json({ ok: true, message: 'Correo electrónico verificado exitosamente.' });
+    res.json({ ok: true, message: 'Correo verificado exitosamente.' });
   } catch (error) {
     console.error('[auth/verify] Error:', error);
-    res.status(500).json({ ok: false, error: 'Error interno del servidor al verificar el correo.' });
+    res.status(500).json({ ok: false, error: 'Error al verificar el correo.' });
   }
 });
 
-// --- RUTA DE LOGIN (ACTUALIZADA) ---
+// --- INICIO DE SESIÓN ---
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -88,33 +100,15 @@ router.post('/login', async (req, res) => {
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
+    if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ ok: false, error: 'Credenciales inválidas.' });
     }
 
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ ok: false, error: 'Credenciales inválidas.' });
-    }
-
-    // --- NUEVA VERIFICACIÓN ---
-    // Comprueba si el correo ha sido verificado
     if (!user.isEmailVerified) {
-      console.warn(`[auth/login] Intento de login fallido: ${email} no ha verificado su correo.`);
-      return res.status(401).json({ 
-        ok: false, 
-        error: 'Tu cuenta no ha sido verificada. Por favor, revisa tu correo electrónico.' 
-        // Podríamos añadir una bandera 'needsVerification: true' para que el frontend sepa que debe ofrecer reenviar el correo
-      });
+      return res.status(401).json({ ok: false, error: 'Tu cuenta no ha sido verificada. Revisa tu correo.' });
     }
 
-    // Si todo está correcto (contraseña Y verificación), genera el Token JWT
-    const payload = {
-      userId: user._id,
-      name: user.name,
-      role: user.role
-    };
-
+    const payload = { userId: user._id, name: user.name, role: user.role };
     const token = jwt.sign(payload, jwtSecret, { expiresIn: jwtExpiresIn });
 
     res.json({
@@ -125,37 +119,42 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        isProfileComplete: user.isProfileComplete 
+        isProfileComplete: user.isProfileComplete,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        address: user.address,
+        documentType: user.documentType,
+        documentNumber: user.documentNumber,
+        // ✅ CORRECCIÓN: Se devuelve el objeto KYC completo
+        kyc: user.kyc 
       },
     });
 
   } catch (error) {
     console.error('[auth/login] Error:', error);
-    res.status(500).json({ ok: false, error: 'Error interno del servidor al iniciar sesión.' });
+    res.status(500).json({ ok: false, error: 'Error interno al iniciar sesión.' });
   }
 });
 
-// PUT /api/auth/profile
+// --- ACTUALIZAR PERFIL (KYC Nivel 1) ---
 router.put('/profile', protect, async (req, res) => {
   try {
     const { firstName, lastName, documentType, documentNumber, phoneNumber, address, birthDate } = req.body;
 
-    // Buscamos al usuario por el ID del token
     const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
 
-    if (!user) {
-      return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
-    }
+    // Actualizamos campos si vienen en el body
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (documentType) user.documentType = documentType;
+    if (documentNumber) user.documentNumber = documentNumber;
+    if (phoneNumber) user.phoneNumber = phoneNumber;
+    if (address) user.address = address;
+    if (birthDate) user.birthDate = birthDate;
 
-    // Actualizamos los campos
-    user.firstName = firstName || user.firstName;
-    user.lastName = lastName || user.lastName;
-    user.documentType = documentType || user.documentType;
-    user.documentNumber = documentNumber || user.documentNumber;
-    user.phoneNumber = phoneNumber || user.phoneNumber;
-    user.address = address || user.address;
-    user.birthDate = birthDate || user.birthDate;
-
+    // El middleware pre-save actualizará isProfileComplete automáticamente
     const updatedUser = await user.save();
 
     res.json({
@@ -166,10 +165,15 @@ router.put('/profile', protect, async (req, res) => {
         name: updatedUser.name,
         email: updatedUser.email,
         role: updatedUser.role,
-        // Devolvemos el estado del perfil
-        isProfileComplete: updatedUser.isProfileComplete, 
+        isProfileComplete: updatedUser.isProfileComplete,
         firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName
+        lastName: updatedUser.lastName,
+        phoneNumber: updatedUser.phoneNumber,
+        address: updatedUser.address,
+        documentType: updatedUser.documentType,
+        documentNumber: updatedUser.documentNumber,
+        // ✅ CORRECCIÓN: Se devuelve el objeto KYC para no perder el estado
+        kyc: updatedUser.kyc 
       }
     });
 
@@ -179,9 +183,8 @@ router.put('/profile', protect, async (req, res) => {
   }
 });
 
-/// --- SUBIDA DE DOCUMENTOS KYC (Con Depuración Mejorada) ---
+// --- SUBIDA DE DOCUMENTOS KYC (Nivel 2) ---
 router.post('/kyc-documents', protect, (req, res, next) => {
-  // 1. Envolvemos el middleware de subida para capturar errores de Cloudinary/Multer
   const uploadMiddleware = upload.fields([
     { name: 'idFront', maxCount: 1 },
     { name: 'idBack', maxCount: 1 },
@@ -190,20 +193,12 @@ router.post('/kyc-documents', protect, (req, res, next) => {
 
   uploadMiddleware(req, res, (err) => {
     if (err) {
-      // 2. Si hay un error en la subida, lo mostramos con detalle
-      console.error('❌ [auth/kyc-documents] Error en Multer/Cloudinary:', JSON.stringify(err, null, 2));
-      
+      console.error('❌ [auth/kyc-documents] Error Multer:', JSON.stringify(err, null, 2));
       if (err.message === 'Unexpected field') {
-        return res.status(400).json({ ok: false, error: 'Campo de archivo no esperado. Verifica los nombres (idFront, idBack, selfie).' });
+        return res.status(400).json({ ok: false, error: 'Campos de archivo inválidos.' });
       }
-      
-      return res.status(500).json({ 
-        ok: false, 
-        error: 'Error al subir archivos al servidor.',
-        details: err.message || err 
-      });
+      return res.status(500).json({ ok: false, error: 'Error al subir archivos.', details: err.message || err });
     }
-    // 3. Si no hay error, continuamos al controlador
     next();
   });
 }, async (req, res) => {
@@ -213,14 +208,14 @@ router.post('/kyc-documents', protect, (req, res, next) => {
 
     const files = req.files; 
     if (!files || Object.keys(files).length === 0) {
-      return res.status(400).json({ ok: false, error: 'No se recibieron archivos. Verifica el formato.' });
+      return res.status(400).json({ ok: false, error: 'No se recibieron archivos.' });
     }
 
-    // Inicializar objetos si no existen
+    // Asegurar estructura
     if (!user.kyc) user.kyc = {};
     if (!user.kyc.documents) user.kyc.documents = {};
 
-    // Guardar URLs de Cloudinary
+    // Guardar URLs
     if (files.idFront) user.kyc.documents.idFront = files.idFront[0].path;
     if (files.idBack) user.kyc.documents.idBack = files.idBack[0].path;
     if (files.selfie) user.kyc.documents.selfie = files.selfie[0].path;
@@ -231,62 +226,47 @@ router.post('/kyc-documents', protect, (req, res, next) => {
 
     await user.save();
 
-    console.log(`✅ [auth/kyc-documents] Documentos subidos para usuario ${user.email}`);
+    console.log(`✅ [auth/kyc-documents] Docs subidos para: ${user.email}`);
 
     res.json({
       ok: true,
-      message: 'Documentos subidos correctamente. Tu cuenta está en revisión.',
+      message: 'Documentos subidos correctamente. Cuenta en revisión.',
       kyc: user.kyc
     });
 
   } catch (error) {
-    console.error('[auth/kyc-documents] Error en controlador:', error);
-    res.status(500).json({ ok: false, error: 'Error al procesar los datos del usuario.' });
+    console.error('[auth/kyc-documents] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al procesar documentos.' });
   }
 });
 
 // --- OLVIDÉ MI CONTRASEÑA ---
 router.post('/forgotpassword', async (req, res) => {
   const { email } = req.body;
-
   try {
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      return res.status(404).json({ ok: false, error: 'No existe un usuario con ese correo.' });
-    }
+    if (!user) return res.status(404).json({ ok: false, error: 'No existe usuario con ese correo.' });
 
-    // Obtener token de reseteo
     const resetToken = user.getResetPasswordToken();
-    await user.save({ validateBeforeSave: false }); // Guardamos sin validar otros campos
+    await user.save({ validateBeforeSave: false });
 
-    // Crear URL de reseteo (apunta al Frontend)
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
     const message = `
-      <p>Has solicitado restablecer tu contraseña.</p>
-      <p>Haz clic en este enlace para crear una nueva contraseña:</p>
-      <a href="${resetUrl}" target="_blank">${resetUrl}</a>
-      <p>Este enlace expirará en 10 minutos.</p>
-      <p>Si no solicitaste este correo, por favor ignóralo.</p>
+      <h3>Restablecer Contraseña</h3>
+      <p>Haz clic aquí: <a href="${resetUrl}">${resetUrl}</a></p>
+      <p>Expira en 10 minutos.</p>
     `;
 
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Restablecer Contraseña - AVF Remesas',
-        html: message,
-      });
-
-      res.json({ ok: true, message: 'Correo enviado. Revisa tu bandeja de entrada.' });
+      await sendEmail({ to: user.email, subject: 'Restablecer Contraseña - AVF', html: message });
+      res.json({ ok: true, message: 'Correo enviado.' });
     } catch (err) {
-      console.error('Error enviando email de reset:', err);
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save({ validateBeforeSave: false });
-      return res.status(500).json({ ok: false, error: 'El correo no pudo ser enviado.' });
+      return res.status(500).json({ ok: false, error: 'Error enviando correo.' });
     }
   } catch (error) {
-    console.error('[auth/forgotpassword] Error:', error);
     res.status(500).json({ ok: false, error: 'Error del servidor.' });
   }
 });
@@ -297,35 +277,21 @@ router.put('/resetpassword/:resettoken', async (req, res) => {
   const { password } = req.body;
 
   try {
-    // Hashear el token recibido para compararlo con la BD
-    const resetPasswordToken = crypto
-      .createHash('sha256')
-      .update(resettoken)
-      .digest('hex');
-
+    const resetPasswordToken = crypto.createHash('sha256').update(resettoken).digest('hex');
     const user = await User.findOne({
       resetPasswordToken,
-      resetPasswordExpire: { $gt: Date.now() }, // Verificar que no haya expirado
+      resetPasswordExpire: { $gt: Date.now() },
     });
 
-    if (!user) {
-      return res.status(400).json({ ok: false, error: 'Token inválido o expirado.' });
-    }
+    if (!user) return res.status(400).json({ ok: false, error: 'Token inválido o expirado.' });
 
-    // Establecer nueva contraseña
     user.password = password;
-    
-    // Limpiar campos de reseteo
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
+    await user.save();
 
-    await user.save(); // El middleware 'pre save' hasheará la nueva contraseña
-
-    // Opcional: Enviar token nuevo para auto-login
-    res.json({ ok: true, message: 'Contraseña actualizada correctamente. Ahora puedes iniciar sesión.' });
-
+    res.json({ ok: true, message: 'Contraseña actualizada.' });
   } catch (error) {
-    console.error('[auth/resetpassword] Error:', error);
     res.status(500).json({ ok: false, error: 'Error al restablecer contraseña.' });
   }
 });
