@@ -179,57 +179,70 @@ router.put('/profile', protect, async (req, res) => {
   }
 });
 
-// --- SUBIDA DE DOCUMENTOS KYC (Nivel 2) ---
-// POST /api/auth/kyc-documents
-// Acepta multipart/form-data con campos: idFront, idBack, selfie
-router.post(
-  '/kyc-documents',
-  protect, // Usuario debe estar logueado
-  upload.fields([
+/// --- SUBIDA DE DOCUMENTOS KYC (Con Depuración Mejorada) ---
+router.post('/kyc-documents', protect, (req, res, next) => {
+  // 1. Envolvemos el middleware de subida para capturar errores de Cloudinary/Multer
+  const uploadMiddleware = upload.fields([
     { name: 'idFront', maxCount: 1 },
     { name: 'idBack', maxCount: 1 },
     { name: 'selfie', maxCount: 1 }
-  ]),
-  async (req, res) => {
-    try {
-      const user = await User.findById(req.user._id);
-      if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+  ]);
 
-      // Verificar qué archivos se subieron y actualizar el modelo
-      const files = req.files; // Objeto con los archivos subidos
+  uploadMiddleware(req, res, (err) => {
+    if (err) {
+      // 2. Si hay un error en la subida, lo mostramos con detalle
+      console.error('❌ [auth/kyc-documents] Error en Multer/Cloudinary:', JSON.stringify(err, null, 2));
       
-      if (!files || Object.keys(files).length === 0) {
-        return res.status(400).json({ ok: false, error: 'No se subieron archivos.' });
+      if (err.message === 'Unexpected field') {
+        return res.status(400).json({ ok: false, error: 'Campo de archivo no esperado. Verifica los nombres (idFront, idBack, selfie).' });
       }
-
-      // Inicializar el objeto kyc y documents si no existen (aunque el modelo ya tiene defaults)
-      if (!user.kyc) user.kyc = {};
-      if (!user.kyc.documents) user.kyc.documents = {};
-
-      // Actualizar URLs de los documentos subidos
-      // Cloudinary devuelve la URL en 'path'
-      if (files.idFront) user.kyc.documents.idFront = files.idFront[0].path;
-      if (files.idBack) user.kyc.documents.idBack = files.idBack[0].path;
-      if (files.selfie) user.kyc.documents.selfie = files.selfie[0].path;
-
-      // Actualizar estado del KYC
-      user.kyc.status = 'pending'; // Pasa a estado "pendiente de revisión"
-      user.kyc.submittedAt = new Date();
-      user.kyc.level = 2; // Intentando subir a Nivel 2
-
-      await user.save();
-
-      res.json({
-        ok: true,
-        message: 'Documentos subidos correctamente. Tu cuenta está en revisión.',
-        kyc: user.kyc
+      
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Error al subir archivos al servidor.',
+        details: err.message || err 
       });
-
-    } catch (error) {
-      console.error('[auth/kyc-documents] Error:', error);
-      res.status(500).json({ ok: false, error: 'Error al procesar los documentos.' });
     }
+    // 3. Si no hay error, continuamos al controlador
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+
+    const files = req.files; 
+    if (!files || Object.keys(files).length === 0) {
+      return res.status(400).json({ ok: false, error: 'No se recibieron archivos. Verifica el formato.' });
+    }
+
+    // Inicializar objetos si no existen
+    if (!user.kyc) user.kyc = {};
+    if (!user.kyc.documents) user.kyc.documents = {};
+
+    // Guardar URLs de Cloudinary
+    if (files.idFront) user.kyc.documents.idFront = files.idFront[0].path;
+    if (files.idBack) user.kyc.documents.idBack = files.idBack[0].path;
+    if (files.selfie) user.kyc.documents.selfie = files.selfie[0].path;
+
+    user.kyc.status = 'pending'; 
+    user.kyc.submittedAt = new Date();
+    user.kyc.level = 2; 
+
+    await user.save();
+
+    console.log(`✅ [auth/kyc-documents] Documentos subidos para usuario ${user.email}`);
+
+    res.json({
+      ok: true,
+      message: 'Documentos subidos correctamente. Tu cuenta está en revisión.',
+      kyc: user.kyc
+    });
+
+  } catch (error) {
+    console.error('[auth/kyc-documents] Error en controlador:', error);
+    res.status(500).json({ ok: false, error: 'Error al procesar los datos del usuario.' });
   }
-);
+});
 
 export default router;
