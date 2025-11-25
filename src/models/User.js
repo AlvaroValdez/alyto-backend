@@ -12,6 +12,10 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
 
+  // --- CAMPOS PARA RECUPERACIÓN DE CONTRASEÑA ---
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+
   // --- DATOS PERSONALES (Nivel 1 - Declarativo) ---
   firstName: { type: String, trim: true },
   lastName: { type: String, trim: true },
@@ -85,6 +89,23 @@ userSchema.methods.generateEmailVerificationToken = function() {
   this.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
   this.emailVerificationExpires = Date.now() + 10 * 60 * 1000;
   return verificationToken;
+};
+
+// --- NUEVO MÉTODO: Generar token de reseteo ---
+userSchema.methods.getResetPasswordToken = function() {
+  // 1. Generar token aleatorio
+  const resetToken = crypto.randomBytes(20).toString('hex');
+
+  // 2. Hashear el token y guardarlo en el campo del usuario
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  // 3. Establecer expiración (ej: 10 minutos)
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+
+  return resetToken; // Devuelve el token original para enviarlo por email
 };
 
 const User = mongoose.model('User', userSchema);

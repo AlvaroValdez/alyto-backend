@@ -245,4 +245,89 @@ router.post('/kyc-documents', protect, (req, res, next) => {
   }
 });
 
+// --- OLVIDÉ MI CONTRASEÑA ---
+router.post('/forgotpassword', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'No existe un usuario con ese correo.' });
+    }
+
+    // Obtener token de reseteo
+    const resetToken = user.getResetPasswordToken();
+    await user.save({ validateBeforeSave: false }); // Guardamos sin validar otros campos
+
+    // Crear URL de reseteo (apunta al Frontend)
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    const message = `
+      <p>Has solicitado restablecer tu contraseña.</p>
+      <p>Haz clic en este enlace para crear una nueva contraseña:</p>
+      <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+      <p>Este enlace expirará en 10 minutos.</p>
+      <p>Si no solicitaste este correo, por favor ignóralo.</p>
+    `;
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Restablecer Contraseña - AVF Remesas',
+        html: message,
+      });
+
+      res.json({ ok: true, message: 'Correo enviado. Revisa tu bandeja de entrada.' });
+    } catch (err) {
+      console.error('Error enviando email de reset:', err);
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+      return res.status(500).json({ ok: false, error: 'El correo no pudo ser enviado.' });
+    }
+  } catch (error) {
+    console.error('[auth/forgotpassword] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error del servidor.' });
+  }
+});
+
+// --- RESTABLECER CONTRASEÑA ---
+router.put('/resetpassword/:resettoken', async (req, res) => {
+  const { resettoken } = req.params;
+  const { password } = req.body;
+
+  try {
+    // Hashear el token recibido para compararlo con la BD
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(resettoken)
+      .digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }, // Verificar que no haya expirado
+    });
+
+    if (!user) {
+      return res.status(400).json({ ok: false, error: 'Token inválido o expirado.' });
+    }
+
+    // Establecer nueva contraseña
+    user.password = password;
+    
+    // Limpiar campos de reseteo
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+
+    await user.save(); // El middleware 'pre save' hasheará la nueva contraseña
+
+    // Opcional: Enviar token nuevo para auto-login
+    res.json({ ok: true, message: 'Contraseña actualizada correctamente. Ahora puedes iniciar sesión.' });
+
+  } catch (error) {
+    console.error('[auth/resetpassword] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al restablecer contraseña.' });
+  }
+});
+
 export default router;
