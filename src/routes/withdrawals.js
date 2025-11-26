@@ -9,8 +9,18 @@ import Transaction from '../models/Transaction.js';
 
 const router = Router();
 
+// --- DEFINICIÓN DE LÍMITES (en CLP) ---
+const KYC_LIMITS = {
+  1: 450000,   // ~500 USD
+  2: 4500000,  // ~5,000 USD
+  3: 50000000  // ~50,000 USD
+};
+
 router.post('/', async (req, res, next) => {
   let userId = null;
+  // Accedemos al usuario completo gracias al middleware 'protect'
+  const user = req.user;
+
   if (req.user && req.user._id) {
     userId = req.user._id;
   }
@@ -40,6 +50,21 @@ router.post('/', async (req, res, next) => {
       fc_document_number
     } = req.body || {};
 
+    // --- 1. VALIDACIÓN DE LÍMITES KYC ---
+    const userLevel = user.kyc?.level || 1; // Nivel por defecto 1
+    const currentLimit = KYC_LIMITS[userLevel] || 0;
+
+    // Asumimos que el 'amount' viene en CLP (moneda de origen)
+    if (amount > currentLimit) {
+      return res.status(403).json({ 
+        ok: false, 
+        error: `El monto excede tu límite de Nivel ${userLevel}.`,
+        details: `Tu límite actual es de $${currentLimit.toLocaleString('es-CL')} CLP. Ve a tu perfil para aumentar tu nivel.`
+      });
+    }
+
+    // --- FIN VALIDACIÓN KYC ---
+
     // Validación contra withdrawal_rules
     const countryKey = (country || '').toLowerCase();
     console.log('[withdrawals] Ejecutando validador para país:', countryKey);
@@ -53,6 +78,15 @@ router.post('/', async (req, res, next) => {
         details: validation.errors
       });
     }
+
+    // Construcción de datos del cliente final (KYC)
+    const finalCustomerData = {
+        fc_customer_type: 'natural',
+        fc_legal_name: `${user.firstName} ${user.lastName}`.trim(),
+        fc_document_type: user.documentType || 'DNI',
+        fc_document_number: user.documentNumber,
+        fc_address: user.address,
+    };
 
     // Construcción del payload final para Vita
     const payload = {
