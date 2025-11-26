@@ -18,6 +18,7 @@ import paymentOrdersRoutes from './routes/paymentOrders.js';
 import adminUsersRoutes from './routes/adminUsers.js'
 import beneficiariesRoutes from './routes/beneficiaries.js';
 import adminKycRoutes from './routes/adminKyc.js';
+import transactionRulesRoutes from './routes/transactionRules.js';
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use(express.json());
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'Backend funcionando 🚀' }));
 app.use('/api/auth', authRoutes); // Rutas públicas de autenticación
 app.use('/api/prices', pricesRoutes);
+app.use('/api/transaction-rules', transactionRulesRoutes);
 app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
 app.use('/api/fx', fxRoutes);
 
