@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String, trim: true },
   address: { type: String, trim: true },
   birthDate: { type: Date },
+  avatar: { type: String }, // URL de la imagen de perfil
 
   // --- ESTADO Y DOCUMENTOS DE KYC (Niveles 2 y 3) ---
   kyc: {

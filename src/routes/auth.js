@@ -296,4 +296,30 @@ router.put('/resetpassword/:resettoken', async (req, res) => {
   }
 });
 
+// --- SUBIR AVATAR ---
+router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'No se subió ninguna imagen.' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
+    // Guardar la URL de Cloudinary en el usuario
+    user.avatar = req.file.path;
+    await user.save();
+
+    res.json({
+      ok: true,
+      message: 'Foto de perfil actualizada.',
+      avatar: user.avatar // Devolvemos la nueva URL
+    });
+
+  } catch (error) {
+    console.error('[auth/avatar] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al actualizar la foto.' });
+  }
+});
+
 export default router;
