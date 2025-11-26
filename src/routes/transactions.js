@@ -57,4 +57,30 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/transactions/:id - Obtener detalle de una transacción
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Buscamos por ID
+    // Importante: .populate('ipnEvents') trae los detalles de los webhooks recibidos
+    const transaction = await Transaction.findById(id).populate('ipnEvents');
+
+    if (!transaction) {
+      return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
+    }
+
+    // Seguridad básica: Verificar que la transacción pertenezca al usuario (si no es admin)
+    // Asumimos que req.user existe gracias al middleware 'protect'
+    if (req.user.role !== 'admin' && transaction.createdBy?.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ ok: false, error: 'No tienes permiso para ver esta transacción.' });
+    }
+
+    res.json({ ok: true, transaction });
+  } catch (err) {
+    console.error('[transactions] Error obteniendo detalle:', err);
+    res.status(500).json({ ok: false, error: 'Error al obtener el detalle de la transacción.' });
+  }
+});
+
 export default router;
