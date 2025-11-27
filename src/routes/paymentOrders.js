@@ -42,4 +42,50 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// --- NUEVA RUTA: Obtener Requisitos de Pago Directo ---
+// GET /api/payment-orders/direct-requirements
+router.get('/direct-requirements', (req, res) => {
+  // Aquí devolveríamos la respuesta real de Vita Wallet si hubiera un endpoint de "metadata".
+  // Por ahora, usamos la estructura que nos proporcionaste.
+  const mockRequirements = {
+    payment_methods: [
+      {
+        method_id: "4820",
+        name: "Khipu",
+        description: "Transferencia Bancaria Simplificada",
+        country: "CL", // Asumimos CL para tu caso, aunque el JSON decía AR
+        required_fields: [
+          {
+            name: "first_name",
+            type: "text",
+            label: "Nombre",
+            required: true,
+            validation: { type: "string", max_length: 100 }
+          },
+          {
+            name: "last_name",
+            type: "text",
+            label: "Apellido",
+            required: true,
+            validation: { type: "string", max_length: 100 }
+          },
+          {
+            name: "email",
+            type: "email", // Cambiado a 'email' para mejor UX
+            label: "Correo electrónico",
+            required: true,
+            validation: {
+              type: "string",
+              max_length: 255,
+              pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+            }
+          }
+        ]
+      }
+    ]
+  };
+
+  res.json({ ok: true, data: mockRequirements });
+});
+
 export default router;
