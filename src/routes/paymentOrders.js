@@ -1,29 +1,22 @@
 import { Router } from 'express';
-import { createPaymentOrder } from '../services/vitaService.js';
+import { createPaymentOrder, getPaymentMethods, executeDirectPayment } from '../services/vitaService.js';
 
 const router = Router();
 
-// --- MOCK: Requisitos de Pago Directo ---
-router.get('/direct-requirements', (req, res) => {
-  const mockRequirements = {
-    payment_methods: [
-      {
-        method_id: "4820", // ID de Khipu o el método directo
-        name: "Khipu",
-        description: "Transferencia Bancaria Simplificada",
-        country: "CL",
-        required_fields: [
-          { name: "first_name", type: "text", label: "Nombre", required: true, validation: { type: "string", max_length: 100 } },
-          { name: "last_name", type: "text", label: "Apellido", required: true, validation: { type: "string", max_length: 100 } },
-          { name: "email", type: "email", label: "Correo electrónico", required: true, validation: { type: "string", max_length: 255, pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" } }
-        ]
-      }
-    ]
-  };
-  res.json({ ok: true, data: mockRequirements });
+// GET /api/payment-orders/methods/:country
+// Obtiene los métodos reales desde Vita Wallet
+router.get('/methods/:country', async (req, res) => {
+  try {
+    const { country } = req.params;
+    const methods = await getPaymentMethods(country);
+    res.json({ ok: true, data: methods });
+  } catch (e) {
+    console.error('[paymentOrders] Error obteniendo métodos:', e.message);
+    res.status(500).json({ ok: false, error: 'Error al obtener métodos de pago' });
+  }
 });
 
-// POST /api/payment-orders (Redirección Estándar)
+// POST /api/payment-orders (Paso 1 del pago: Crear la Orden)
 router.post('/', async (req, res, next) => {
   try {
     const { amount, country, orderId } = req.body;
@@ -34,61 +27,42 @@ router.post('/', async (req, res, next) => {
     const successRedirectUrl = `${process.env.FRONTEND_URL}/payment-success?orderId=${orderId}`;
 
     const payload = {
-      amount: amount,
+      amount: Math.round(Number(amount)),
       country_iso_code: country,
-      issue: `Pago de remesa, orden #${orderId}`,
+      issue: `Pago de remesa #${orderId}`,
       success_redirect_url: successRedirectUrl,
     };
 
-    const paymentOrderResponse = await createPaymentOrder(payload);
-    res.status(201).json({ ok: true, data: paymentOrderResponse });
+    const response = await createPaymentOrder(payload);
+    // Importante: Devolvemos toda la data, necesitamos el ID de la orden de Vita (no solo el nuestro)
+    res.status(201).json({ ok: true, data: response });
   } catch (e) {
-    console.error('❌ Error creando orden (redirect):', e);
     next(e);
   }
 });
 
-// --- RUTA CORREGIDA: PAGO DIRECTO / WHITE LABEL ---
-router.post('/direct', async (req, res, next) => {
+// POST /api/payment-orders/:vitaOrderId/execute (Paso 2 del pago: Ejecutar Directo)
+router.post('/:vitaOrderId/execute', async (req, res, next) => {
   try {
-    // 1. Recibimos los datos extra: payer_details y method_id
-    const { amount, country, orderId, payer_details, method_id } = req.body;
+    const { vitaOrderId } = req.params;
+    const { payment_data } = req.body; // Datos del formulario (nombre, email, etc.)
 
-    if (!amount || !country || !orderId) {
-      return res.status(400).json({ ok: false, error: 'Faltan datos requeridos.' });
+    if (!payment_data) {
+      return res.status(400).json({ ok: false, error: 'Faltan datos de pago (payment_data).' });
     }
 
-    const successRedirectUrl = `${process.env.FRONTEND_URL}/payment-success?orderId=${orderId}&method=direct`;
-
-    // 2. Construimos el payload INCLUYENDO los datos de pago directo
-    const payload = {
-      amount: amount,
-      country_iso_code: country,
-      issue: `Pago Directo AVF #${orderId}`,
-      success_redirect_url: successRedirectUrl,
-
-      // --- AQUÍ ESTÁ LA CLAVE ---
-      // Enviamos el ID del método para que Vita sepa cuál usar directamente
-      payment_method: method_id,
-
-      // Esparcimos los datos del pagador (nombre, email) en el nivel raíz o donde Vita lo requiera.
-      // Nota: Algunas APIs piden esto dentro de un objeto 'payer'.
-      // Basado en la estructura plana de 'required_fields', probamos enviarlos en la raíz primero.
-      ...payer_details
-    };
-
-    console.log('💰 Payload Pago Directo enviado a Vita:', payload);
-
-    const paymentOrderResponse = await createPaymentOrder(payload);
-
-    res.status(201).json({ ok: true, data: paymentOrderResponse });
+    const response = await executeDirectPayment(vitaOrderId, payment_data);
+    res.json({ ok: true, data: response });
 
   } catch (e) {
     console.error('❌ Error en pago directo:', e);
-    // Mejoramos el error para ver si Vita se queja de algún campo extra
+    // Manejo específico de errores de Vita (422, etc.)
     if (e.response) {
-      console.error('Detalle error Vita:', e.response.data);
-      return res.status(e.response.status).json({ ok: false, error: 'Error de Vita Wallet', details: e.response.data });
+      return res.status(e.response.status).json({
+        ok: false,
+        error: 'Error de Vita Wallet',
+        details: e.response.data
+      });
     }
     next(e);
   }
