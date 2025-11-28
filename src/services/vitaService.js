@@ -77,16 +77,9 @@ export const createPaymentOrder = async (payload) => {
  * GET /api/businesses/payment_methods/{country}
  */
 export const getPaymentMethods = async (country) => {
-  console.log(`[vitaService] Obteniendo métodos de pago para: ${country}`);
-
-  // --- Forzamos el Content-Type application/json ---
-  // La documentación de Vita lo marca como "Required" (Yes) incluso para GET.
-  const { data } = await client.get(`/api/businesses/payment_methods/${country}`, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
-
+  console.log(`ℹ️ [vitaService] Obteniendo métodos de pago para: ${country}`);
+  // Simplemente hacemos el GET. Axios y el interceptor se encargan del resto.
+  const { data } = await client.get(`/api/businesses/payment_methods/${country}`);
   return data;
 };
 
