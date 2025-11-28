@@ -78,7 +78,15 @@ export const createPaymentOrder = async (payload) => {
  */
 export const getPaymentMethods = async (country) => {
   console.log(`ℹ️ [vitaService] Obteniendo métodos de pago para: ${country}`);
-  const { data } = await client.get(`/api/businesses/payment_methods/${country}`);
+
+  // --- Forzamos el Content-Type application/json ---
+  // La documentación de Vita lo marca como "Required" (Yes) incluso para GET.
+  const { data } = await client.get(`/api/businesses/payment_methods/${country}`, {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
   return data;
 };
 
