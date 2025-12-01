@@ -47,22 +47,18 @@ export const createPaymentOrder = async (payload) => {
 
 // --- FUNCIÓN CORREGIDA CON LOGS DETALLADOS ---
 export const getPaymentMethods = async (country) => {
+  // URL del endpoint
   const url = `/api/businesses/payment_methods/${country}`;
-  console.log(`ℹ️ [vitaService] Llamando a: ${url}`);
+  console.log(`ℹ️ [vitaService] Obteniendo métodos de pago para: ${country}`);
 
   try {
-    // --- CORRECCIÓN: Eliminamos 'data: {}' ---
-    // Ahora que tienes permisos, la petición debe ser un GET limpio.
-    // Mantenemos el header Content-Type porque la documentación lo pide explícitamente.
-    const { data } = await client.get(url, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    // CORRECCIÓN: Eliminamos los headers manuales.
+    // Dejamos que Axios y el interceptor manejen la firma como en getListPrices.
+    const { data } = await client.get(url);
+
     return data;
 
   } catch (error) {
-    // ... (tu lógica de manejo de errores detallado se mantiene igual)
     console.error(`❌ [vitaService] Error al obtener métodos para ${country}:`);
     if (error.response) {
       console.error('STATUS:', error.response.status);
