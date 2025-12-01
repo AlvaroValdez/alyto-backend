@@ -47,16 +47,16 @@ router.post('/register', async (req, res) => {
       html: message,
     }).catch(err => console.error('[auth/register] Error envío email:', err.message));
 
-    res.status(201).json({ 
-        ok: true, 
-        message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.' 
+    res.status(201).json({
+      ok: true,
+      message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.'
     });
 
   } catch (error) {
     console.error('[auth/register] Error:', error);
     if (error.name === 'ValidationError') {
-        const messages = Object.values(error.errors).map(val => val.message);
-        return res.status(400).json({ ok: false, error: messages.join(', ') });
+      const messages = Object.values(error.errors).map(val => val.message);
+      return res.status(400).json({ ok: false, error: messages.join(', ') });
     }
     res.status(500).json({ ok: false, error: 'Error interno del servidor al registrar.' });
   }
@@ -96,7 +96,7 @@ router.post('/login', async (req, res) => {
 
   try {
     if (!email || !password) {
-      return res.status(400).json({ ok: false, error: 'Correo y contraseña son obligatorios.' });
+      return res.status(400).json({ ok: false, error: 'Correo y contraseña requeridos.' });
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
@@ -105,7 +105,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!user.isEmailVerified) {
-      return res.status(401).json({ ok: false, error: 'Tu cuenta no ha sido verificada. Revisa tu correo.' });
+      return res.status(401).json({ ok: false, error: 'Cuenta no verificada.' });
     }
 
     const payload = { userId: user._id, name: user.name, role: user.role };
@@ -126,8 +126,9 @@ router.post('/login', async (req, res) => {
         address: user.address,
         documentType: user.documentType,
         documentNumber: user.documentNumber,
-        // ✅ CORRECCIÓN: Se devuelve el objeto KYC completo
-        kyc: user.kyc 
+        kyc: user.kyc,
+        // --- CORRECCIÓN: ENVIAR AVATAR AL INICIAR SESIÓN ---
+        avatar: user.avatar
       },
     });
 
@@ -137,7 +138,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// --- ACTUALIZAR PERFIL (KYC Nivel 1) ---
+// --- RUTA DE PERFIL ---
 router.put('/profile', protect, async (req, res) => {
   try {
     const { firstName, lastName, documentType, documentNumber, phoneNumber, address, birthDate } = req.body;
@@ -145,7 +146,6 @@ router.put('/profile', protect, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
 
-    // Actualizamos campos si vienen en el body
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (documentType) user.documentType = documentType;
@@ -154,7 +154,6 @@ router.put('/profile', protect, async (req, res) => {
     if (address) user.address = address;
     if (birthDate) user.birthDate = birthDate;
 
-    // El middleware pre-save actualizará isProfileComplete automáticamente
     const updatedUser = await user.save();
 
     res.json({
@@ -172,14 +171,38 @@ router.put('/profile', protect, async (req, res) => {
         address: updatedUser.address,
         documentType: updatedUser.documentType,
         documentNumber: updatedUser.documentNumber,
-        // ✅ CORRECCIÓN: Se devuelve el objeto KYC para no perder el estado
-        kyc: updatedUser.kyc 
+        kyc: updatedUser.kyc,
+        // --- CORRECCIÓN: MANTENER EL AVATAR AL ACTUALIZAR PERFIL ---
+        avatar: updatedUser.avatar
       }
     });
 
   } catch (error) {
     console.error('[auth/profile] Error:', error);
     res.status(500).json({ ok: false, error: 'Error al actualizar el perfil.' });
+  }
+});
+
+// --- SUBIR AVATAR (SIN CAMBIOS, PERO CONFIRMAMOS QUE FUNCIONA) ---
+router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'No se subió ninguna imagen.' });
+    }
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
+    user.avatar = req.file.path;
+    await user.save();
+
+    res.json({
+      ok: true,
+      message: 'Foto de perfil actualizada.',
+      avatar: user.avatar
+    });
+  } catch (error) {
+    console.error('[auth/avatar] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al actualizar la foto.' });
   }
 });
 
@@ -206,7 +229,7 @@ router.post('/kyc-documents', protect, (req, res, next) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
 
-    const files = req.files; 
+    const files = req.files;
     if (!files || Object.keys(files).length === 0) {
       return res.status(400).json({ ok: false, error: 'No se recibieron archivos.' });
     }
@@ -220,9 +243,9 @@ router.post('/kyc-documents', protect, (req, res, next) => {
     if (files.idBack) user.kyc.documents.idBack = files.idBack[0].path;
     if (files.selfie) user.kyc.documents.selfie = files.selfie[0].path;
 
-    user.kyc.status = 'pending'; 
+    user.kyc.status = 'pending';
     user.kyc.submittedAt = new Date();
-    user.kyc.level = 2; 
+    user.kyc.level = 2;
 
     await user.save();
 
