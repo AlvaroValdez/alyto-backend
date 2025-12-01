@@ -51,20 +51,19 @@ export const getPaymentMethods = async (country) => {
   console.log(`ℹ️ [vitaService] Llamando a: ${url}`);
 
   try {
-    // Intentamos forzar el header. En algunas versiones de Axios/Node, 
-    // pasar 'data: {}' ayuda a que se envíe el Content-Type en un GET.
+    // --- CORRECCIÓN: Eliminamos 'data: {}' ---
+    // Ahora que tienes permisos, la petición debe ser un GET limpio.
+    // Mantenemos el header Content-Type porque la documentación lo pide explícitamente.
     const { data } = await client.get(url, {
       headers: {
         'Content-Type': 'application/json'
-      },
-      data: {} // Truco para forzar el envío del header en GET si Axios lo elimina
+      }
     });
     return data;
 
   } catch (error) {
+    // ... (tu lógica de manejo de errores detallado se mantiene igual)
     console.error(`❌ [vitaService] Error al obtener métodos para ${country}:`);
-
-    // --- ESTO ES LO QUE NECESITAMOS VER EN LOS LOGS ---
     if (error.response) {
       console.error('STATUS:', error.response.status);
       console.error('DATA (Mensaje de Vita):', JSON.stringify(error.response.data, null, 2));
