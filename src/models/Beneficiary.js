@@ -18,6 +18,9 @@ const beneficiarySchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+
+  qrImage: { type: String }, // URL de la imagen del QR del destinatario
+
   // Objeto flexible para guardar todos los campos dinámicos
   // (ej: beneficiary_first_name, bank_code, account_bank, etc.)
   beneficiaryData: {

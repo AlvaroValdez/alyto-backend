@@ -17,6 +17,12 @@ const transactionSchema = new mongoose.Schema({
   beneficiary_email: { type: String },
   status: { type: String, enum: ['pending', 'succeeded', 'failed'], default: 'pending' },
   vitaResponse: { type: Object },
+
+  // --- NUEVOS CAMPOS PARA ANCHOR MANUAL (BOLIVIA) ---
+  proofOfPayment: { type: String }, // URL del comprobante subido por el usuario (On-Ramp)
+  recipientQrImage: { type: String }, // Snapshot del QR del destinatario usado (Off-Ramp)
+  manualRate: { type: Number }, // Tasa de cambio usada si fue manual
+
   ipnEvents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VitaEvent' }]
 }, { timestamps: true });
 
