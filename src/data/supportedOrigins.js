@@ -6,4 +6,5 @@ export const SUPPORTED_ORIGINS = [
     { code: 'MX', name: 'México', currency: 'MXN' },
     { code: 'BR', name: 'Brasil', currency: 'BRL' }, //PARA PIX EN TAKENOS ORIGEN ES DOLAR
     { code: 'PE', name: 'Perú', currency: 'PEN' },
+    { code: 'BO', name: 'Bolivia', currency: 'BOB' },
 ];

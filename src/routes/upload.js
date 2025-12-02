@@ -1,26 +1,27 @@
 import { Router } from 'express';
-import upload from '../middleware/uploadMiddleware.js'; // Reutilizamos la config de Multer/Cloudinary
-import { protect } from '../middleware/authMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js'; // Reutilizamos tu config de Cloudinary
 
 const router = Router();
 
 // POST /api/upload
 // Sube una imagen genérica y devuelve la URL
-router.post('/', protect, upload.single('image'), (req, res) => {
+// Usa el middleware 'upload.single' esperando un campo llamado 'image'
+router.post('/', upload.single('image'), (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ ok: false, error: 'No se subió ninguna imagen.' });
         }
 
-        // Cloudinary ya subió la imagen, devolvemos la URL segura
+        // Cloudinary ya procesó la subida, devolvemos los datos
         res.json({
             ok: true,
-            url: req.file.path,
-            public_id: req.file.filename
+            message: 'Imagen subida correctamente',
+            url: req.file.path,      // URL pública
+            public_id: req.file.filename // ID en Cloudinary
         });
     } catch (error) {
         console.error('[upload] Error:', error);
-        res.status(500).json({ ok: false, error: 'Error al subir la imagen.' });
+        res.status(500).json({ ok: false, error: 'Error interno al subir la imagen.' });
     }
 });
 
