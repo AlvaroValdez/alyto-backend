@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getListPrices } from '../services/vitaService.js';
 import { getPercent } from '../services/markupService.js';
 import { findPrice } from '../utils/normalize.js';
+import TransactionConfig from '../models/TransactionConfig.js'; // Importar modelo de reglas
 
 const router = Router();
 
@@ -21,26 +22,67 @@ router.get('/quote', async (req, res, next) => {
     if (!destCountry) return res.status(400).json({ ok: false, error: 'destCountry requerido' });
     if (!amountIn || amountIn <= 0) return res.status(400).json({ ok: false, error: 'amount debe ser > 0' });
 
+    // --- LÓGICA PARA MONEDA MANUAL (BOB) ---
+    if (origin === 'BOB') {
+      // 1. Buscar configuración de Bolivia
+      const config = await TransactionConfig.findOne({ originCountry: 'BO' });
+
+      // Tasa manual (Fallback: 1 BOB = 130 CLP aprox, o lo que definas)
+      // Idealmente, deberíamos añadir un campo 'manualRate' en TransactionConfig
+      // Por ahora, usaremos un valor fijo o buscaremos implementarlo pronto.
+      // Supongamos un valor de ejemplo o un campo que agregaremos luego.
+      const manualRate = 135; // EJEMPLO: 1 BOB = 135 CLP (Ajustar según mercado)
+
+      const destCurrency = countryToCurrencyMap[destCountry];
+      if (!destCurrency) return res.status(404).json({ ok: false, error: `Moneda destino no configurada.` });
+
+      // Cálculo simple manual
+      const amountOut = amountIn * manualRate;
+
+      return res.json({
+        ok: true,
+        data: {
+          origin,
+          destCountry,
+          destCurrency,
+          amountIn,
+          baseRate: manualRate,
+          markupPercent: 0, // Ya incluido en tu tasa manual
+          rateWithMarkup: manualRate,
+          amountOut,
+          minAmount: config?.minAmount || 5000,
+          fixedFee: config?.fixedFee || 0,
+          validations: [],
+          paymentMethods: []
+        }
+      });
+    }
+    // --- FIN LÓGICA MANUAL ---
+
+    // Flujo normal para monedas soportadas por Vita (CLP, etc.)
     const prices = await getListPrices();
     const price = findPrice(prices, { originCurrency: origin, destCountry });
-    if (!price) return res.status(404).json({ ok: false, error: `No se encontró tasa para ${origin} → ${destCountry}` });
+
+    if (!price) {
+      return res.status(404).json({ ok: false, error: `No se encontró tasa para ${origin} → ${destCountry}` });
+    }
 
     const baseRate = Number(price.sell_price || 0);
     if (!baseRate) return res.status(422).json({ ok: false, error: 'Tasa base inválida en Vita Prices' });
-    
+
     const markupPercent = await getPercent(origin, destCountry);
     const rateWithMarkup = baseRate * (1 - (markupPercent / 100));
     const amountOut = amountIn * rateWithMarkup;
 
     const validations = [];
     if (amountOut <= 0) {
-        validations.push(`El monto a enviar es demasiado bajo para ser procesado.`);
+      validations.push(`El monto a enviar es demasiado bajo.`);
     } else if (price.min_amount && amountOut < price.min_amount) {
-        validations.push(`El monto a recibir (${amountOut.toFixed(2)}) es menor al mínimo del proveedor (${price.min_amount}).`);
+      validations.push(`Monto menor al mínimo del proveedor (${price.min_amount}).`);
     }
 
     const destCurrency = countryToCurrencyMap[destCountry];
-    if (!destCurrency) return res.status(404).json({ ok: false, error: `La moneda para el país ${destCountry} no está configurada.` });
+    if (!destCurrency) return res.status(404).json({ ok: false, error: `Moneda no configurada.` });
 
     return res.json({
       ok: true,
@@ -50,8 +92,8 @@ router.get('/quote', async (req, res, next) => {
         fixedCost: price.fixed_cost, validations, paymentMethods: price.payment_methods,
       }
     });
-  } catch (e) { 
-    next(e); 
+  } catch (e) {
+    next(e);
   }
 });
 
