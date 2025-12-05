@@ -66,6 +66,8 @@ router.get('/enabled', async (req, res) => {
   }
 });
 
+
+//------------------------ ADMIN ------------------------
 // GET /api/transaction-rules?country=XX
 // PÚBLICO/ADMIN: Obtener reglas específicas de un país
 router.get('/', async (req, res) => {
@@ -100,7 +102,18 @@ router.get('/', async (req, res) => {
 // ADMIN: Crear o Actualizar reglas
 router.put('/', protect, isAdmin, async (req, res) => {
   try {
-    const { originCountry, kycLimits, minAmount, fixedFee, isEnabled, alertMessage } = req.body;
+    const {
+      originCountry,
+      kycLimits,
+      minAmount,
+      fixedFee,
+      isEnabled,
+      alertMessage,
+      // --- NUEVOS CAMPOS ---
+      provider,
+      localBankDetails,
+      depositQrImage
+    } = req.body;
 
     if (!originCountry) return res.status(400).json({ ok: false, error: 'País obligatorio.' });
 
@@ -111,7 +124,11 @@ router.put('/', protect, isAdmin, async (req, res) => {
         minAmount: Number(minAmount),
         fixedFee: Number(fixedFee),
         isEnabled,
-        alertMessage
+        alertMessage,
+        // --- GUARDAR NUEVOS CAMPOS ---
+        provider, // 'vita_wallet' o 'internal_manual'
+        localBankDetails, // Objeto con datos bancarios
+        depositQrImage // URL de Cloudinary
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
