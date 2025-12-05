@@ -63,7 +63,6 @@ router.put('/', protect, isAdmin, async (req, res) => {
     const body = req.body;
     if (!body.originCountry) return res.status(400).json({ ok: false, error: 'País obligatorio.' });
 
-    // --- VALIDACIÓN SEGURA DE NÚMEROS ---
     const safeNumber = (val, def = 0) => (val !== undefined && val !== null && !isNaN(val)) ? Number(val) : def;
 
     const updateData = {
@@ -75,7 +74,7 @@ router.put('/', protect, isAdmin, async (req, res) => {
       provider: body.provider,
       localBankDetails: body.localBankDetails,
       depositQrImage: body.depositQrImage,
-      manualExchangeRate: safeNumber(body.manualExchangeRate, 0) // <-- Evita NaN
+      manualExchangeRate: safeNumber(body.manualExchangeRate, 0)
     };
 
     const rule = await TransactionConfig.findOneAndUpdate(
