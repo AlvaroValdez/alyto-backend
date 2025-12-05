@@ -27,16 +27,17 @@ router.get('/quote', async (req, res, next) => {
       // 1. Buscar configuración de Bolivia
       const config = await TransactionConfig.findOne({ originCountry: 'BO' });
 
-      // Tasa manual (Fallback: 1 BOB = 130 CLP aprox, o lo que definas)
-      // Idealmente, deberíamos añadir un campo 'manualRate' en TransactionConfig
-      // Por ahora, usaremos un valor fijo o buscaremos implementarlo pronto.
-      // Supongamos un valor de ejemplo o un campo que agregaremos luego.
-      const manualRate = 135; // EJEMPLO: 1 BOB = 135 CLP (Ajustar según mercado)
+      // Usamos la tasa de la BD. Si es 0 o no existe, usamos un fallback de seguridad (ej: 1)
+      // Importante: manualExchangeRate debe ser: 1 Unidad Origen = X Unidades Destino (CLP)
+      const manualRate = config?.manualExchangeRate || 0;
+
+      if (manualRate <= 0) {
+        return res.status(400).json({ ok: false, error: `Tasa de cambio no configurada para ${origin}.` });
+      }
 
       const destCurrency = countryToCurrencyMap[destCountry];
-      if (!destCurrency) return res.status(404).json({ ok: false, error: `Moneda destino no configurada.` });
+      // ... (resto de validaciones)
 
-      // Cálculo simple manual
       const amountOut = amountIn * manualRate;
 
       return res.json({
@@ -47,7 +48,7 @@ router.get('/quote', async (req, res, next) => {
           destCurrency,
           amountIn,
           baseRate: manualRate,
-          markupPercent: 0, // Ya incluido en tu tasa manual
+          markupPercent: 0, // En manual, tu ganancia está en el spread de la tasa que defines
           rateWithMarkup: manualRate,
           amountOut,
           minAmount: config?.minAmount || 5000,
@@ -57,6 +58,7 @@ router.get('/quote', async (req, res, next) => {
         }
       });
     }
+
     // --- FIN LÓGICA MANUAL ---
 
     // Flujo normal para monedas soportadas por Vita (CLP, etc.)
