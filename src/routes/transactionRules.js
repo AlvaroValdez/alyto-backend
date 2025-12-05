@@ -103,9 +103,16 @@ router.get('/', async (req, res) => {
 router.put('/', protect, isAdmin, async (req, res) => {
   try {
     const {
-      originCountry, kycLimits, minAmount, fixedFee, isEnabled, alertMessage,
-      provider, localBankDetails, depositQrImage,
-      manualExchangeRate // <-- Recibimos el nuevo campo
+      originCountry,
+      kycLimits,
+      minAmount,
+      fixedFee,
+      isEnabled,
+      alertMessage,
+      provider,
+      localBankDetails,
+      depositQrImage,
+      manualExchangeRate // puede ser undefined si el frontend es viejo
     } = req.body;
 
     if (!originCountry) return res.status(400).json({ ok: false, error: 'País obligatorio.' });
@@ -121,7 +128,9 @@ router.put('/', protect, isAdmin, async (req, res) => {
         provider,
         localBankDetails,
         depositQrImage,
-        manualExchangeRate: Number(manualExchangeRate) // <-- Lo guardamos
+        // --- CORRECCIÓN: Fallback seguro para evitar NaN ---
+        // Si es undefined o null, usa 0. Si tiene valor, conviértelo a número.
+        manualExchangeRate: manualExchangeRate ? Number(manualExchangeRate) : 0
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
@@ -129,7 +138,7 @@ router.put('/', protect, isAdmin, async (req, res) => {
     res.json({ ok: true, message: 'Reglas actualizadas.', rule });
   } catch (error) {
     console.error('[transactionRules] Error updating:', error);
-    res.status(500).json({ ok: false, error: 'Error al guardar.' });
+    res.status(500).json({ ok: false, error: 'Error al guardar las reglas.' });
   }
 });
 
