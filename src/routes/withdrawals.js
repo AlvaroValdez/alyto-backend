@@ -6,23 +6,26 @@ import Transaction from '../models/Transaction.js';
 
 const router = Router();
 
-// --- DEFINICIÓN DE LÍMITES (en CLP) ---
+// Límites KYC (CLP)
 const KYC_LIMITS = {
   1: 450000,
   2: 4500000,
   3: 50000000
 };
 
-router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respuesta aquí mismo
-  let userId = null;
-  const user = req.user;
+router.post('/', async (req, res) => {
+  // 1. DEPURACIÓN DE USUARIO
+  console.log('[withdrawals] Usuario autenticado:', req.user ? req.user._id : 'NO IDENTIFICADO');
 
-  if (user && user._id) {
-    userId = user._id;
+  if (!req.user || !req.user._id) {
+    // Si el middleware protect falló o no pasó el usuario, detenemos aquí.
+    return res.status(401).json({ ok: false, error: 'No se pudo identificar al usuario para la transacción.' });
   }
 
+  const userId = req.user._id;
+
   try {
-    console.log('[withdrawals] req.body recibido:', JSON.stringify(req.body, null, 2));
+    console.log('[withdrawals] Body recibido:', JSON.stringify(req.body, null, 2));
 
     const {
       country, currency, amount, order, purpose, purpose_comentary,
@@ -33,29 +36,27 @@ router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respue
       proofOfPayment
     } = req.body || {};
 
-    // --- 0. VALIDACIÓN DE DATOS BÁSICOS (Anti-Crash) ---
+    // 2. VALIDACIÓN DE DATOS BÁSICOS
     if (!country || !currency || !amount) {
       return res.status(400).json({ ok: false, error: 'Faltan datos obligatorios (country, currency, amount).' });
     }
 
-    // --- 1. VALIDACIÓN DE LÍMITES KYC ---
-    const userLevel = user?.kyc?.level || 1;
+    // 3. VALIDACIÓN DE LÍMITES KYC
+    const userLevel = req.user.kyc?.level || 1;
     const currentLimit = KYC_LIMITS[userLevel] || 450000;
 
+    // Validación simple asumiendo monto en CLP o equivalente
     if (Number(amount) > currentLimit) {
       return res.status(403).json({
         ok: false,
         error: `El monto excede tu límite de Nivel ${userLevel}.`,
-        details: `Tu límite actual es de $${currentLimit.toLocaleString('es-CL')} CLP. Ve a tu perfil para aumentar tu nivel.`
+        details: `Tu límite actual es de $${currentLimit.toLocaleString('es-CL')} CLP.`
       });
     }
 
-    // --- 2. VALIDACIÓN DE REGLAS ---
-    const countryKey = country.toLowerCase(); // Ya validamos que country existe
-    console.log('[withdrawals] Ejecutando validador para país:', countryKey);
-
-    // Solo validamos reglas si NO es un flujo manual puro (ej: depósito interno)
-    // Para simplificar, validamos siempre por ahora, a menos que sea BO salida.
+    // 4. VALIDACIÓN DE REGLAS (Saltar si es Anchor Manual)
+    const countryKey = country.toLowerCase();
+    // Si es Bolivia (Manual), saltamos la validación estricta de Vita
     if (countryKey !== 'bo') {
       const validation = await validateWithdrawalPayload(countryKey, req.body);
       if (!validation.ok) {
@@ -64,32 +65,36 @@ router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respue
       }
     }
 
-    // --- 3. DETERMINAR FLUJO ---
-    const isManualOnRamp = currency === 'BOB';
-    const isManualOffRamp = country.toUpperCase() === 'BO';
+    // 5. DETERMINAR FLUJO
+    const isManualOnRamp = currency === 'BOB'; // Depósito en Bolivia
+    const isManualOffRamp = country.toUpperCase() === 'BO'; // Envío a Bolivia
     const orderId = order || `ORD-${Date.now()}`;
 
     let vitaResponse = {};
     let transactionStatus = 'pending';
 
     if (isManualOnRamp) {
-      console.log('🇧🇴 [withdrawals] On-Ramp Bolivia detectado.');
+      // --- On-Ramp (Depósito Manual) ---
+      console.log('🇧🇴 [withdrawals] On-Ramp Bolivia.');
       transactionStatus = 'pending_verification';
       vitaResponse = { manual: true, message: 'Esperando verificación', id: `MANUAL-ON-${Date.now()}` };
 
     } else if (isManualOffRamp) {
-      console.log('🇧🇴 [withdrawals] Off-Ramp Bolivia detectado.');
+      // --- Off-Ramp (Envío Manual) ---
+      console.log('🇧🇴 [withdrawals] Off-Ramp Bolivia.');
       transactionStatus = 'pending_manual_payout';
       vitaResponse = { manual: true, id: `MANUAL-OFF-${Date.now()}` };
+      // Aquí normalmente NO llamamos a Vita Withdrawal, solo creamos la orden interna
+      // El Pay-in se gestionará después en el frontend
 
     } else {
-      // Flujo Estándar Vita Wallet
+      // --- Flujo Estándar Vita Wallet ---
       const finalCustomerData = {
         fc_customer_type: 'natural',
-        fc_legal_name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.name || 'N/A',
-        fc_document_type: user?.documentType || 'DNI',
-        fc_document_number: user?.documentNumber || 'N/A',
-        fc_address: user?.address || 'N/A',
+        fc_legal_name: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.name,
+        fc_document_type: req.user.documentType || 'DNI',
+        fc_document_number: req.user.documentNumber || 'N/A',
+        fc_address: req.user.address || 'N/A',
       };
       if (fc_customer_type) finalCustomerData.fc_customer_type = fc_customer_type;
 
@@ -106,22 +111,28 @@ router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respue
         ...finalCustomerData
       };
 
-      console.log('[withdrawals] Payload enviado a Vita:', JSON.stringify(payload, null, 2));
+      console.log('[withdrawals] Enviando a Vita...');
       vitaResponse = await createWithdrawal(payload);
     }
 
-    // --- 4. GUARDAR EN BD ---
-    await Transaction.create({
+    // 6. GUARDAR EN BASE DE DATOS
+    console.log('[withdrawals] Guardando transacción para usuario:', userId);
+
+    const newTransaction = await Transaction.create({
       order: orderId,
       country, currency, amount,
-      beneficiary_type, beneficiary_first_name, beneficiary_last_name,
+      beneficiary_type: req.body.beneficiary_type,
+      beneficiary_first_name,
+      beneficiary_last_name,
       company_name: req.body.company_name,
       beneficiary_email,
       status: transactionStatus,
       vitaResponse,
-      createdBy: userId, // Campo obligatorio del modelo
+      createdBy: userId, // Campo CRÍTICO
       proofOfPayment: proofOfPayment || null
     });
+
+    console.log('[withdrawals] Transacción guardada ID:', newTransaction._id);
 
     res.status(201).json({
       ok: true,
@@ -129,10 +140,10 @@ router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respue
     });
 
   } catch (e) {
-    console.error('❌ [withdrawals] Error crítico:', e);
+    console.error('❌ [withdrawals] Error:', e);
 
+    // Manejo de errores de Vita (Axios)
     if (e.isAxiosError && e.response) {
-      console.error('Detalle error Vita:', e.response.data);
       return res.status(e.response.status).json({
         ok: false,
         error: 'Error de Vita Wallet',
@@ -140,10 +151,16 @@ router.post('/', async (req, res) => { // Quitamos 'next' para manejar la respue
       });
     }
 
-    // Devolvemos JSON siempre, incluso para errores de sistema o BD
+    // Manejo de errores de Mongoose (Validación)
+    if (e.name === 'ValidationError') {
+      const messages = Object.values(e.errors).map(val => val.message);
+      return res.status(400).json({ ok: false, error: 'Error de validación de datos', details: messages });
+    }
+
+    // Error Genérico (evita el 500 HTML)
     res.status(500).json({
       ok: false,
-      error: 'Error interno al procesar el retiro.',
+      error: 'Error interno al procesar la solicitud.',
       details: e.message
     });
   }
