@@ -1,7 +1,3 @@
-// backend/src/models/Transaction.js
-// Justificación: almacenar las transacciones iniciadas desde /api/withdrawals
-// y actualizarlas cuando llegue un IPN de Vita.
-
 import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema({
