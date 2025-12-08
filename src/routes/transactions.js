@@ -5,26 +5,38 @@ import { protect } from '../middleware/authMiddleware.js';
 const router = Router();
 
 // GET /api/transactions
-// Obtener historial del usuario actual
+// Historial con filtros y permisos de rol
 router.get('/', protect, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, status, country } = req.query;
 
-    // Filtro: El usuario solo ve sus propias transacciones
-    const query = { createdBy: req.user._id };
+    let query = {};
+
+    // 1. PERMISOS: Si NO es admin, forzamos a ver solo sus propias transacciones.
+    // Si ES admin, no agregamos esta restricción (ve todo).
+    if (req.user.role !== 'admin') {
+      query.createdBy = req.user._id;
+    }
+
+    // 2. FILTROS OPCIONALES (Status y Country)
+    if (status) query.status = status;
+    if (country) query.country = country.toUpperCase(); // Aseguramos mayúsculas (CL, BO, etc.)
 
     const transactions = await Transaction.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1 }) // Las más recientes primero
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .populate('createdBy', 'name email'); // Útil para que el admin vea quién la hizo
 
     const count = await Transaction.countDocuments(query);
 
     res.json({
       ok: true,
-      data: transactions, // El frontend espera 'data' o 'transactions' según tu implementación, ajustado a 'data' por estándar
+      transactions: transactions, // Estandarizamos a 'transactions' o 'data' según uses en FE
+      data: transactions,         // Enviamos ambos para compatibilidad
+      total: count,
       totalPages: Math.ceil(count / limit),
-      currentPage: page
+      currentPage: Number(page)
     });
   } catch (error) {
     console.error(error);
@@ -33,36 +45,30 @@ router.get('/', protect, async (req, res) => {
 });
 
 // GET /api/transactions/:id
-// Obtener detalle de una transacción específica
+// Detalle individual con seguridad
 router.get('/:id', protect, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Buscar transacción
     const tx = await Transaction.findById(id).populate('createdBy', 'name email');
 
     if (!tx) {
-      return res.status(404).json({ ok: false, error: 'Transacción no encontrada en el sistema.' });
+      return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
     }
 
-    // Seguridad: Verificar que la transacción pertenezca al usuario (o que sea Admin)
+    // Seguridad: Solo el dueño o un Admin pueden ver el detalle
     const isOwner = tx.createdBy._id.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
 
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ ok: false, error: 'No tienes permiso para ver esta transacción.' });
+      return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
     res.json({ ok: true, data: tx });
   } catch (error) {
-    console.error('Error obteniendo transacción:', error);
-
-    // Si el ID no es un ObjectId válido de Mongo
-    if (error.kind === 'ObjectId') {
-      return res.status(404).json({ ok: false, error: 'ID de transacción inválido.' });
-    }
-
-    res.status(500).json({ ok: false, error: 'Error del servidor al cargar el detalle.' });
+    console.error('Error tx detail:', error);
+    if (error.kind === 'ObjectId') return res.status(404).json({ ok: false, error: 'ID inválido.' });
+    res.status(500).json({ ok: false, error: 'Error del servidor.' });
   }
 });
 
