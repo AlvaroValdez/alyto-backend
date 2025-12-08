@@ -17,37 +17,27 @@ router.get('/pending', async (req, res) => {
     }
 });
 
-// PUT /api/admin/treasury/:id/approve-deposit (On-Ramp)
-// Admin confirma que recibió el dinero en Bolivia -> El sistema envía el dinero al destino (vía Vita)
-router.put('/:id/approve-deposit', async (req, res) => {
+// PUT /api/admin/treasury/:id/approve-deposit
+// Acción: Admin confirma que recibió el dinero (On-Ramp)
+router.put('/:id/approve-deposit', protect, isAdmin, async (req, res) => {
     try {
         const tx = await Transaction.findById(req.params.id);
-        if (!tx) return res.status(404).json({ error: 'Transacción no encontrada' });
+        if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada' });
 
-        // Aquí la lógica mágica:
-        // 1. Ya tienes el dinero en Bolivia.
-        // 2. Ahora usas tu saldo de Vita Wallet (USD/CLP) para enviar al destino real.
+        if (tx.status !== 'pending_verification') {
+            return res.status(400).json({ ok: false, error: 'La transacción no está pendiente de verificación.' });
+        }
 
-        // Construir payload para Vita (usando datos guardados)
-        // OJO: Necesitas convertir el monto BOB a la moneda de tu wallet (ej: USD) o confiar en que Vita haga el cambio si envías otra moneda.
-        // Simplificación: Asumimos que tienes saldo y lanzamos el withdrawal.
-
-        /* const payload = {
-           amount: tx.amount, // Cuidado con la conversión de moneda aquí
-           currency: 'USD', // Ejemplo: Usas tu saldo USD para pagar
-           country: tx.country,
-           ... datos del beneficiario guardados en tx ...
-        };
-        const vitaRes = await createWithdrawal(payload);
-        tx.vitaResponse = vitaRes;
-        */
-
-        tx.status = 'processing'; // O 'succeeded' si el proceso es directo
+        // ACTUALIZACIÓN DE ESTADO
+        // Pasamos a 'processing' para indicar que el dinero entró.
+        // (Aquí podrías disparar el envío automático a Vita Wallet si tuvieramos el monto de salida calculado)
+        tx.status = 'processing';
         await tx.save();
 
-        res.json({ ok: true, message: 'Depósito aprobado. Envío iniciado.' });
+        res.json({ ok: true, message: 'Depósito aprobado exitosamente.', transaction: tx });
     } catch (error) {
-        res.status(500).json({ error: 'Error al aprobar depósito.' });
+        console.error(error);
+        res.status(500).json({ ok: false, error: 'Error al aprobar depósito.' });
     }
 });
 
