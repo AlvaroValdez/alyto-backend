@@ -49,4 +49,27 @@ router.put('/:id/approve-deposit', protect, isAdmin, async (req, res) => {
     }
 });
 
+// PUT /api/admin/treasury/:id/complete-manual-payout
+// Acción: Admin confirma que YA envió el dinero al beneficiario
+router.put('/:id/complete-manual-payout', protect, isAdmin, async (req, res) => {
+    try {
+        const tx = await Transaction.findById(req.params.id);
+
+        if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada' });
+
+        // Solo permitimos completar si ya fue aprobada previamente (processing)
+        if (tx.status !== 'processing') {
+            return res.status(400).json({ ok: false, error: 'La transacción debe estar "En Proceso" para poder finalizarla.' });
+        }
+
+        tx.status = 'succeeded';
+        await tx.save();
+
+        res.json({ ok: true, message: 'Transacción marcada como COMPLETADA exitosamente.', transaction: tx });
+    } catch (error) {
+        console.error("Error completing payout:", error);
+        res.status(500).json({ ok: false, error: 'Error al finalizar la transacción.' });
+    }
+});
+
 export default router;
