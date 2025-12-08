@@ -1,85 +1,68 @@
 import { Router } from 'express';
 import Transaction from '../models/Transaction.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
-// Define la ruta GET para listar transacciones con filtros y paginación
-router.get('/', async (req, res) => {
+// GET /api/transactions
+// Obtener historial del usuario actual
+router.get('/', protect, async (req, res) => {
   try {
-    // 1. Paginación: Parsea los parámetros de la URL de forma segura
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page = 1, limit = 20 } = req.query;
 
-    // 2. Filtros Dinámicos: Construye un objeto de consulta solo con los filtros que llegan
-    const filters = {};
-    if (req.query.status) filters.status = req.query.status;
-    if (req.query.country) filters.country = req.query.country;
-    if (req.query.order) filters.order = req.query.order;
+    // Filtro: El usuario solo ve sus propias transacciones
+    const query = { createdBy: req.user._id };
 
-    // --- LÓGICA DE ROLES ---
-    const isAdmin = req.user && req.user.role === 'admin';
+    const transactions = await Transaction.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
-    // Construimos la consulta base
-    let query = Transaction.find(filters);
+    const count = await Transaction.countDocuments(query);
 
-    // Campos a seleccionar. Por defecto, los básicos.
-    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status'; 
-    if (isAdmin) {
-      projection += ' order country vitaResponse createdBy'; // Añadimos 'createdBy'
-      // --- CORRECCIÓN: Populamos los datos del usuario creador ---
-      query = query.populate('createdBy', 'name email');
-    }
-
-    // 3. Consulta a la Base de Datos: Realiza dos consultas eficientes
-    //    a) Obtiene el conteo total de documentos que coinciden con los filtros
-    const total = await Transaction.countDocuments(filters);
-    //    b) Obtiene los documentos de la página actual, ordenados y con datos relacionados
-    const transactions = await query // Ejecutamos la consulta ya construida
-      .select(projection)
-      .sort({ createdAt: -1 }) // Ordena por fecha de creación descendente
-      .skip(skip)               // Salta los documentos de páginas anteriores
-      .limit(limit)             // Limita al número de resultados por página
-      .populate('ipnEvents');   // Trae los datos de los eventos IPN asociados
-
-    // 4. Respuesta Exitosa: Devuelve un objeto completo para el frontend
     res.json({
       ok: true,
-      page,
-      total,
-      filters,
-      transactions,
+      data: transactions, // El frontend espera 'data' o 'transactions' según tu implementación, ajustado a 'data' por estándar
+      totalPages: Math.ceil(count / limit),
+      currentPage: page
     });
-  } catch (err) {
-    // 5. Manejo de Errores: Captura cualquier error de la base de datos
-    console.error('[transactions] Error listando transacciones:', err);
-    res.status(500).json({ ok: false, error: 'Error al listar transacciones' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false, error: 'Error al obtener historial' });
   }
 });
 
-// GET /api/transactions/:id - Obtener detalle de una transacción
-router.get('/:id', async (req, res) => {
-  const { id } = req.params;
-
+// GET /api/transactions/:id
+// Obtener detalle de una transacción específica
+router.get('/:id', protect, async (req, res) => {
   try {
-    // Buscamos por ID
-    // Importante: .populate('ipnEvents') trae los detalles de los webhooks recibidos
-    const transaction = await Transaction.findById(id).populate('ipnEvents');
+    const { id } = req.params;
 
-    if (!transaction) {
-      return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
+    // Buscar transacción
+    const tx = await Transaction.findById(id).populate('createdBy', 'name email');
+
+    if (!tx) {
+      return res.status(404).json({ ok: false, error: 'Transacción no encontrada en el sistema.' });
     }
 
-    // Seguridad básica: Verificar que la transacción pertenezca al usuario (si no es admin)
-    // Asumimos que req.user existe gracias al middleware 'protect'
-    if (req.user.role !== 'admin' && transaction.createdBy?.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ ok: false, error: 'No tienes permiso para ver esta transacción.' });
+    // Seguridad: Verificar que la transacción pertenezca al usuario (o que sea Admin)
+    const isOwner = tx.createdBy._id.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ ok: false, error: 'No tienes permiso para ver esta transacción.' });
     }
 
-    res.json({ ok: true, transaction });
-  } catch (err) {
-    console.error('[transactions] Error obteniendo detalle:', err);
-    res.status(500).json({ ok: false, error: 'Error al obtener el detalle de la transacción.' });
+    res.json({ ok: true, data: tx });
+  } catch (error) {
+    console.error('Error obteniendo transacción:', error);
+
+    // Si el ID no es un ObjectId válido de Mongo
+    if (error.kind === 'ObjectId') {
+      return res.status(404).json({ ok: false, error: 'ID de transacción inválido.' });
+    }
+
+    res.status(500).json({ ok: false, error: 'Error del servidor al cargar el detalle.' });
   }
 });
 

@@ -21,7 +21,6 @@ import adminKycRoutes from './routes/adminKyc.js';
 import transactionRulesRoutes from './routes/transactionRules.js';
 import uploadRoutes from './routes/upload.js';
 import adminTreasuryRoutes from './routes/adminTreasury.js';
-
 const app = express();
 
 connectMongo();
