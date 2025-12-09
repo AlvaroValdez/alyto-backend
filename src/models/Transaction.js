@@ -16,7 +16,8 @@ const transactionSchema = new mongoose.Schema({
   // --- NUEVOS CAMPOS BANCARIOS (Detalles para Transferir) ---
   beneficiary_document_type: { type: String },   // RUT, DNI, CI
   beneficiary_document_number: { type: String }, // El número de documento
-  bank_code: { type: String },                   // Nombre del Banco (o código)
+  bank_code: { type: String },                   // Codigo del Banco
+  bank_name: { type: String },                   // Nombre del Banco
   account_type_bank: { type: String },           // Ahorro / Corriente
   account_bank: { type: String },                // Número de Cuenta
 

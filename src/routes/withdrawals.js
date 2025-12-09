@@ -31,7 +31,7 @@ router.post('/', async (req, res) => {
       country, currency, amount, order, purpose, purpose_comentary,
       beneficiary_type, beneficiary_first_name, beneficiary_last_name,
       beneficiary_email, beneficiary_address, beneficiary_document_type,
-      beneficiary_document_number, account_type_bank, account_bank, bank_code,
+      beneficiary_document_number, account_type_bank, account_bank, bank_code, bank_name,
       fc_customer_type, fc_legal_name, fc_document_type, fc_document_number,
       proofOfPayment
     } = req.body || {};
@@ -133,6 +133,7 @@ router.post('/', async (req, res) => {
       beneficiary_document_type,
       beneficiary_document_number,
       bank_code,         // Banco
+      bank_name: bank_name || 'Desconocido', // <--- Guardar
       account_type_bank, // Tipo Cuenta
       account_bank,      // Número de Cuenta
 
