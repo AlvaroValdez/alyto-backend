@@ -153,24 +153,25 @@ router.post('/', async (req, res) => {
     });
 
   } catch (e) {
-    console.error('❌ [withdrawals] Error:', e);
+    console.error('❌ [withdrawals] Error:', e.message);
 
-    // Manejo de errores de Vita (Axios)
+    // --- MEJORA DE LOGS PARA DEBUG ---
     if (e.isAxiosError && e.response) {
+      // Usamos JSON.stringify para ver el objeto completo en los logs de Render
+      console.error('🔥 DETALLE ERROR VITA:', JSON.stringify(e.response.data, null, 2));
+
       return res.status(e.response.status).json({
         ok: false,
         error: 'Error de Vita Wallet',
-        details: e.response.data.error || e.response.data
+        details: e.response.data.errors || e.response.data.message || e.response.data // Intentamos capturar el mensaje exacto
       });
     }
 
-    // Manejo de errores de Mongoose (Validación)
     if (e.name === 'ValidationError') {
       const messages = Object.values(e.errors).map(val => val.message);
-      return res.status(400).json({ ok: false, error: 'Error de validación de datos', details: messages });
+      return res.status(400).json({ ok: false, error: 'Error de validación local', details: messages });
     }
 
-    // Error Genérico (evita el 500 HTML)
     res.status(500).json({
       ok: false,
       error: 'Error interno al procesar la solicitud.',
