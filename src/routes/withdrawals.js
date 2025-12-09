@@ -121,15 +121,27 @@ router.post('/', async (req, res) => {
     const newTransaction = await Transaction.create({
       order: orderId,
       country, currency, amount,
+
+      // Datos Personales
       beneficiary_type: req.body.beneficiary_type,
       beneficiary_first_name,
       beneficiary_last_name,
       company_name: req.body.company_name,
       beneficiary_email,
+
+      // --- NUEVOS DATOS BANCARIOS ---
+      beneficiary_document_type,
+      beneficiary_document_number,
+      bank_code,         // Banco
+      account_type_bank, // Tipo Cuenta
+      account_bank,      // Número de Cuenta
+
+      // Estado y Sistema
       status: transactionStatus,
       vitaResponse,
-      createdBy: userId, // Campo CRÍTICO
-      proofOfPayment: proofOfPayment || null
+      createdBy: userId,
+      proofOfPayment: proofOfPayment || null,
+      recipientQrImage: req.body.recipientQrImage || null
     });
 
     console.log('[withdrawals] Transacción guardada ID:', newTransaction._id);

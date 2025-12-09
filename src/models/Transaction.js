@@ -6,38 +6,38 @@ const transactionSchema = new mongoose.Schema({
   currency: { type: String, required: true },
   amount: { type: Number, required: true },
 
+  // Datos del Beneficiario (Básicos)
   beneficiary_type: { type: String },
   beneficiary_first_name: { type: String },
   beneficiary_last_name: { type: String },
   company_name: { type: String },
   beneficiary_email: { type: String },
 
-  // --- CORRECCIÓN: Añadir nuevos estados al enum ---
+  // --- NUEVOS CAMPOS BANCARIOS (Detalles para Transferir) ---
+  beneficiary_document_type: { type: String },   // RUT, DNI, CI
+  beneficiary_document_number: { type: String }, // El número de documento
+  bank_code: { type: String },                   // Nombre del Banco (o código)
+  account_type_bank: { type: String },           // Ahorro / Corriente
+  account_bank: { type: String },                // Número de Cuenta
+
   status: {
     type: String,
     enum: [
-      'pending',                 // Pendiente estándar
-      'pending_verification',    // Esperando confirmación de depósito (On-Ramp Manual)
-      'pending_manual_payout',   // Esperando envío manual (Off-Ramp Manual)
-      'processing',              // En proceso
-      'succeeded',               // Completado
-      'failed'                   // Fallido
+      'pending', 'pending_verification', 'pending_manual_payout',
+      'processing', 'succeeded', 'failed'
     ],
     default: 'pending'
   },
 
   vitaResponse: { type: Object },
-
-  // Referencia al usuario que creó la transacción
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
-  // Campos para operaciones manuales
-  proofOfPayment: { type: String }, // URL del comprobante
-  manualRate: { type: Number },     // Tasa manual usada
+  // Operaciones manuales
+  proofOfPayment: { type: String },
+  recipientQrImage: { type: String }, // QR del destinatario
+  manualRate: { type: Number },
 
-  ipnEvents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VitaEvent' }]
 }, { timestamps: true });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
-
 export default Transaction;
