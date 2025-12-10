@@ -2,61 +2,69 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
+// --- 1. DICCIONARIO MAESTRO (METADATA) ---
+// Sirve para reconstruir la lista de países si la API de Negocios falla y tenemos que usar la Pública.
+const CURRENCY_METADATA = {
+  'clp': { code: 'CL', name: 'Chile', flag: '🇨🇱' },
+  'cop': { code: 'CO', name: 'Colombia', flag: '🇨🇴' },
+  'pen': { code: 'PE', name: 'Perú', flag: '🇵🇪' },
+  'ars': { code: 'AR', name: 'Argentina', flag: '🇦🇷' },
+  'brl': { code: 'BR', name: 'Brasil', flag: '🇧🇷' },
+  'mxn': { code: 'MX', name: 'México', flag: '🇲🇽' },
+  'usd': { code: 'US', name: 'Estados Unidos', flag: '🇺🇸' },
+  'ves': { code: 'VE', name: 'Venezuela', flag: '🇻🇪' },
+  'bob': { code: 'BO', name: 'Bolivia', flag: '🇧🇴' },
+  'uyu': { code: 'UY', name: 'Uruguay', flag: '🇺🇾' },
+  'pyg': { code: 'PY', name: 'Paraguay', flag: '🇵🇾' },
+  'eur': { code: 'EU', name: 'Unión Europea', flag: '🇪🇺' }
+};
+
 // --- VARIABLES DE CACHÉ ---
 let cachedPrices = null;
 let cacheTimestamp = null;
 const CACHE_DURATION_MS = 15 * 1000;
 let pricesPromise = null;
 
-// --- 1. CONFIGURACIÓN DE URL ---
-// Para evitar duplicidades tipo /api/api, limpiamos la URL base.
-// Nos quedamos solo con el dominio (ej: https://api.vitawallet.io)
+// --- 2. CONFIGURACIÓN DE URL ---
+// Normalizamos la URL base para evitar dobles slashes (//)
 const getBaseUrl = () => {
-  // Si la variable de entorno tiene /api al final, se lo quitamos para manejar rutas completas manualmente
-  if (vita.apiUrl.endsWith('/api')) {
-    return vita.apiUrl.slice(0, -4);
-  }
-  if (vita.apiUrl.endsWith('/api/')) {
-    return vita.apiUrl.slice(0, -5);
-  }
-  return vita.apiUrl;
+  // Quitamos slash final si existe
+  let base = vita.apiUrl.endsWith('/') ? vita.apiUrl.slice(0, -1) : vita.apiUrl;
+  // Si la variable de entorno ya incluye /api, la usamos tal cual, 
+  // pero nos aseguramos de no duplicar al concatenar.
+  return base;
 };
 
-const API_DOMAIN = getBaseUrl(); // ej: https://api.vitawallet.io
-
-// --- 2. CORE DE SEGURIDAD (BLINDADO) ---
+// --- 3. CORE DE SEGURIDAD (BLINDADO) ---
 const getAuthHeaders = (method, urlPath, bodyString = '') => {
   if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
 
   const date = Math.floor(Date.now() / 1000);
-
-  // CRÍTICO: Firmamos la ruta EXACTA que se envía (ej: /api/businesses/prices)
+  // Firma HMAC-SHA256 usando el bodyString exacto (vacío para GET)
   const signature = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
 
-  const headers = {
+  return {
+    'Content-Type': 'application/json',
     'x-login': vita.apiLogin,
     'x-trans-key': signature,
     'x-date': date,
   };
-
-  // En GET no enviamos Content-Type para evitar errores 401 en algunos firewalls
-  if (method === 'POST' || (method !== 'GET' && bodyString)) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  return headers;
 };
 
-// --- 3. CLIENTE HTTP ---
+// --- 4. CLIENTE HTTP ---
 const sendRequest = async (method, endpoint, data = null) => {
-  // endpoint debe venir completo, ej: '/api/businesses/prices'
-  const url = `${API_DOMAIN}${endpoint}`;
+  // Lógica para evitar /api/api
+  let baseUrl = getBaseUrl(); // ej: https://api.vitawallet.io/api
 
-  // Body vacío exacto para GET
+  // Si el endpoint empieza con /api y la base termina en /api, ajustamos
+  let finalEndpoint = endpoint;
+  if (baseUrl.endsWith('/api') && endpoint.startsWith('/api/')) {
+    finalEndpoint = endpoint.replace('/api/', '/');
+  }
+
+  const url = `${baseUrl}${finalEndpoint}`;
   const bodyString = data ? JSON.stringify(data) : '';
-
-  // Firmamos el endpoint COMPLETO (incluyendo /api)
-  const headers = getAuthHeaders(method, endpoint, bodyString);
+  const headers = getAuthHeaders(method, finalEndpoint, bodyString);
 
   try {
     const config = { headers };
@@ -68,43 +76,78 @@ const sendRequest = async (method, endpoint, data = null) => {
       response = await axios.post(url, bodyString, config);
     }
 
-    // Axios devuelve { data: ... }, Vita Business suele devolver el contenido directo o en .data
     return response.data;
 
   } catch (error) {
-    // Log detallado para depuración
-    console.error(`❌ [VitaService] Error ${error.response?.status || 'Unknown'} en ${endpoint}`);
-    if (error.response?.data) {
-      console.error('>> Detalle Vita:', JSON.stringify(error.response.data, null, 2));
+    // Solo logueamos error si NO es un intento de precios (para no ensuciar el log del fallback)
+    if (!endpoint.includes('prices')) {
+      console.error(`❌ [VitaService] Error en ${endpoint}:`, error.response?.status || error.message);
     }
     throw error;
   }
 };
 
 // ==========================================
-// ENDPOINTS (USANDO RUTAS COMPLETAS /api/...)
+// ENDPOINTS
 // ==========================================
 
-// 1. OBTENER LISTA DE PRECIOS
+// 1. OBTENER LISTA DE PRECIOS (CON FALLBACK AUTOMÁTICO)
 export const getListPrices = async () => {
   if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
     return cachedPrices;
   }
-
   if (pricesPromise) return pricesPromise;
 
-  // Usamos la ruta completa tal como funcionaba en tu código antiguo
-  pricesPromise = sendRequest('GET', '/api/businesses/prices')
-    .then((responseBody) => {
-      const prices = responseBody.data || responseBody;
-      cachedPrices = prices;
+  pricesPromise = (async () => {
+    try {
+      // INTENTO A: API de Negocios (La más completa)
+      // Usamos la ruta completa /api/...
+      const response = await sendRequest('GET', '/api/businesses/prices');
+      // Si tiene éxito, usamos la data
+      return response.data || response;
+
+    } catch (error) {
+      console.warn(`⚠️ [VitaService] Falló API Negocios (${error.response?.status}). Usando API Pública de respaldo.`);
+
+      // INTENTO B: API Pública (Respaldo robusto)
+      // Esta devuelve tasas { usd: ..., clp: ... }, así que las transformamos a Países manualmente.
+      const publicRates = await sendRequest('GET', '/api/prices');
+
+      // Transformación: Tasas -> Lista de Países
+      const countriesList = Object.keys(publicRates)
+        .filter(key => CURRENCY_METADATA[key.toLowerCase()]) // Solo monedas conocidas
+        .map(key => {
+          const meta = CURRENCY_METADATA[key.toLowerCase()];
+          return {
+            code: meta.code,
+            name: meta.name,
+            currency: key.toUpperCase(),
+            flag: meta.flag,
+            rate: publicRates[key]
+          };
+        });
+
+      // INYECCIÓN MANUAL: Bolivia (BO)
+      // Como Bolivia es tu canal manual, lo agregamos siempre si no vino.
+      if (!countriesList.find(c => c.code === 'BO')) {
+        countriesList.unshift({
+          code: 'BO', name: 'Bolivia', currency: 'BOB', flag: '🇧🇴', manual: true, rate: 1
+        });
+      }
+
+      return countriesList;
+    }
+  })()
+    .then(data => {
+      cachedPrices = data;
       cacheTimestamp = Date.now();
       pricesPromise = null;
       return cachedPrices;
     })
-    .catch(error => {
+    .catch(err => {
       pricesPromise = null;
-      throw error;
+      // Fallback final: Si todo falla, devolvemos la lista estática básica
+      return Object.values(CURRENCY_METADATA).map(m => ({ ...m, currency: Object.keys(CURRENCY_METADATA).find(k => CURRENCY_METADATA[k] === m).toUpperCase(), rate: 1 }));
     });
 
   return pricesPromise;
@@ -142,6 +185,5 @@ export const createDirectPaymentOrder = executeDirectPayment;
 
 // 7. COTIZACIÓN
 export const getQuote = async (data) => {
-  // La calculadora suele estar en la ruta base
   return await sendRequest('POST', '/api/exchange/calculation', data);
 };
