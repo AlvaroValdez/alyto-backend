@@ -9,35 +9,43 @@ const CACHE_DURATION_MS = 15 * 1000;
 let pricesPromise = null;
 
 // --- 1. NORMALIZACIÓN DE LA URL BASE ---
-// Recuperamos la raíz del dominio para evitar problemas de dobles "/api" o falta de ellos.
 const getApiDomain = () => {
   let url = vita.apiUrl;
-  // Quitamos slash final si existe
   if (url.endsWith('/')) url = url.slice(0, -1);
-  // Si la variable de entorno termina en /api, lo quitamos para trabajar desde la raíz limpia
   if (url.endsWith('/api')) url = url.slice(0, -4);
-
-  return url; // Ej: https://api.vitawallet.io
+  return url;
 };
 
 const API_DOMAIN = getApiDomain();
 
-// --- 2. CORE DE SEGURIDAD (BLINDADO) ---
+// --- 2. CORE DE SEGURIDAD (CORREGIDO) ---
 const getAuthHeaders = (method, bodyString = '') => {
-  if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
+  // Asegúrate de tener vita.apiKey (la pública) y vita.apiSecret (si usas firma para POST)
+  // Si en tu env solo tienes una llave, úsala aquí.
+  const apiKey = vita.apiKey || vita.apiSecret;
+
+  if (!apiKey) throw new Error("CONFIG ERROR: Falta VITA_API_KEY / VITA_SECRET_KEY.");
 
   const date = Math.floor(Date.now() / 1000);
 
-  // LA CLAVE DEL ÉXITO: 
-  // Para POST: Firmamos el JSON stringificado.
-  // Para GET: Firmamos un string vacío "".
-  const signature = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
+  // CORRECCIÓN CRÍTICA PARA ERROR 401:
+  // La mayoría de endpoints GET de Vita Wallet (prices, rules) esperan la API KEY directa.
+  // Solo algunos endpoints POST de alta seguridad requieren firma HMAC.
+
+  let transKey = apiKey;
+
+  // OPCIONAL: Si tu integración requiere firma SOLO en POST, descomenta esto:
+  /*
+  if (method === 'POST' && vita.apiSecret) {
+     transKey = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
+  }
+  */
 
   const headers = {
     'x-login': vita.apiLogin,
-    'x-trans-key': signature,
+    'x-trans-key': transKey, // Enviamos la llave real, no el hash
     'x-date': date,
-    'Content-Type': 'application/json' // Vita suele requerirlo siempre, incluso en GET
+    'Content-Type': 'application/json'
   };
 
   return headers;
@@ -45,13 +53,12 @@ const getAuthHeaders = (method, bodyString = '') => {
 
 // --- 3. CLIENTE HTTP ---
 const sendRequest = async (method, endpoint, data = null) => {
-  // endpoint debe ser la ruta completa: /api/businesses/prices
   const url = `${API_DOMAIN}${endpoint}`;
 
-  // Body vacío exacto para GET
+  // Body vacío para GET
   const bodyString = data ? JSON.stringify(data) : '';
 
-  // Generamos headers firmando el bodyString
+  // Generamos headers
   const headers = getAuthHeaders(method, bodyString);
 
   try {
@@ -61,27 +68,27 @@ const sendRequest = async (method, endpoint, data = null) => {
     if (method === 'GET') {
       response = await axios.get(url, config);
     } else if (method === 'POST') {
-      response = await axios.post(url, bodyString, config);
+      response = await axios.post(url, bodyString, config); // Enviamos bodyString para asegurar consistencia
     }
 
     return response.data;
 
   } catch (error) {
-    // Log específico para detectar si es error de URL o de Permisos
-    console.error(`❌ [VitaService] Error ${error.response?.status} en ${url}`);
+    // Mejoramos el log para ver qué falló realmente
+    console.error(`❌ [VitaService] Error ${error.response?.status} en ${method} ${url}`);
     if (error.response?.data) {
-      console.error('>> Respuesta Vita:', JSON.stringify(error.response.data));
+      // Hacemos log del error detallado que devuelve Vita
+      console.error('>> Detalle Error Vita:', JSON.stringify(error.response.data, null, 2));
     }
     throw error;
   }
 };
 
 // ==========================================
-// ENDPOINTS DE NEGOCIO (RUTAS COMPLETAS RESTAURADAS)
+// ENDPOINTS DE NEGOCIO
 // ==========================================
 
 // 1. OBTENER LISTA DE PRECIOS
-// Usamos '/api/businesses/prices' que es la ruta que funcionaba en tu código original
 export const getListPrices = async () => {
   if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
     return cachedPrices;
@@ -90,12 +97,10 @@ export const getListPrices = async () => {
 
   pricesPromise = sendRequest('GET', '/api/businesses/prices')
     .then((responseBody) => {
-      // Normalización: Vita Business a veces devuelve { data: [...] } y a veces [...]
       const prices = responseBody.data || responseBody;
 
-      // LOG DE DIAGNÓSTICO
       if (Array.isArray(prices)) {
-        console.log(`✅ [VitaService] Precios cargados: ${prices.length} países encontrados.`);
+        console.log(`✅ [VitaService] Precios cargados: ${prices.length} países.`);
       } else {
         console.warn("⚠️ [VitaService] Formato inesperado en precios:", prices);
       }
@@ -113,29 +118,31 @@ export const getListPrices = async () => {
   return pricesPromise;
 };
 
-// 2. REGLAS DE RETIRO
+// 2. REGLAS DE RETIRO (Referencia cruzada solicitada)
+// Si prices falla, este también debería fallar con la lógica anterior.
+// Con la corrección de enviar la KEY real, ambos deberían funcionar.
 export const getWithdrawalRules = async () => {
   const res = await sendRequest('GET', '/api/businesses/withdrawal_rules');
   return res.data || res;
 };
 
-// 3. MÉTODOS DE PAGO (Pay-ins)
+// 3. MÉTODOS DE PAGO
 export const getPaymentMethods = async (country) => {
   const res = await sendRequest('GET', `/api/businesses/payment_methods/${country}`);
   return res.data || res;
 };
 
-// 4. CREAR RETIRO (Payouts - SALIDAS)
+// 4. CREAR RETIRO (Payouts)
 export const createWithdrawal = async (payload) => {
   return await sendRequest('POST', '/api/businesses/transactions', payload);
 };
 
-// 5. CREAR ORDEN DE PAGO (Redirect - ENTRADAS)
+// 5. CREAR ORDEN DE PAGO (Pay-ins)
 export const createPaymentOrder = async (payload) => {
   return await sendRequest('POST', '/api/businesses/payment_orders', payload);
 };
 
-// 6. EJECUTAR PAGO DIRECTO (Marca Blanca)
+// 6. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async (data) => {
   const { uid, ...paymentDetails } = data;
   const payload = { payment_data: paymentDetails };
@@ -143,8 +150,7 @@ export const executeDirectPayment = async (data) => {
 };
 export const createDirectPaymentOrder = executeDirectPayment;
 
-// 7. COTIZACIÓN (Calculadora)
+// 7. COTIZACIÓN
 export const getQuote = async (data) => {
-  // Ruta estándar de calculadora
   return await sendRequest('POST', '/api/exchange/calculation', data);
 };
