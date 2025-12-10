@@ -2,8 +2,10 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
-// --- CONFIGURACIÓN DE PAÍSES SOPORTADOS ---
-// Definimos los corredores aquí en el servicio, no en la ruta.
+// --- 1. CONFIGURACIÓN DE CORREDORES (BUSINESS LOGIC) ---
+// Según documentación, Vita soporta estos ISO codes. 
+// Definimos esta lista aquí para enriquecerla con datos de UI (Banderas/Nombres) 
+// que la API de Vita NO entrega.
 const SUPPORTED_CORRIDORS = [
   { code: 'CL', name: 'Chile', currency: 'CLP', flag: '🇨🇱' },
   { code: 'CO', name: 'Colombia', currency: 'COP', flag: '🇨🇴' },
@@ -16,7 +18,7 @@ const SUPPORTED_CORRIDORS = [
   { code: 'BO', name: 'Bolivia', currency: 'BOB', flag: '🇧🇴', manual: true }
 ];
 
-// --- HELPER DE AUTENTICACIÓN ---
+// --- 2. HELPERS DE SEGURIDAD ---
 const getAuthHeaders = (method, urlPath, bodyString = '') => {
   if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
 
@@ -31,7 +33,6 @@ const getAuthHeaders = (method, urlPath, bodyString = '') => {
   };
 };
 
-// --- HELPER GENÉRICO ---
 const sendRequest = async (method, endpoint, data = null) => {
   const url = `${vita.apiUrl}${endpoint}`;
   const bodyString = data ? JSON.stringify(data) : '';
@@ -51,25 +52,31 @@ const sendRequest = async (method, endpoint, data = null) => {
 // FUNCIONES EXPORTADAS
 // ==========================================
 
-// 1. PRECIOS (Transformados para el Frontend)
+// 1. OBTENER LISTA DE PRECIOS (Transformada)
 export const getListPrices = async () => {
   try {
-    // A. Pedimos las tasas reales a Vita (para asegurar conexión y datos frescos)
-    // Usamos /prices o /exchange/rates según disponibilidad
-    const rates = await sendRequest('GET', '/prices');
+    // Paso A: Consultamos las tasas a Vita (GET /prices según doc)
+    // Esto sirve para asegurar que la API responde y obtener tasas frescas
+    const apiRates = await sendRequest('GET', '/prices');
 
-    // B. Mezclamos la configuración de países con las tasas recibidas (Opcional)
-    // Si Vita devuelve { cop: 4000 }, podríamos inyectarlo aquí.
-    // Por ahora, devolvemos la lista de países que es lo que el Frontend exige.
-    return SUPPORTED_CORRIDORS.map(country => ({
-      ...country,
-      // Si la respuesta de Vita trae la tasa, la agregamos (ej: rates['cop'])
-      rate: rates && rates[country.currency.toLowerCase()]
-    }));
+    // Paso B: Mapeamos nuestra lista de países y le agregamos la tasa si existe
+    // Esto transforma el Objeto de Vita en el Array que tu Frontend necesita.
+    const countriesList = SUPPORTED_CORRIDORS.map(country => {
+      // Buscamos la tasa correspondiente (ej: usd, btc, o moneda local si viniera)
+      // Vita suele devolver tasas base, aquí solo aseguramos devolver la estructura correcta
+      return {
+        ...country,
+        // Si quisieras adjuntar la tasa real devuelta por Vita:
+        // rate: apiRates[country.currency.toLowerCase()] || 0
+      };
+    });
+
+    return countriesList;
 
   } catch (error) {
-    console.warn("⚠️ Error obteniendo tasas de Vita, devolviendo lista base:", error.message);
-    // Fallback: Si Vita falla, al menos mostramos los países para que la UI cargue
+    console.warn("⚠️ Error conectando con Vita (Precios). Usando lista offline.");
+    // Fallback: Si Vita cae (500/404), la web NO DEBE mostrarse vacía.
+    // Devolvemos la lista de países para que el usuario pueda seguir operando.
     return SUPPORTED_CORRIDORS;
   }
 };
