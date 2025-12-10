@@ -53,44 +53,59 @@ const sendRequest = async (method, endpoint, data = null) => {
   }
 };
 
-// --- FUNCIONES EXPORTADAS ---
+// ==========================================
+// FUNCIONES EXPORTADAS (Compatibilidad Total)
+// ==========================================
 
-// 1. Obtener Lista de Precios
+// 1. PRECIOS
+// Usado por routes/prices.js (busca getListPrices)
 export const getListPrices = async () => {
   return await sendRequest('GET', '/prices');
 };
+// Alias por si algo busca getPrices
+export const getPrices = getListPrices;
 
-// 2. Obtener Reglas de Retiro (ESTA ES LA QUE FALTABA)
+
+// 2. REGLAS DE RETIRO
+// Usado por withdrawalValidator.js (busca getWithdrawalRules)
 export const getWithdrawalRules = async (country) => {
-  // Si se pasa un país, lo agregamos como query param, si no, traemos todas
   const endpoint = country ? `/withdrawals/rules/${country}` : '/withdrawals/rules';
-  // Nota: Ajusta el endpoint '/withdrawals/rules' si la doc de Vita dice otra cosa (ej: /banks/rules)
-  // Usualmente es GET /withdrawals/rules/{iso_code} o ?country={iso_code}
-  // Probaremos la ruta estándar:
   return await sendRequest('GET', endpoint);
 };
 
-// 3. Obtener Cotización
+
+// 3. COTIZACIÓN
+// Usado por calculadora
 export const getQuote = async (data) => {
   return await sendRequest('POST', '/exchange/calculation', data);
 };
 
-// 4. Crear Retiro (Withdrawal)
+
+// 4. RETIROS (Payouts)
+// Usado por routes/withdrawals.js
 export const createWithdrawal = async (data) => {
   return await sendRequest('POST', '/withdrawals', data);
 };
 
-// 5. Obtener Métodos de Pago
+
+// 5. MÉTODOS DE PAGO (Pay-ins)
+// Usado por routes/paymentOrders.js
 export const getPaymentMethods = async (country = 'CL') => {
   return await sendRequest('GET', `/payment_methods?country=${country}`);
 };
 
-// 6. Crear Orden de Pago (Redirect)
+
+// 6. ÓRDENES DE PAGO (Redirect)
+// Usado por routes/paymentOrders.js
 export const createPaymentOrder = async (data) => {
   return await sendRequest('POST', '/orders', data);
 };
 
-// 7. Crear Orden de Pago Directa
-export const createDirectPaymentOrder = async (data) => {
+
+// 7. PAGO DIRECTO (Marca Blanca)
+// ESTA ES LA QUE FALLABA: routes/paymentOrders.js busca 'executeDirectPayment'
+export const executeDirectPayment = async (data) => {
   return await sendRequest('POST', '/orders/direct', data);
 };
+// Alias moderno
+export const createDirectPaymentOrder = executeDirectPayment;
