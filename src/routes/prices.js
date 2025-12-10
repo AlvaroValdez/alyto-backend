@@ -1,14 +1,16 @@
-import { Router } from 'express';
-import { getListPrices } from '../services/vitaService.js';
+// src/routes/prices.js
+import express from 'express';
+import { getListPrices } from '../services/vitaService.js'; // Asegúrate de importar tu servicio nuevo
 
-const router = Router();
+const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+// GET /api/prices
+router.get('/', async (req, res) => {
   try {
-    const data = await getListPrices();
-    res.json({ ok: true, data });
-  } catch (e) {
-    next(e);
+    const prices = await getListPrices();
+    res.json(prices); // Devuelve el array limpio directamente
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
