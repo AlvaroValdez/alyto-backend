@@ -2,6 +2,20 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
+// --- CONFIGURACIÓN DE PAÍSES SOPORTADOS ---
+// Definimos los corredores aquí en el servicio, no en la ruta.
+const SUPPORTED_CORRIDORS = [
+  { code: 'CL', name: 'Chile', currency: 'CLP', flag: '🇨🇱' },
+  { code: 'CO', name: 'Colombia', currency: 'COP', flag: '🇨🇴' },
+  { code: 'PE', name: 'Perú', currency: 'PEN', flag: '🇵🇪' },
+  { code: 'AR', name: 'Argentina', currency: 'ARS', flag: '🇦🇷' },
+  { code: 'BR', name: 'Brasil', currency: 'BRL', flag: '🇧🇷' },
+  { code: 'MX', name: 'México', currency: 'MXN', flag: '🇲🇽' },
+  { code: 'US', name: 'Estados Unidos', currency: 'USD', flag: '🇺🇸' },
+  { code: 'VE', name: 'Venezuela', currency: 'VES', flag: '🇻🇪' },
+  { code: 'BO', name: 'Bolivia', currency: 'BOB', flag: '🇧🇴', manual: true }
+];
+
 // --- HELPER DE AUTENTICACIÓN ---
 const getAuthHeaders = (method, urlPath, bodyString = '') => {
   if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
@@ -20,7 +34,7 @@ const getAuthHeaders = (method, urlPath, bodyString = '') => {
 // --- HELPER GENÉRICO ---
 const sendRequest = async (method, endpoint, data = null) => {
   const url = `${vita.apiUrl}${endpoint}`;
-  const bodyString = data ? JSON.stringify(data) : ''; // Firma exacta
+  const bodyString = data ? JSON.stringify(data) : '';
   const headers = getAuthHeaders(method, endpoint, bodyString);
 
   try {
@@ -34,15 +48,33 @@ const sendRequest = async (method, endpoint, data = null) => {
 };
 
 // ==========================================
-// FUNCIONES EXPORTADAS (Compatibilidad Total)
+// FUNCIONES EXPORTADAS
 // ==========================================
 
-// 1. PRECIOS (Usado por tu prices.js original)
+// 1. PRECIOS (Transformados para el Frontend)
 export const getListPrices = async () => {
-  return await sendRequest('GET', '/prices');
+  try {
+    // A. Pedimos las tasas reales a Vita (para asegurar conexión y datos frescos)
+    // Usamos /prices o /exchange/rates según disponibilidad
+    const rates = await sendRequest('GET', '/prices');
+
+    // B. Mezclamos la configuración de países con las tasas recibidas (Opcional)
+    // Si Vita devuelve { cop: 4000 }, podríamos inyectarlo aquí.
+    // Por ahora, devolvemos la lista de países que es lo que el Frontend exige.
+    return SUPPORTED_CORRIDORS.map(country => ({
+      ...country,
+      // Si la respuesta de Vita trae la tasa, la agregamos (ej: rates['cop'])
+      rate: rates && rates[country.currency.toLowerCase()]
+    }));
+
+  } catch (error) {
+    console.warn("⚠️ Error obteniendo tasas de Vita, devolviendo lista base:", error.message);
+    // Fallback: Si Vita falla, al menos mostramos los países para que la UI cargue
+    return SUPPORTED_CORRIDORS;
+  }
 };
 
-// 2. REGLAS DE RETIRO (Usado por withdrawalValidator.js)
+// 2. REGLAS DE RETIRO
 export const getWithdrawalRules = async (country) => {
   const endpoint = country ? `/withdrawals/rules/${country}` : '/withdrawals/rules';
   return await sendRequest('GET', endpoint);
@@ -69,9 +101,7 @@ export const createPaymentOrder = async (data) => {
 };
 
 // 7. PAGO DIRECTO (Marca Blanca)
-// Esta función faltaba y causaba el crash en paymentOrders.js
 export const executeDirectPayment = async (data) => {
   return await sendRequest('POST', '/orders/direct', data);
 };
-// Alias para compatibilidad futura
 export const createDirectPaymentOrder = executeDirectPayment;
