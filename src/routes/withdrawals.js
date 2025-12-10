@@ -89,29 +89,34 @@ router.post('/', async (req, res) => {
 
     } else {
       // --- Flujo Estándar Vita Wallet ---
-      const finalCustomerData = {
-        fc_customer_type: 'natural',
-        fc_legal_name: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.name,
-        fc_document_type: req.user.documentType || 'DNI',
-        fc_document_number: req.user.documentNumber || 'N/A',
-        fc_address: req.user.address || 'N/A',
-      };
-      if (fc_customer_type) finalCustomerData.fc_customer_type = fc_customer_type;
-
       const payload = {
         url_notify: process.env.VITA_NOTIFY_URL,
-        country, currency, amount,
+        country,
+        currency,
+        amount,
         order: orderId,
-        transactions_type: 'withdrawal',
+
+        // --- CORRECCIÓN VITA: CAMPO AGREGADO ---
+        transactions_type: 'withdrawal', // O 'bank', según la documentación exacta, pero 'withdrawal' es el estándar para retiros
+        // ---------------------------------------
+
         wallet: vita.walletUUID,
-        beneficiary_type, beneficiary_first_name, beneficiary_last_name,
-        beneficiary_email, beneficiary_address, beneficiary_document_type,
-        beneficiary_document_number, account_type_bank, account_bank, bank_code,
-        purpose, purpose_comentary,
+        beneficiary_type,
+        beneficiary_first_name,
+        beneficiary_last_name,
+        beneficiary_email,
+        beneficiary_address,
+        beneficiary_document_type,
+        beneficiary_document_number,
+        account_type_bank,
+        account_bank,
+        bank_code,
+        purpose,
+        purpose_comentary,
         ...finalCustomerData
       };
 
-      console.log('[withdrawals] Enviando a Vita...');
+      console.log('[withdrawals] Payload enviado a Vita:', JSON.stringify(payload, null, 2));
       vitaResponse = await createWithdrawal(payload);
     }
 

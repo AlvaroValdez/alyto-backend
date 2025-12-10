@@ -1,11 +1,55 @@
 import { client } from './vitaClient.js';
 import Markup from '../models/Markup.js'; // Importación necesaria si usas getOrInit aquí
+import axios from 'axios';
+import crypto from 'crypto';
+import { vita } from '../config/env.js'
 
 // ... (Variables de caché y getListPrices - Sin cambios) ...
 let cachedPrices = null;
 let cacheTimestamp = null;
 const CACHE_DURATION_MS = 15 * 1000;
 let pricesPromise = null;
+
+// Helper para generar headers de autenticación
+const getAuthHeaders = (method, urlPath, bodyString = '') => {
+  // Timestamp Unix actual (segundos)
+  const date = Math.floor(Date.now() / 1000);
+
+  // Generar Firma HMAC-SHA256
+  // La data a firmar es usualmente el bodyString tal cual
+  const signature = crypto
+    .createHmac('sha256', vita.apiSecret)
+    .update(bodyString)
+    .digest('hex');
+
+  return {
+    'Content-Type': 'application/json',
+    'x-login': vita.apiLogin,
+    'x-trans-key': signature,
+    'x-date': date,
+    // 'x-api-key': vita.apiKey // Descomentar si tu versión de Vita lo requiere explícitamente
+  };
+};
+
+export const createWithdrawal = async (data) => {
+  const url = `${vita.apiUrl}/withdrawals`;
+
+  // 1. CONVERTIR A STRING UNA SOLA VEZ (CRÍTICO PARA LA FIRMA)
+  // Esto asegura que lo que firmamos es idéntico a lo que enviamos
+  const bodyString = JSON.stringify(data);
+
+  // 2. Generar headers usando ese string exacto
+  const headers = getAuthHeaders('POST', '/withdrawals', bodyString);
+
+  try {
+    // 3. Enviar el string directamente a Axios, no el objeto
+    const response = await axios.post(url, bodyString, { headers });
+    return response.data;
+  } catch (error) {
+    console.error('[VitaService] Error:', error.response?.data || error.message);
+    throw error;
+  }
+};
 
 export const getListPrices = async () => {
   if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
@@ -32,11 +76,6 @@ export const getListPrices = async () => {
 
 export const getWithdrawalRules = async () => {
   const { data } = await client.get('/api/businesses/withdrawal_rules');
-  return data;
-};
-
-export const createWithdrawal = async (payload) => {
-  const { data } = await client.post('/api/businesses/transactions', payload);
   return data;
 };
 
