@@ -2,19 +2,12 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
-// --- HELPER DE AUTENTICACIÓN (BLINDADO) ---
+// --- HELPER DE AUTENTICACIÓN ---
 const getAuthHeaders = (method, urlPath, bodyString = '') => {
-  if (!vita.apiSecret) {
-    throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY en variables de entorno.");
-  }
+  if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
 
   const date = Math.floor(Date.now() / 1000);
-
-  // Firma HMAC-SHA256 usando el bodyString exacto
-  const signature = crypto
-    .createHmac('sha256', vita.apiSecret)
-    .update(bodyString)
-    .digest('hex');
+  const signature = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
 
   return {
     'Content-Type': 'application/json',
@@ -24,29 +17,16 @@ const getAuthHeaders = (method, urlPath, bodyString = '') => {
   };
 };
 
-// --- HELPER GENÉRICO DE PETICIÓN ---
+// --- HELPER GENÉRICO ---
 const sendRequest = async (method, endpoint, data = null) => {
   const url = `${vita.apiUrl}${endpoint}`;
-
-  // Convertir body a string (si existe) UNA SOLA VEZ para firma y envío
-  const bodyString = data ? JSON.stringify(data) : '';
-
+  const bodyString = data ? JSON.stringify(data) : ''; // Firma exacta
   const headers = getAuthHeaders(method, endpoint, bodyString);
 
   try {
     const config = { headers };
-
-    let response;
-    if (method === 'GET') {
-      response = await axios.get(url, config);
-    } else if (method === 'POST') {
-      // Importante: Enviamos el bodyString, no el objeto data
-      response = await axios.post(url, bodyString, config);
-    } else {
-      response = await axios({ method, url, data: bodyString, headers });
-    }
-
-    return response.data;
+    if (method === 'GET') return (await axios.get(url, config)).data;
+    if (method === 'POST') return (await axios.post(url, bodyString, config)).data;
   } catch (error) {
     console.error(`[VitaService] Error en ${endpoint}:`, error.response?.data || error.message);
     throw error;
@@ -57,55 +37,41 @@ const sendRequest = async (method, endpoint, data = null) => {
 // FUNCIONES EXPORTADAS (Compatibilidad Total)
 // ==========================================
 
-// 1. PRECIOS
-// Usado por routes/prices.js (busca getListPrices)
+// 1. PRECIOS (Usado por tu prices.js original)
 export const getListPrices = async () => {
   return await sendRequest('GET', '/prices');
 };
-// Alias por si algo busca getPrices
-export const getPrices = getListPrices;
 
-
-// 2. REGLAS DE RETIRO
-// Usado por withdrawalValidator.js (busca getWithdrawalRules)
+// 2. REGLAS DE RETIRO (Usado por withdrawalValidator.js)
 export const getWithdrawalRules = async (country) => {
   const endpoint = country ? `/withdrawals/rules/${country}` : '/withdrawals/rules';
   return await sendRequest('GET', endpoint);
 };
 
-
 // 3. COTIZACIÓN
-// Usado por calculadora
 export const getQuote = async (data) => {
   return await sendRequest('POST', '/exchange/calculation', data);
 };
 
-
 // 4. RETIROS (Payouts)
-// Usado por routes/withdrawals.js
 export const createWithdrawal = async (data) => {
   return await sendRequest('POST', '/withdrawals', data);
 };
 
-
 // 5. MÉTODOS DE PAGO (Pay-ins)
-// Usado por routes/paymentOrders.js
 export const getPaymentMethods = async (country = 'CL') => {
   return await sendRequest('GET', `/payment_methods?country=${country}`);
 };
 
-
 // 6. ÓRDENES DE PAGO (Redirect)
-// Usado por routes/paymentOrders.js
 export const createPaymentOrder = async (data) => {
   return await sendRequest('POST', '/orders', data);
 };
 
-
 // 7. PAGO DIRECTO (Marca Blanca)
-// ESTA ES LA QUE FALLABA: routes/paymentOrders.js busca 'executeDirectPayment'
+// Esta función faltaba y causaba el crash en paymentOrders.js
 export const executeDirectPayment = async (data) => {
   return await sendRequest('POST', '/orders/direct', data);
 };
-// Alias moderno
+// Alias para compatibilidad futura
 export const createDirectPaymentOrder = executeDirectPayment;
