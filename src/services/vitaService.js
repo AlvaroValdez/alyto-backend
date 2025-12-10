@@ -53,35 +53,44 @@ const sendRequest = async (method, endpoint, data = null) => {
   }
 };
 
-// --- FUNCIONES EXPORTADAS (NOMBRES COMPATIBLES) ---
+// --- FUNCIONES EXPORTADAS ---
 
-// 1. Obtener Lista de Precios (Corregido: getListPrices)
+// 1. Obtener Lista de Precios
 export const getListPrices = async () => {
-  // Usamos el endpoint de precios (ajusta si Vita usa /rates o /prices)
   return await sendRequest('GET', '/prices');
 };
 
-// 2. Obtener Cotización
+// 2. Obtener Reglas de Retiro (ESTA ES LA QUE FALTABA)
+export const getWithdrawalRules = async (country) => {
+  // Si se pasa un país, lo agregamos como query param, si no, traemos todas
+  const endpoint = country ? `/withdrawals/rules/${country}` : '/withdrawals/rules';
+  // Nota: Ajusta el endpoint '/withdrawals/rules' si la doc de Vita dice otra cosa (ej: /banks/rules)
+  // Usualmente es GET /withdrawals/rules/{iso_code} o ?country={iso_code}
+  // Probaremos la ruta estándar:
+  return await sendRequest('GET', endpoint);
+};
+
+// 3. Obtener Cotización
 export const getQuote = async (data) => {
   return await sendRequest('POST', '/exchange/calculation', data);
 };
 
-// 3. Crear Retiro (Withdrawal)
+// 4. Crear Retiro (Withdrawal)
 export const createWithdrawal = async (data) => {
   return await sendRequest('POST', '/withdrawals', data);
 };
 
-// 4. Obtener Métodos de Pago
+// 5. Obtener Métodos de Pago
 export const getPaymentMethods = async (country = 'CL') => {
   return await sendRequest('GET', `/payment_methods?country=${country}`);
 };
 
-// 5. Crear Orden de Pago (Redirect)
+// 6. Crear Orden de Pago (Redirect)
 export const createPaymentOrder = async (data) => {
   return await sendRequest('POST', '/orders', data);
 };
 
-// 6. Crear Orden de Pago Directa
+// 7. Crear Orden de Pago Directa
 export const createDirectPaymentOrder = async (data) => {
   return await sendRequest('POST', '/orders/direct', data);
 };
