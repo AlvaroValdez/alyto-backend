@@ -2,47 +2,43 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
-// --- VARIABLES DE CACHÉ (Originales) ---
+// --- VARIABLES DE CACHÉ ---
 let cachedPrices = null;
 let cacheTimestamp = null;
 const CACHE_DURATION_MS = 15 * 1000;
 let pricesPromise = null;
 
-// --- 1. NORMALIZACIÓN DE URL BASE ---
-// Queremos llegar a la raíz: "https://api.vitawallet.io"
-// para poder concatenar rutas completas como "/api/businesses/prices"
+// --- 1. NORMALIZACIÓN DE LA URL BASE ---
+// Recuperamos la raíz del dominio para evitar problemas de dobles "/api" o falta de ellos.
 const getApiDomain = () => {
   let url = vita.apiUrl;
-  // Si termina en slash, lo quitamos
+  // Quitamos slash final si existe
   if (url.endsWith('/')) url = url.slice(0, -1);
-  // Si termina en /api, lo quitamos para trabajar desde la raíz
+  // Si la variable de entorno termina en /api, lo quitamos para trabajar desde la raíz limpia
   if (url.endsWith('/api')) url = url.slice(0, -4);
-  return url;
+
+  return url; // Ej: https://api.vitawallet.io
 };
 
 const API_DOMAIN = getApiDomain();
 
 // --- 2. CORE DE SEGURIDAD (BLINDADO) ---
-const getAuthHeaders = (method, urlPath, bodyString = '') => {
+const getAuthHeaders = (method, bodyString = '') => {
   if (!vita.apiSecret) throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY.");
 
   const date = Math.floor(Date.now() / 1000);
 
-  // CRÍTICO: Vita valida que firmemos la ruta completa (ej: /api/businesses/prices)
+  // LA CLAVE DEL ÉXITO: 
+  // Para POST: Firmamos el JSON stringificado.
+  // Para GET: Firmamos un string vacío "".
   const signature = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
 
   const headers = {
-    'Content-Type': 'application/json',
     'x-login': vita.apiLogin,
     'x-trans-key': signature,
     'x-date': date,
+    'Content-Type': 'application/json' // Vita suele requerirlo siempre, incluso en GET
   };
-
-  // Corrección para GET: Eliminar Content-Type si no hay cuerpo, 
-  // esto evita conflictos con algunos firewalls de Vita en peticiones de lectura.
-  if (method === 'GET') {
-    delete headers['Content-Type'];
-  }
 
   return headers;
 };
@@ -55,8 +51,8 @@ const sendRequest = async (method, endpoint, data = null) => {
   // Body vacío exacto para GET
   const bodyString = data ? JSON.stringify(data) : '';
 
-  // Firmamos el endpoint EXACTO que estamos pidiendo
-  const headers = getAuthHeaders(method, endpoint, bodyString);
+  // Generamos headers firmando el bodyString
+  const headers = getAuthHeaders(method, bodyString);
 
   try {
     const config = { headers };
@@ -68,46 +64,40 @@ const sendRequest = async (method, endpoint, data = null) => {
       response = await axios.post(url, bodyString, config);
     }
 
-    // Axios devuelve { data: ... }. Vita a veces anida data dentro de data.
     return response.data;
 
   } catch (error) {
-    console.error(`❌ [VitaService] Error en ${endpoint}: ${error.message}`);
-    if (error.response) {
-      console.error('>> Status:', error.response.status);
-      console.error('>> Response:', JSON.stringify(error.response.data));
+    // Log específico para detectar si es error de URL o de Permisos
+    console.error(`❌ [VitaService] Error ${error.response?.status} en ${url}`);
+    if (error.response?.data) {
+      console.error('>> Respuesta Vita:', JSON.stringify(error.response.data));
     }
     throw error;
   }
 };
 
 // ==========================================
-// ENDPOINTS DE NEGOCIO (RUTAS ORIGINALES)
+// ENDPOINTS DE NEGOCIO (RUTAS COMPLETAS RESTAURADAS)
 // ==========================================
 
 // 1. OBTENER LISTA DE PRECIOS
+// Usamos '/api/businesses/prices' que es la ruta que funcionaba en tu código original
 export const getListPrices = async () => {
   if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
     return cachedPrices;
   }
   if (pricesPromise) return pricesPromise;
 
-  // RUTAS COMPLETAS: Tal como en tu código original
   pricesPromise = sendRequest('GET', '/api/businesses/prices')
     .then((responseBody) => {
-      // Normalización: A veces viene directo el array, a veces en .data
-      const prices = Array.isArray(responseBody) ? responseBody : (responseBody.data || []);
+      // Normalización: Vita Business a veces devuelve { data: [...] } y a veces [...]
+      const prices = responseBody.data || responseBody;
 
-      // INYECCIÓN MANUAL BOLIVIA (Solo si no viene en la lista)
-      // Esto asegura tu canal manual sin romper la lista oficial
-      if (Array.isArray(prices) && !prices.find(p => p.code === 'BO')) {
-        prices.push({
-          code: 'BO',
-          name: 'Bolivia',
-          currency: 'BOB',
-          flag: '🇧🇴', // O la URL de la bandera si Vita usa URLs
-          manual: true
-        });
+      // LOG DE DIAGNÓSTICO
+      if (Array.isArray(prices)) {
+        console.log(`✅ [VitaService] Precios cargados: ${prices.length} países encontrados.`);
+      } else {
+        console.warn("⚠️ [VitaService] Formato inesperado en precios:", prices);
       }
 
       cachedPrices = prices;
@@ -137,7 +127,6 @@ export const getPaymentMethods = async (country) => {
 
 // 4. CREAR RETIRO (Payouts - SALIDAS)
 export const createWithdrawal = async (payload) => {
-  // Este endpoint es el que requería la firma especial (POST)
   return await sendRequest('POST', '/api/businesses/transactions', payload);
 };
 
@@ -156,6 +145,6 @@ export const createDirectPaymentOrder = executeDirectPayment;
 
 // 7. COTIZACIÓN (Calculadora)
 export const getQuote = async (data) => {
-  // Endpoint de cálculo (suele estar fuera de /businesses)
+  // Ruta estándar de calculadora
   return await sendRequest('POST', '/api/exchange/calculation', data);
 };
