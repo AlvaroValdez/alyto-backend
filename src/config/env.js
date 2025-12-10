@@ -1,30 +1,20 @@
-import 'dotenv/config'; 
+import dotenv from 'dotenv';
+dotenv.config();
 
-// Exportamos cada constante directamente
-export const port = process.env.PORT || 5000;
+export const PORT = process.env.PORT || 5000;
+export const MONGODB_URI = process.env.MONGODB_URI;
+export const JWT_SECRET = process.env.JWT_SECRET;
 
-export const isProd = process.env.NODE_ENV === 'production';
-
+// Configuración Vita Wallet
 export const vita = {
-  baseURL: process.env.VITA_BASE_URL,
-  login: process.env.VITA_LOGIN,
-  transKey: process.env.VITA_TRANS_KEY,
-  secret: process.env.VITA_SECRET,
-  walletUUID: process.env.VITA_BUSINESS_WALLET_UUID,
+  apiUrl: process.env.VITA_API_URL || 'https://api.vitawallet.io/api',
+  // Asegúrate de que estos nombres sean EXACTAMENTE iguales en Render:
+  apiLogin: process.env.VITA_LOGIN,
+  apiSecret: process.env.VITA_SECRET_KEY, // OJO AQUÍ: ¿En Render se llama VITA_SECRET o VITA_SECRET_KEY?
+  walletUUID: process.env.VITA_WALLET_ID,
 };
 
-export const mongoURI = process.env.MONGO_URI;
-export const jwtSecret = process.env.JWT_SECRET;
-// --- ASEGÚRATE DE QUE ESTA LÍNEA EXISTA Y SEA CORRECTA ---
-export const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1d'; // Exporta jwtExpiresIn
-
-// Verificaciones
-if (!jwtSecret) {
-  console.error('❌ ERROR: La variable de entorno JWT_SECRET no está definida.');
-  process.exit(1);
+// Validación rápida al iniciar
+if (!vita.apiLogin || !vita.apiSecret) {
+  console.error("⚠️  ADVERTENCIA: Faltan credenciales de Vita Wallet (Login o Secret) en las variables de entorno.");
 }
-if (!mongoURI) { // Añade verificación para mongoURI también
-    console.error('❌ ERROR: La variable de entorno MONGO_URI no está definida.');
-    process.exit(1);
-}
-

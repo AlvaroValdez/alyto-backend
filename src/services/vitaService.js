@@ -12,11 +12,15 @@ let pricesPromise = null;
 
 // Helper para generar headers de autenticación
 const getAuthHeaders = (method, urlPath, bodyString = '') => {
+  // 1. CHEQUEO DE SEGURIDAD
+  if (!vita.apiSecret) {
+    throw new Error("CONFIG ERROR: Falta VITA_SECRET_KEY en las variables de entorno. No se puede firmar la petición.");
+  }
+
   // Timestamp Unix actual (segundos)
   const date = Math.floor(Date.now() / 1000);
 
   // Generar Firma HMAC-SHA256
-  // La data a firmar es usualmente el bodyString tal cual
   const signature = crypto
     .createHmac('sha256', vita.apiSecret)
     .update(bodyString)
@@ -27,7 +31,6 @@ const getAuthHeaders = (method, urlPath, bodyString = '') => {
     'x-login': vita.apiLogin,
     'x-trans-key': signature,
     'x-date': date,
-    // 'x-api-key': vita.apiKey // Descomentar si tu versión de Vita lo requiere explícitamente
   };
 };
 
