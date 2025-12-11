@@ -1,20 +1,25 @@
 import express from 'express';
 import { getListPrices } from '../services/vitaService.js';
+import { extractCountries } from '../utils/normalize.js';
 
 const router = express.Router();
 
 // GET /api/prices
 router.get('/', async (req, res) => {
   try {
+    const origin = String(req.query.origin || 'CLP').toUpperCase();
+
     // 1. Obtenemos los precios (reales o mockeados del servicio)
     const prices = await getListPrices();
 
-    // 2. 🔥 CORRECCIÓN CRÍTICA:
-    // Envolvemos el array en un objeto { ok: true, data: ... }
-    // Esto es lo que el Frontend busca para renderizar la lista.
+    // 2. Normalizamos a lista de países (CO, AR, US...) usando la util
+    // Esto asegura que el Frontend reciba códigos ISO-2 validos para su mapa de nombres.
+    const normalizedCountries = extractCountries(prices, origin);
+
+    // 3. Respuesta estándar
     return res.status(200).json({
       ok: true,
-      data: prices
+      data: normalizedCountries
     });
 
   } catch (err) {
