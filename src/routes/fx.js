@@ -1,79 +1,71 @@
-import { Router } from 'express';
+import express from 'express';
 import { getListPrices } from '../services/vitaService.js';
-import { getPercent } from '../services/markupService.js';
-import { findPrice } from '../utils/normalize.js';
-import TransactionConfig from '../models/TransactionConfig.js';
 
-const router = Router();
+const router = express.Router();
 
-const countryToCurrencyMap = {
-  CO: 'COP', PE: 'PEN', AR: 'ARS', BR: 'BRL', MX: 'MXN', US: 'USD',
-  EC: 'USD', VE: 'VES', CL: 'CLP', UY: 'UYU', PY: 'PYG', BO: 'BOB',
-  CN: 'CNY', HT: 'HTG', CR: 'CRC', GB: 'GBP', EU: 'EUR', DO: 'DOP',
-  PA: 'USD', GT: 'GTQ', PL: 'PLN', AU: 'AUD', SV: 'USD', ES: 'EUR',
+// Mapa auxiliar para convertir Moneda -> País (Si Vita devuelve COP y el Front espera CO)
+// Esto soluciona el problema de que el dropdown salga vacío si hay desajuste de códigos.
+const CURRENCY_TO_COUNTRY = {
+  'COP': 'co', 'ARS': 'ar', 'PEN': 'pe', 'MXN': 'mx', 'BRL': 'br',
+  'CLP': 'cl', 'USD': 'us', 'EUR': 'eu', 'VEF': 've', 'VES': 've'
 };
 
-router.get('/quote', async (req, res, next) => {
+// GET /api/fx/quote
+router.get('/quote', async (req, res) => {
   try {
-    const origin = (req.query.origin || 'CLP').toUpperCase();
-    const destCountry = (req.query.destCountry || '').toUpperCase();
-    const amountIn = Number(req.query.amount || 0);
+    const origin = String(req.query.origin || 'CLP').toUpperCase();
+    const destInput = String(req.query.destCountry || '').toUpperCase(); // Puede venir como 'CO' o 'COP'
+    const amount = Number(req.query.amount || 0);
 
-    if (!destCountry) return res.status(400).json({ ok: false, error: 'destCountry requerido' });
-    if (!amountIn || amountIn <= 0) return res.status(400).json({ ok: false, error: 'amount debe ser > 0' });
+    if (!destInput) {
+      return res.status(400).json({ ok: false, error: 'destCountry es requerido' });
+    }
 
-    // --- LÓGICA MANUAL PARA BOB ---
-    if (origin === 'BOB') {
-      const config = await TransactionConfig.findOne({ originCountry: 'BO' });
-      const manualRate = config?.manualExchangeRate || 0;
+    // 1. Obtener precios frescos
+    const prices = await getListPrices();
 
-      if (manualRate <= 0) {
-        return res.status(400).json({ ok: false, error: `Tasa no configurada para ${origin}.` });
-      }
+    // 2. Buscar la tasa correcta
+    // El Front puede mandar "CO" (País) pero Vita Business devuelve "COP" (Moneda).
+    // Buscamos coincidencia en ambos sentidos.
+    const priceData = prices.find(p =>
+      p.code === destInput || // Match directo (COP === COP)
+      CURRENCY_TO_COUNTRY[p.code]?.toUpperCase() === destInput // Match por país (COP -> CO === CO)
+    );
 
-      const destCurrency = countryToCurrencyMap[destCountry];
-      if (!destCurrency) return res.status(404).json({ ok: false, error: `Moneda destino no soportada.` });
-
-      const amountOut = amountIn * manualRate;
-
-      return res.json({
-        ok: true,
-        data: {
-          origin, destCountry, destCurrency, amountIn,
-          baseRate: manualRate, markupPercent: 0, rateWithMarkup: manualRate,
-          amountOut,
-          minAmount: config?.minAmount || 5000,
-          fixedFee: config?.fixedFee || 0,
-          validations: [], paymentMethods: []
-        }
+    if (!priceData || !priceData.rate) {
+      console.warn(`⚠️ Tasa no encontrada para: ${origin} -> ${destInput}`);
+      return res.status(422).json({
+        ok: false,
+        error: `No se encontró tasa de cambio para ${destInput}. Disponibles: ${prices.map(p => p.code).join(', ')}`,
       });
     }
 
-    // --- LÓGICA ESTÁNDAR VITA WALLET ---
-    const prices = await getListPrices();
-    const price = findPrice(prices, { originCurrency: origin, destCountry });
+    const baseRate = priceData.rate;
 
-    if (!price) return res.status(404).json({ ok: false, error: `No se encontró tasa para ${origin} → ${destCountry}` });
-
-    const baseRate = Number(price.sell_price || 0);
-    if (!baseRate) return res.status(422).json({ ok: false, error: 'Tasa base inválida' });
-
-    const markupPercent = await getPercent(origin, destCountry);
-    const rateWithMarkup = baseRate * (1 - (markupPercent / 100));
-    const amountOut = amountIn * rateWithMarkup;
-    const destCurrency = countryToCurrencyMap[destCountry];
+    // 3. (Opcional) Markup - Por ahora 0% para probar funcionalidad
+    const markupPercent = 0.0;
+    const rateWithMarkup = baseRate * (1 + markupPercent);
+    const amountOut = Number((amount * rateWithMarkup).toFixed(2));
 
     return res.json({
       ok: true,
-      data: {
-        origin, destCountry, destCurrency, amountIn, baseRate,
-        markupPercent, rateWithMarkup, amountOut, minAmount: price.min_amount,
-        fixedCost: price.fixed_cost, validations: [], paymentMethods: price.payment_methods,
-      }
+      quote: {
+        origin,
+        destCountry: destInput, // Devolvemos lo que pidió el front
+        currency: priceData.code, // Confirmamos la moneda usada
+        amountIn: amount,
+        baseRate,
+        markupPercent,
+        rateWithMarkup,
+        amountOut,
+      },
     });
 
-  } catch (e) {
-    next(e);
+  } catch (err) {
+    console.error("❌ Error en /quote:", err);
+    const status = err?.response?.status || 500;
+    const message = err?.response?.data?.message || err.message || 'Error generando cotización';
+    return res.status(status).json({ ok: false, error: message });
   }
 });
 

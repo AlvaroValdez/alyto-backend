@@ -191,6 +191,11 @@ const normalizePrices = (responseData) => {
     });
   }
 
+  // [DEBUG] Imprimir qué encontramos para ver si son criptos o fiat
+  if (normalized.length > 0) {
+    console.log("🔍 [DATA INSPECTOR] Precios encontrados:", JSON.stringify(normalized, null, 2));
+  }
+
   return normalized;
 };
 
