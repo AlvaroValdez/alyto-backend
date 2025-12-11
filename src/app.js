@@ -17,6 +17,7 @@ import transactionsRoutes from './routes/transactions.js';
 import paymentOrdersRoutes from './routes/paymentOrders.js';
 import beneficiariesRoutes from './routes/beneficiaries.js';
 import uploadRoutes from './routes/upload.js';
+import metaRoutes from './routes/meta.js';
 
 // --- RUTAS ADMIN ---
 import adminMarkupRoutes from './routes/adminMarkup.js';
@@ -72,6 +73,7 @@ app.use('/api/prices', pricesRoutes); // <--- ESTA ES LA CLAVE. Está libre.
 app.use('/api/fx', fxRoutes);         // Cotizador
 app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
 app.use('/api/transaction-rules', transactionRulesRoutes);
+app.use('/api/meta', metaRoutes);
 
 // ==========================================
 // 🔒 RUTAS PROTEGIDAS (USUARIOS LOGUEADOS)

@@ -1,42 +1,61 @@
-// backend/src/utils/normalize.js
-// Fuente Vita: GET /api/businesses/prices
-// Justificación: Vita entrega precios anidados por moneda → withdrawal → attributes.
+// src/utils/normalize.js
 
 /**
- * Busca y normaliza la información de precios para un par de divisas específico
- * dentro de la compleja estructura de datos devuelta por la API de Vita Wallet.
- * @param {object} prices - El objeto de precios completo de la API.
- * @param {object} options - Contiene la moneda de origen y el país de destino.
- * @param {string} options.originCurrency - ej: 'CLP'
- * @param {string} options.destCountry - ej: 'CO'
- * @returns {object|null} Un objeto normalizado con la tasa y costos, o null si no se encuentra.
+ * Normaliza la respuesta para obtener un mapa de tasas de venta.
+ * Soporta tanto la respuesta cruda de Vita como el Array ya procesado por el servicio.
  */
-export const findPrice = (prices, { originCurrency, destCountry }) => {
-  if (!prices) return null;
+export function getSellMapFor(vitaPrices, originCurrency) {
+  if (!vitaPrices) return {};
 
-  const originKey = originCurrency.toLowerCase();
-  const destKey = destCountry.toLowerCase();
+  // CASO A: vitaPrices ya es un Array (viene del vitaService nuevo/mock)
+  if (Array.isArray(vitaPrices)) {
+    const map = {};
+    vitaPrices.forEach(p => {
+      if (p.code && p.rate) {
+        map[p.code.toLowerCase()] = p.rate;
+      }
+    });
+    return map;
+  }
 
-  const originSection = prices[originKey];
-  if (!originSection || !originSection.withdrawal) return null;
+  // CASO B: vitaPrices es Objeto Complejo (Legacy / Estructura antigua)
+  if (typeof vitaPrices === 'object') {
+    const originKey = String(originCurrency || '').toUpperCase();
+    const originNode = vitaPrices[originKey];
 
-  const attrs = originSection.withdrawal.prices?.attributes || {};
-  
-  // Busca la clave de tasas que termina en "_sell" (ej: "clp_sell")
-  const rateKey = Object.keys(attrs).find(k => k.toLowerCase().endsWith('_sell'));
-  if (!rateKey) return null;
+    // Intenta navegar la estructura profunda
+    const sellMap =
+      originNode?.withdrawal?.prices?.attributes?.sell ||
+      originNode?.withdrawal?.prices?.sell ||
+      originNode?.withdrawal?.sell ||
+      null;
 
-  const rateMap = attrs[rateKey];
-  if (!rateMap || typeof rateMap !== 'object') return null;
+    if (sellMap && typeof sellMap === 'object') {
+      const out = {};
+      for (const [k, v] of Object.entries(sellMap)) {
+        if (v !== null && v !== undefined) {
+          out[String(k).toLowerCase()] = Number(v);
+        }
+      }
+      return out;
+    }
+  }
 
-  const sellPrice = rateMap[destKey]; // Usa claves en minúsculas
-  if (!sellPrice) return null;
+  return {};
+}
 
-  return {
-    sell_price: sellPrice,
-    min_amount: attrs.min_amount?.[destKey],
-    fixed_cost: attrs.fixed_cost?.[destKey],
-    dest_currency: attrs.clp_sell?.[destKey] ? destKey.toUpperCase() : 'USD', // Asume moneda local o USD
-    payment_methods: originSection.withdrawal.payment_methods || []
-  };
-};
+/**
+ * Genera la lista limpia { code: "CO", rate: 123 } para el Frontend
+ */
+export function extractCountries(vitaPrices, originCurrency) {
+  const sellMap = getSellMapFor(vitaPrices, originCurrency);
+
+  const entries = Object.entries(sellMap)
+    .filter(([, rate]) => Number.isFinite(rate))
+    .map(([code, rate]) => ({ code: code.toUpperCase(), rate }));
+
+  // Ordenar alfabéticamente
+  entries.sort((a, b) => a.code.localeCompare(b.code));
+
+  return entries;
+}
