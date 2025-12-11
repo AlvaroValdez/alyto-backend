@@ -9,10 +9,33 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const data = await getWithdrawalRules();
-    res.json({ ok: true, data });
-  } catch (e) { 
-    next(e); 
+    const rawData = await getWithdrawalRules();
+
+    // DATA CLEANUP:
+    // 1. Detectar si 'rules' viene anidado o si rawData es el objeto de reglas
+    // (La API de Vita a veces devuelve { rules: ... } y a veces directo el mapa)
+    let rulesMap = rawData.rules || rawData;
+
+    // 2. Normalizar llaves a minúsculas (CO -> co) para que coincida con el frontend
+    const cleanRules = {};
+    if (rulesMap && typeof rulesMap === 'object') {
+      Object.entries(rulesMap).forEach(([key, val]) => {
+        cleanRules[key.toLowerCase()] = val;
+      });
+    }
+
+    // 3. Devolver estructura esperada por Frontend: { data: { rules: ... } }
+    res.json({
+      ok: true,
+      data: {
+        rules: cleanRules
+      }
+    });
+
+  } catch (e) {
+    console.error("Error fetching withdrawal rules:", e);
+    // Fallback vacío para no romper el front
+    res.json({ ok: true, data: { rules: {} } });
   }
 });
 
