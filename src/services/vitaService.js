@@ -120,13 +120,17 @@ export const getListPrices = async () => {
   return pricesPromise;
 };
 
-// ... Resto de funciones (normalizePrices, getWithdrawalRules, etc) IGUAL QUE ANTES ...
-// Solo asegúrate de copiar la función normalizePrices del chat anterior si no la tienes.
-
-// Función auxiliar necesaria (copiada de tu versión anterior para que no falte)
+// --- 3. NORMALIZADOR UNIVERSAL (Soporta API Business y Consumer) ---
 const normalizePrices = (responseData) => {
   const rawData = responseData.data || responseData;
   const normalized = [];
+
+  // 🕵️ DEBUG: Ver qué diablos está llegando realmente
+  // (Descomenta si sigue fallando para ver el JSON crudo en la consola de Render)
+  console.log("🔍 [VitaService] Raw Data Type:", typeof rawData);
+  // console.log("🔍 [VitaService] Raw Sample:", JSON.stringify(rawData).slice(0, 200)); 
+
+  // CASO A: API BUSINESS (Array simple) -> [{ code: 'COP', rate: 3800 }, ...]
   if (Array.isArray(rawData)) {
     rawData.forEach(item => {
       const code = item.code || item.currency || item.iso_code;
@@ -137,7 +141,57 @@ const normalizePrices = (responseData) => {
     });
     return normalized;
   }
-  return [];
+
+  // CASO B: API CONSUMER / Legacy (Objeto anidado complejo)
+  // Estructura esperada: { "CLP": { "withdrawal": { "prices": { ... } } } }
+  if (typeof rawData === 'object' && rawData !== null) {
+
+    // Intentamos buscar una moneda base común, generalmente CLP para tu caso en Chile
+    // O iteramos las llaves para encontrar alguna que tenga estructura de 'withdrawal'
+    const originsToCheck = ['CLP', 'USD', 'clp', 'usd', ...Object.keys(rawData)];
+
+    let foundMap = null;
+
+    for (const origin of originsToCheck) {
+      const node = rawData[origin];
+      if (!node) continue;
+
+      // Navegación profunda segura (Logica rescatada de tu código antiguo)
+      const sellMap =
+        node?.withdrawal?.prices?.attributes?.sell ||
+        node?.withdrawal?.prices?.sell ||
+        node?.withdrawal?.sell ||
+        node?.prices?.sell; // Variaciones posibles
+
+      if (sellMap && typeof sellMap === 'object') {
+        console.log(`💡 [VitaService] Estructura Consumer detectada en origen: ${origin}`);
+        foundMap = sellMap;
+        break; // Encontramos datos, dejamos de buscar
+      }
+    }
+
+    if (foundMap) {
+      Object.entries(foundMap).forEach(([key, value]) => {
+        if (value && !isNaN(value)) {
+          normalized.push({
+            code: String(key).toUpperCase(),
+            rate: Number(value)
+          });
+        }
+      });
+      return normalized;
+    }
+
+    // CASO C: Mapa Simple de Tasas { "COP": 3500, "ARS": 200 }
+    // Si no encontramos estructura compleja, asumimos mapa plano
+    Object.entries(rawData).forEach(([key, value]) => {
+      if (typeof value === 'number') {
+        normalized.push({ code: String(key).toUpperCase(), rate: value });
+      }
+    });
+  }
+
+  return normalized;
 };
 
 export const getWithdrawalRules = async () => sendRequest('GET', '/api/businesses/withdrawal_rules');
