@@ -1,38 +1,42 @@
-/**
- * src/utils/normalize.js
- * Mapea Monedas (Business API) a Países (Frontend Legacy)
- */
+// src/utils/normalize.js
 
-// Mapa manual para convertir lo que da Vita (Moneda) a lo que quiere el Front (País)
+// ... (Mantenemos el objeto CURRENCY_TO_COUNTRY igual) ...
 const CURRENCY_TO_COUNTRY = {
-  'COP': 'CO', // Colombia
-  'ARS': 'AR', // Argentina
-  'PEN': 'PE', // Perú
-  'BRL': 'BR', // Brasil
-  'MXN': 'MX', // México
-  'CLP': 'CL', // Chile
-  'VES': 'VE', // Venezuela
-  'USD': 'US', // USA
-  'EUR': 'EU', // Europa
-  'BOL': 'BO', // Bolivia
-  'BOB': 'BO'  // Bolivia
+  'COP': 'CO', 'ARS': 'AR', 'PEN': 'PE', 'BRL': 'BR',
+  'MXN': 'MX', 'CLP': 'CL', 'VES': 'VE', 'USD': 'US',
+  'EUR': 'EU', 'BOL': 'BO', 'BOB': 'BO',
+  // Agregamos mapeos para los casos de Stage si son necesarios
+  'USD_BUY': 'US',
+  'USD_SELL': 'US'
 };
 
 export function getSellMapFor(vitaPrices, originCurrency) {
   if (!vitaPrices) return {};
 
+  const processItem = (code, rate, map) => {
+    if (!code || !rate) return;
+
+    const rawCode = String(code).toUpperCase();
+    // Intentamos traducir (ej: COP -> CO, USD_BUY -> US)
+    // Si no está en el mapa, usamos el código original recortado a 2 letras si parece un ISO válido
+    let finalCode = CURRENCY_TO_COUNTRY[rawCode];
+
+    // Si no tiene traducción directa, y el código es de 2 letras, lo dejamos pasar.
+    if (!finalCode && rawCode.length === 2) {
+      finalCode = rawCode;
+    }
+
+    // FILTRO DE SEGURIDAD: Solo guardamos si el resultado final son EXACTAMENTE 2 letras
+    if (finalCode && finalCode.length === 2) {
+      map[finalCode.toLowerCase()] = Number(rate);
+    }
+  };
+
   // CASO A: Array (API Business / Mock)
   if (Array.isArray(vitaPrices)) {
     const map = {};
     vitaPrices.forEach(p => {
-      // Normalizamos el código a mayúsculas
-      const rawCode = (p.code || '').toUpperCase();
-      // Traducimos 3 letras (COP) a 2 letras (CO)
-      const countryCode = CURRENCY_TO_COUNTRY[rawCode] || rawCode;
-
-      if (countryCode && p.rate) {
-        map[countryCode.toLowerCase()] = p.rate;
-      }
+      processItem(p.code, p.rate, map);
     });
     return map;
   }
@@ -51,10 +55,7 @@ export function getSellMapFor(vitaPrices, originCurrency) {
     if (sellMap && typeof sellMap === 'object') {
       const out = {};
       for (const [k, v] of Object.entries(sellMap)) {
-        if (v !== null && v !== undefined) {
-          // Aquí asumimos que el Legacy ya traía claves de país (co, ar...)
-          out[String(k).toLowerCase()] = Number(v);
-        }
+        processItem(k, v, out);
       }
       return out;
     }
@@ -63,18 +64,17 @@ export function getSellMapFor(vitaPrices, originCurrency) {
   return {};
 }
 
+// ... extractCountries queda IGUAL ...
 export function extractCountries(vitaPrices, originCurrency) {
   const sellMap = getSellMapFor(vitaPrices, originCurrency);
 
   const entries = Object.entries(sellMap)
     .filter(([, rate]) => Number.isFinite(rate))
     .map(([code, rate]) => ({
-      code: code.toUpperCase(), // Devolvemos siempre mayúsculas (CO, AR)
+      code: code.toUpperCase(),
       rate
     }));
 
-  // Ordenar alfabéticamente
   entries.sort((a, b) => a.code.localeCompare(b.code));
-
   return entries;
 }
