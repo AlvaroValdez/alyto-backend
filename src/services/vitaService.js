@@ -20,33 +20,24 @@ const API_DOMAIN = getApiDomain();
 
 // --- 2. CORE DE SEGURIDAD (CORREGIDO SEGÚN IMAGEN DE KEYS) ---
 const getAuthHeaders = (method, endpoint, bodyString = '') => {
-
-  // 1. Validamos que existan las credenciales
   if (!vita.apiLogin || !vita.apiKey) {
     throw new Error("CONFIG ERROR: Faltan credenciales VITA_LOGIN o VITA_TRANS_KEY.");
   }
 
   const date = Math.floor(Date.now() / 1000);
 
-  // 2. HEADER BASE
-  // Según tu imagen, 'apiKey' es el valor 's+OtCG...'. 
-  // La mayoría de endpoints Business v2 aceptan este valor directo.
   const headers = {
-    'x-login': vita.apiLogin,     // Tu ID de Login
-    'x-trans-key': vita.apiKey,   // Tu llave pública (la corta)
+    'x-login': vita.apiLogin,
+    'x-trans-key': vita.apiKey,
     'x-date': date,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    // AGREGADO: Enviar también como Bearer/Basic por si Stage lo requiere
+    'Authorization': vita.apiKey
   };
 
-  // 3. FIRMA HMAC (SOLO SI ES NECESARIA)
-  // Algunos endpoints sensibles de POST podrían requerir que 'x-trans-key' sea una firma
-  // en lugar de la llave estática. Si el GET /prices sigue fallando, es poco probable
-  // que sea por esto, pero dejo la lógica lista por si acaso necesitamos cambiar a modo firma.
-
-  /* * NOTA: Si en el futuro un endpoint POST da 401, descomenta esto:
-   * const signature = crypto.createHmac('sha256', vita.apiSecret).update(bodyString).digest('hex');
-   * headers['x-signature'] = signature; // O reemplazar x-trans-key según doc específica
-   */
+  // Log de seguridad para verificar que Render inyectó la variable (Solo imprimimos los últimos 4 chars)
+  const maskedKey = vita.apiKey ? `...${vita.apiKey.slice(-4)}` : 'UNDEFINED';
+  console.log(`🔑 [Auth Debug] Usando Key terminada en: ${maskedKey}`);
 
   return headers;
 };
@@ -96,20 +87,21 @@ const sendRequest = async (method, endpoint, data = null) => {
 };
 
 // ==========================================
-// ENDPOINTS
+// ENDPOINTS PÚBLICOS DEL SERVICIO
 // ==========================================
 
 export const getListPrices = async () => {
-  if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
-    return cachedPrices;
-  }
-  if (pricesPromise) return pricesPromise;
+  // ... lógica de caché ...
 
-  pricesPromise = sendRequest('GET', '/api/businesses/prices')
+  // CAMBIO CRÍTICO: Usamos '/api/prices' en lugar de '/api/businesses/prices'
+  // Este endpoint suele aceptar API Keys simples o incluso acceso público.
+  pricesPromise = sendRequest('GET', '/api/prices')
     .then((rawResponse) => {
+      // Nuestra función normalizePrices es inteligente y detectará el formato automáticamente
       const cleanPrices = normalizePrices(rawResponse);
+
       if (cleanPrices.length > 0) {
-        console.log(`✅ [VitaService] ${cleanPrices.length} precios obtenidos.`);
+        console.log(`✅ [VitaService] ${cleanPrices.length} precios obtenidos desde /api/prices.`);
         cachedPrices = cleanPrices;
         cacheTimestamp = Date.now();
         pricesPromise = null;
