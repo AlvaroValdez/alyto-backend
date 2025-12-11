@@ -49,15 +49,17 @@ router.get('/quote', async (req, res) => {
 
     return res.json({
       ok: true,
-      quote: {
+      data: {
         origin,
-        destCountry: destInput, // Devolvemos lo que pidió el front
-        currency: priceData.code, // Confirmamos la moneda usada
+        destCountry: destInput,
+        destCurrency: priceData.code, // Frontend espera destCurrency
+        currency: priceData.code,     // Mantenemos por compatibilidad
         amountIn: amount,
         baseRate,
         markupPercent,
         rateWithMarkup,
         amountOut,
+        validations: [] // Array vacío para evitar fallos de lectura en front
       },
     });
 
