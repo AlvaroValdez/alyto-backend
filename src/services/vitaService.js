@@ -180,11 +180,20 @@ export const createPaymentOrder = async (payload) => {
 
 // 7. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async (data) => {
-  const { uid, ...paymentDetails } = data || {};
-  const payload = { payment_data: paymentDetails };
+  const { uid, method_id, ...paymentDetails } = data || {};
+
+  const payload = method_id
+    ? { method_id, payment_data: paymentDetails }
+    : { payment_data: paymentDetails };
+
+  console.log('🔍 [executeDirectPayment] uid:', uid);
+  console.log('🔍 [executeDirectPayment] method_id:', method_id);
+  console.log('🔍 [executeDirectPayment] payload:', JSON.stringify(payload, null, 2));
+
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
 };
+
 export const createDirectPaymentOrder = executeDirectPayment;
 
 // 8. COTIZACIÓN
