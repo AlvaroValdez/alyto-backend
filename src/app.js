@@ -23,6 +23,7 @@ import transactionRulesRoutes from './routes/transactionRules.js';
 import uploadRoutes from './routes/upload.js';
 import adminTreasuryRoutes from './routes/adminTreasury.js';
 import adminComplianceRoutes from './routes/adminCompliance.js';
+import directPayRoutes from './routes/directPay.js';
 
 const app = express();
 
@@ -78,5 +79,6 @@ app.use('/api/admin', protect, isAdmin, adminUsersRoutes);
 app.use('/api/admin/kyc', protect, isAdmin, adminKycRoutes);
 app.use('/api/admin/treasury', protect, isAdmin, adminTreasuryRoutes);
 app.use('/api/admin/compliance', protect, isAdmin, adminComplianceRoutes);
+app.use('/api/direct-pay', protect, directPayRoutes); // DirectPay proxy
 
 export default app;
