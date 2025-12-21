@@ -1,0 +1,196 @@
+// backend/src/services/vitaService.js
+import { client } from './vitaClient.js';
+
+// ==========================================
+// Helpers
+// ==========================================
+
+// Normaliza respuesta Axios vs data directa
+const unwrap = (res) => (res && typeof res === 'object' && 'data' in res ? res.data : res);
+
+// --- VARIABLES DE CACHÉ ---
+let cachedPrices = null;
+let cacheTimestamp = null;
+const CACHE_DURATION_MS = 60 * 1000;
+let pricesPromise = null;
+
+// --- MAPA DE COMPATIBILIDAD (Moneda -> País) ---
+// Vital para que el Frontend muestre las banderas correctamente
+const CURRENCY_TO_COUNTRY = {
+  COP: 'CO', // Colombia
+  ARS: 'AR', // Argentina
+  PEN: 'PE', // Perú
+  BRL: 'BR', // Brasil
+  MXN: 'MX', // México
+  CLP: 'CL', // Chile
+  VES: 'VE', // Venezuela
+  USD: 'US', // USA
+  EUR: 'EU', // Europa
+  BOL: 'BO', // Bolivia
+  BOB: 'BO'  // Bolivia
+};
+
+// Tasas de respaldo con códigos de PAÍS (2 letras) para asegurar compatibilidad
+// RATES: Costo en CLP de 1 unidad de la moneda destino (aprox)
+const FALLBACK_RATES = [
+  { code: 'CO', rate: 0.23 },   // 1 COP = 0.23 CLP
+  { code: 'AR', rate: 0.95 },   // 1 ARS = 0.95 CLP
+  { code: 'PE', rate: 255.0 },  // 1 PEN = 255 CLP
+  { code: 'BR', rate: 190.0 },  // 1 BRL = 190 CLP
+  { code: 'MX', rate: 55.0 },   // 1 MXN = 55 CLP
+  { code: 'VE', rate: 0.025 },  // 1 VES = 0.025 CLP
+  { code: 'US', rate: 980.0 },  // 1 USD = 980 CLP
+  { code: 'EU', rate: 1050.0 }, // 1 EUR = 1050 CLP
+  { code: 'CL', rate: 1.0 },
+  { code: 'BO', rate: 140.0 }   // 1 BOB = 140 CLP
+];
+
+// --- HELPER NORMALIZADOR ---
+const normalizePrices = (responseData) => {
+  const raw = unwrap(responseData);
+  const normalized = [];
+
+  if (Array.isArray(raw)) {
+    raw.forEach((item) => {
+      // 1) Detectar código original (ej: COP o CO)
+      const rawCode = item.code || item.currency || item.iso_code;
+      const rate = item.rate ?? item.price ?? item.value;
+
+      if (rawCode && rate !== undefined && rate !== null) {
+        const upperCode = String(rawCode).toUpperCase();
+
+        // 2) Traducir a código de País (2 letras)
+        const finalCode = CURRENCY_TO_COUNTRY[upperCode] || upperCode;
+
+        // 3) Filtrar: Solo agregamos si parece válido (2-3 letras)
+        if (finalCode.length <= 3) {
+          normalized.push({ code: finalCode, rate: Number(rate) });
+        }
+      }
+    });
+    return normalized;
+  }
+
+  return [];
+};
+
+// ==========================================
+// FUNCIONES EXPORTADAS
+// ==========================================
+
+// 1. OBTENER PRECIOS (Con Caché)
+export const getListPrices = async () => {
+  if (cachedPrices && (Date.now() - cacheTimestamp < CACHE_DURATION_MS)) {
+    return cachedPrices;
+  }
+  if (pricesPromise) return pricesPromise;
+
+  pricesPromise = client.get('/prices')
+    .then((res) => {
+      const data = unwrap(res);
+      let cleanPrices = normalizePrices(data);
+
+      // Fallback para stage o lista vacía
+      if (cleanPrices.length < 3) {
+        console.warn('⚠️ [vitaService] Pocos destinos detectados. Inyectando FALLBACK_RATES...');
+
+        FALLBACK_RATES.forEach((fallbackItem) => {
+          const exists = cleanPrices.find((p) => p.code === fallbackItem.code);
+          if (!exists) cleanPrices.push(fallbackItem);
+        });
+      }
+
+      cachedPrices = cleanPrices;
+      cacheTimestamp = Date.now();
+      pricesPromise = null;
+      return cleanPrices;
+    })
+    .catch((error) => {
+      console.error('❌ [vitaService] Error obteniendo precios:', error?.message || error);
+      pricesPromise = null;
+      return FALLBACK_RATES;
+    });
+
+  return pricesPromise;
+};
+
+// 2. FORZAR ACTUALIZACIÓN DE PRECIOS
+export const forceRefreshPrices = async () => {
+  console.log('🔄 [vitaService] Forzando actualización de precios (Bypass Cache)...');
+  try {
+    const res = await client.get('/prices');
+    const data = unwrap(res);
+    const cleanPrices = normalizePrices(data);
+    cachedPrices = cleanPrices;
+    cacheTimestamp = Date.now();
+    console.log('✅ [vitaService] Precios refrescados correctamente.');
+    return true;
+  } catch (error) {
+    console.error('⚠️ [vitaService] Falló el refresco de precios:', error?.message || error);
+    return false;
+  }
+};
+
+// 3. REGLAS DE RETIRO
+export const getWithdrawalRules = async () => {
+  const res = await client.get('/withdrawal_rules');
+  return unwrap(res);
+};
+
+// 4. CREAR RETIRO
+export const createWithdrawal = async (payload) => {
+  const res = await client.post('/transactions', payload);
+  // Vita suele responder como { data: {..., checkout_url, ...} }
+  return res?.data ?? res;
+};
+
+
+// 5. MÉTODOS DE PAGO
+export const getPaymentMethods = async (country) => {
+  // 🧪 TEMPORAL: Hardcodear método para testing DirectPay execute
+  // Vita stage rechaza el endpoint /payment_methods con error 303
+  console.warn('⚠️ Usando método hardcodeado para testing DirectPay');
+
+  return [
+    {
+      id: 'test_method',
+      name: 'webpay_test',
+      description: 'Webpay Plus (Test)',
+      required_fields: [
+        { name: 'name', label: 'Nombre Completo', type: 'text', required: true },
+        { name: 'email', label: 'Email', type: 'email', required: true },
+        { name: 'phone', label: 'Teléfono', type: 'tel', required: true },
+        { name: 'rut', label: 'RUT', type: 'text', required: true }
+      ]
+    }
+  ];
+
+  /* ORIGINAL (falla con 303):
+  const res = await client.get(`/payment_methods/${country}`);
+  return unwrap(res);
+  */
+};
+
+
+// 6. CREAR ORDEN DE PAGO (Payin)
+export const createPaymentOrder = async (payload) => {
+  const res = await client.post('/payment_orders', payload);
+  return unwrap(res);
+};
+
+// 7. EJECUTAR PAGO DIRECTO
+export const executeDirectPayment = async (data) => {
+  const { uid, ...paymentDetails } = data || {};
+  const payload = { payment_data: paymentDetails };
+  const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
+  return unwrap(res);
+};
+export const createDirectPaymentOrder = executeDirectPayment;
+
+// 8. COTIZACIÓN
+// ⚠️ En Vita Business, la cotización/FX normalmente se obtiene vía endpoints de prices/crypto_prices
+// y/o cálculo interno. Si tu proyecto usa otro endpoint, colócalo aquí apuntando al ORIGIN correcto.
+// Por ahora lo dejamos explícitamente no implementado para evitar 404 silenciosos.
+export const getQuote = async () => {
+  throw new Error('getQuote no está implementado en vitaService. Usa /prices + lógica interna.');
+};
