@@ -46,23 +46,54 @@ const FALLBACK_RATES = [
 ];
 
 // --- HELPER NORMALIZADOR ---
+const normalizePricesFromVita = (responseData) => {
+  const result = [];
+
+  // Extraer sección CLP del response de Vita
+  const clp = responseData?.clp?.withdrawal;
+  if (!clp?.prices?.attributes?.clp_sell) {
+    console.warn('⚠️ [vitaService] No CLP balance found in Vita response');
+    return [];
+  }
+
+  const sellRates = clp.prices.attributes.clp_sell;
+  const fixedCosts = clp.prices.attributes.fixed_cost || {};
+
+  Object.entries(sellRates).forEach(([country, rate]) => {
+    // Convertir códigos a mayúsculas: "co" → "CO"
+    const countryCode = country.toUpperCase();
+
+    // Evitar duplicados (cocop es lo mismo que co)
+    if (countryCode === 'COCOP') return;
+
+    // Normalizar códigos especiales
+    if (countryCode.length <= 2 || countryCode === 'GT' || countryCode === 'USRTP') {
+      result.push({
+        code: countryCode,
+        rate: Number(rate),
+        fixedCost: Number(fixedCosts[country] || 0)
+      });
+    }
+  });
+
+  return result;
+};
+
+// Función legacy normalizePrices para compatibilidad
 const normalizePrices = (responseData) => {
-  const raw = unwrap(responseData);
-  const normalized = [];
+  // Si viene estructura antigua (array), mantener compatibilidad
+  const raw = responseData?.data ?? responseData;
 
   if (Array.isArray(raw)) {
+    const normalized = [];
     raw.forEach((item) => {
-      // 1) Detectar código original (ej: COP o CO)
       const rawCode = item.code || item.currency || item.iso_code;
       const rate = item.rate ?? item.price ?? item.value;
 
       if (rawCode && rate !== undefined && rate !== null) {
         const upperCode = String(rawCode).toUpperCase();
-
-        // 2) Traducir a código de País (2 letras)
         const finalCode = CURRENCY_TO_COUNTRY[upperCode] || upperCode;
 
-        // 3) Filtrar: Solo agregamos si parece válido (2-3 letras)
         if (finalCode.length <= 3) {
           normalized.push({ code: finalCode, rate: Number(rate) });
         }
@@ -71,7 +102,8 @@ const normalizePrices = (responseData) => {
     return normalized;
   }
 
-  return [];
+  // Si tiene estructura Vita, usar normalizador nuevo
+  return normalizePricesFromVita(responseData);
 };
 
 // ==========================================
@@ -88,17 +120,25 @@ export const getListPrices = async () => {
   pricesPromise = client.get('/prices')
     .then((res) => {
       const data = unwrap(res);
-      let cleanPrices = normalizePrices(data);
 
-      // Fallback para stage o lista vacía
-      if (cleanPrices.length < 3) {
-        console.warn('⚠️ [vitaService] Pocos destinos detectados. Inyectando FALLBACK_RATES...');
+      console.log('[vitaService] 📊 Vita /prices response keys:', Object.keys(data || {}));
 
-        FALLBACK_RATES.forEach((fallbackItem) => {
-          const exists = cleanPrices.find((p) => p.code === fallbackItem.code);
-          if (!exists) cleanPrices.push(fallbackItem);
-        });
+      // Usar nuevo normalizador para estructura Vita
+      let cleanPrices = normalizePricesFromVita(data);
+
+      // Si no hay precios, intentar fallback solo en desarrollo
+      if (cleanPrices.length === 0) {
+        console.warn('⚠️ [vitaService] No prices extracted from Vita response');
+
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ [vitaService] Using FALLBACK_RATES (development only)');
+          cleanPrices = FALLBACK_RATES;
+        } else {
+          throw new Error('No prices available from Vita API');
+        }
       }
+
+      console.log(`✅ [vitaService] Loaded ${cleanPrices.length} price rates from Vita`);
 
       cachedPrices = cleanPrices;
       cacheTimestamp = Date.now();
@@ -108,7 +148,14 @@ export const getListPrices = async () => {
     .catch((error) => {
       console.error('❌ [vitaService] Error obteniendo precios:', error?.message || error);
       pricesPromise = null;
-      return FALLBACK_RATES;
+
+      // En desarrollo, usar fallback como último recurso
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('⚠️ [vitaService] API failed, using FALLBACK_RATES (development only)');
+        return FALLBACK_RATES;
+      }
+
+      throw error;
     });
 
   return pricesPromise;

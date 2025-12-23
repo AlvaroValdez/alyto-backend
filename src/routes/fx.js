@@ -61,7 +61,10 @@ router.get('/quote', async (req, res) => {
 
       const feeCLP = inputAmount * (feePercent / 100);
       const clpAmountWithFee = inputAmount + feeCLP;
-      const finalAmount = inputAmount * clpToDestRate;
+
+      // 🆕 Incluir fixed_cost de Vita en el cálculo del payout
+      const payoutFixedCost = Number(priceData.fixedCost || 0);
+      const finalAmount = (inputAmount * clpToDestRate) - payoutFixedCost;
 
       return res.json({
         ok: true,
@@ -73,7 +76,12 @@ router.get('/quote', async (req, res) => {
           amount: inputAmount,
           fee: Number(feeCLP.toFixed(2)),
           feePercent: Number(feePercent.toFixed(2)),
+          feeOriginAmount: Number(feeCLP.toFixed(2)),
           clpAmountWithFee: Number(clpAmountWithFee.toFixed(2)),
+
+          // 🆕 Costos de payout (Vita withdrawal fee)
+          payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+
           receiveAmount: Number(finalAmount.toFixed(2)),
           currency: priceData.code
         }
@@ -137,7 +145,10 @@ router.get('/quote', async (req, res) => {
     });
 
     const clpAmountWithFee = clpAmount + feeCLP;
-    const finalAmount = clpAmount * clpToDestRate;
+
+    // 🆕 Incluir fixed_cost de Vita en el payout
+    const payoutFixedCost = Number(priceData.fixedCost || 0);
+    const finalAmount = (clpAmount * clpToDestRate) - payoutFixedCost;
 
     // Tasa efectiva destino por 1 unidad origen (ej: COP por 1 BOB)
     const effectiveRate = manualExchangeRate * clpToDestRate;
@@ -157,6 +168,10 @@ router.get('/quote', async (req, res) => {
         rateCLPToDest: clpToDestRate,
         manualExchangeRate,
         rate: Number(effectiveRate.toFixed(8)),
+
+        // 🆕 Costos de payout
+        payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+
         receiveAmount: Number(finalAmount.toFixed(2)),
         currency: priceData.code
       }
@@ -165,6 +180,78 @@ router.get('/quote', async (req, res) => {
   } catch (error) {
     console.error('❌ [FX] Error crítico calculando:', error);
     res.status(500).json({ ok: false, error: 'Error interno de cálculo' });
+  }
+});
+
+// GET /api/fx/payin-fees?country=CL&amount=2000
+// Obtiene las comisiones de pay-in (Webpay, etc.) para mostrar al usuario
+router.get('/payin-fees', async (req, res) => {
+  try {
+    const { country, amount } = req.query;
+
+    if (!amount || !country) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required parameters: country, amount'
+      });
+    }
+
+    // Obtener respuesta completa de Vita /prices
+    const { client } = await import('../services/vitaClient.js');
+    const vitaResponse = await client.get('/prices');
+    const data = vitaResponse?.data || vitaResponse;
+
+    // Extraer payin info para el país
+    const payinCountry = String(country).toLowerCase();
+    const payinInfo = data?.payins?.[payinCountry];
+
+    if (!payinInfo) {
+      return res.status(404).json({
+        ok: false,
+        error: `No payin information available for country ${country}`
+      });
+    }
+
+    // Obtener método Webpay (o Fintoc como alternativa)
+    const method = payinInfo.payment_methods?.find(m =>
+      m.payment_method === 'Webpay' || m.payment_method === 'Fintoc'
+    );
+
+    if (!method) {
+      return res.status(404).json({
+        ok: false,
+        error: 'No payment method available for this country'
+      });
+    }
+
+    const inputAmount = Number(amount);
+    const sellPrice = Number(method.sell_price);
+    const fixedCost = Number(method.fixed_cost);
+
+    // Cálculo real de lo que recibirás en tu wallet
+    const receivedInWallet = (inputAmount * sellPrice) - fixedCost;
+    const totalFee = inputAmount - receivedInWallet;
+    const feePercent = inputAmount > 0 ? (totalFee / inputAmount) * 100 : 0;
+
+    return res.json({
+      ok: true,
+      data: {
+        paymentMethod: method.payment_method,
+        amountToPay: inputAmount,
+        sellPrice,
+        fixedCost,
+        receivedInWallet: Number(receivedInWallet.toFixed(2)),
+        totalFee: Number(totalFee.toFixed(2)),
+        feePercent: Number(feePercent.toFixed(2))
+      }
+    });
+
+  } catch (error) {
+    console.error('[FX] Error getting payin fees:', error);
+    res.status(500).json({
+      ok: false,
+      error: 'Internal server error'
+    });
   }
 });
 
