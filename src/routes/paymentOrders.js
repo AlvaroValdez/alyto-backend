@@ -34,7 +34,7 @@ router.post('/', async (req, res, next) => {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
-    const successRedirectUrl = `${frontendUrl}/payment-success?orderId=${encodeURIComponent(orderId)}`;
+    const successRedirectUrl = `${frontendUrl}/payment-success/${encodeURIComponent(orderId)}`;
 
     const payload = {
       amount: Math.round(Number(amount)),
