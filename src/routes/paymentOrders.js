@@ -33,7 +33,7 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'Faltan datos requeridos.' });
     }
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
     const successRedirectUrl = `${frontendUrl}/payment-success?orderId=${encodeURIComponent(orderId)}`;
 
     const payload = {
