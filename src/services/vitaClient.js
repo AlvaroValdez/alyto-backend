@@ -121,19 +121,43 @@ client.interceptors.request.use((config) => {
     // 1) payment_methods: (firma SIMPLE) + requiere x-trans-key
     // ------------------------------------------------------------
     if (isPaymentMethods) {
-      // Headers obligatorios por presencia (Vita no valida firma aquí)
+      // Vita exige Authorization con formato válido, pero la base exacta no es consistente.
+      // Vamos a soportar varios intentos (se reintenta en response interceptor si da 303).
+
+      const attempt = Number(config._vita_pm_attempt || 0);
+
+      const path = String(urlRaw || '').toLowerCase();           // "/payment_methods/cl"
+      const m = method.toUpperCase();                            // "GET"
+
+      // Posibles bases (probadas en integraciones HMAC inconsistentes)
+      // NOTA: En GET no hay body.
+      const bases = [
+        `${xLogin}${xDate}`,                          // A0
+        `${xLogin}${xDate}${xTransKey}`,              // A1
+        `${xLogin}${xTransKey}${xDate}`,              // A2
+        `${xLogin}${xDate}${m}${path}`,               // A3
+        `${xLogin}${xDate}${path}`,                   // A4
+        `${xLogin}${xDate}${xTransKey}${path}`,       // A5
+      ];
+
+      const signatureBase = bases[Math.min(attempt, bases.length - 1)];
+      const signature = hmacSha256Hex(secretKey, signatureBase);
+
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
+
+      // Vita ya te exigió explícitamente x-trans-key, y además mantenemos x-api-key
       config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
 
-      // ⚠️ Authorization ES OBLIGATORIO, pero SIN firma
-      config.headers['Authorization'] = 'V2-HMAC-SHA256';
+      // Formato válido (evita code 300)
+      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods AUTH (PLACEHOLDER)');
-        console.log('[vitaClient] ', method, urlRaw);
-        console.log('[vitaClient] Authorization:', config.headers['Authorization']);
+        console.log('[vitaClient] 🔑 payment_methods AUTH (attempt)', attempt);
+        console.log('[vitaClient] ', m, urlRaw);
+        console.log('[vitaClient] signatureBase:', signatureBase);
+        console.log('[vitaClient] signature(full):', signature);
       }
 
       return config;
@@ -193,10 +217,27 @@ client.interceptors.request.use((config) => {
 
 client.interceptors.response.use(
   (res) => res,
-  (error) => {
+  async (error) => {
     const status = error?.response?.status;
     const data = error?.response?.data;
-    const url = error?.config?.url;
+    const url = String(error?.config?.url || '');
+    const code = data?.error?.code;
+
+    // ✅ Auto-retry SOLO para payment_methods cuando es 303
+    const isPaymentMethods = url.toLowerCase().startsWith('/payment_methods/');
+    const attempt = Number(error?.config?._vita_pm_attempt || 0);
+
+    if (isPaymentMethods && status === 422 && code === 303 && attempt < 5) {
+      const newConfig = { ...error.config, _vita_pm_attempt: attempt + 1 };
+      // Evita loops raros
+      delete newConfig.headers?.Authorization;
+
+      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+        console.log(`[vitaClient] 🔁 Retrying payment_methods (303) attempt=${attempt + 1}`);
+      }
+
+      return client.request(newConfig);
+    }
 
     console.error(`❌ [vitaClient] Error ${status || 'NO_STATUS'} on ${url || 'NO_URL'}`);
     console.error('>> Vita Response:', JSON.stringify(data));
