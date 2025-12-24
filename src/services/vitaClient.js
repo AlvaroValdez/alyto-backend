@@ -121,26 +121,19 @@ client.interceptors.request.use((config) => {
     // 1) payment_methods: (firma SIMPLE) + requiere x-trans-key
     // ------------------------------------------------------------
     if (isPaymentMethods) {
-      // ⚠️ payment_methods NO usa firma HMAC
-      // Solo headers de identificación (confirmado empíricamente)
-
+      // Headers obligatorios por presencia (Vita no valida firma aquí)
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
-
-      // Vita requiere ambos
       config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
 
-      // ❌ NO enviar Authorization
-      delete config.headers['Authorization'];
+      // ⚠️ Authorization ES OBLIGATORIO, pero SIN firma
+      config.headers['Authorization'] = 'V2-HMAC-SHA256';
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods AUTH (NO SIGNATURE)');
+        console.log('[vitaClient] 🔑 payment_methods AUTH (PLACEHOLDER)');
         console.log('[vitaClient] ', method, urlRaw);
-        console.log('[vitaClient] x-login:', xLogin);
-        console.log('[vitaClient] x-api-key:', xTransKey.substring(0, 10) + '...');
-        console.log('[vitaClient] x-trans-key:', xTransKey.substring(0, 10) + '...');
-        console.log('[vitaClient] x-date:', xDate);
+        console.log('[vitaClient] Authorization:', config.headers['Authorization']);
       }
 
       return config;
