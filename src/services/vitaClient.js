@@ -19,6 +19,17 @@ function deepClean(value) {
   return value;
 }
 
+function stableStringify(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object' && value.constructor === Object) {
+    const keys = Object.keys(value).sort();
+    const props = keys.map(k => `"${k}":${stableStringify(value[k])}`);
+    return `{${props.join(',')}}`;
+  }
+  return JSON.stringify(value); // strings/numbers/bools
+}
+
 // sorted_request_body:
 // keys top-level ordenadas + concat key+value (sin separadores)
 // objects/arrays: JSON.stringify(value)
@@ -32,7 +43,7 @@ function buildSortedRequestBody(bodyObj) {
     const v = bodyObj[k];
     if (v === undefined || v === null) continue;
 
-    if (typeof v === 'object') out += `${k}${JSON.stringify(v)}`;
+    if (typeof v === 'object') out += `${k}${stableStringify(v)}`;
     else out += `${k}${String(v)}`;
   }
 

@@ -194,30 +194,9 @@ export const createWithdrawal = async (payload) => {
 
 // 5. MÉTODOS DE PAGO
 export const getPaymentMethods = async (country) => {
-  // 🧪 TEMPORAL: Hardcodear método para testing DirectPay execute
-  // Vita stage rechaza el endpoint /payment_methods con error 303
-  console.warn('⚠️ Usando método hardcodeado para testing DirectPay');
-
-  return [
-    {
-      id: 'test_method',
-      name: 'webpay_test',
-      description: 'Webpay Plus (Test)',
-      required_fields: [
-        { name: 'name', label: 'Nombre Completo', type: 'text', required: true },
-        { name: 'email', label: 'Email', type: 'email', required: true },
-        { name: 'phone', label: 'Teléfono', type: 'tel', required: true },
-        { name: 'rut', label: 'RUT', type: 'text', required: true }
-      ]
-    }
-  ];
-
-  /* ORIGINAL (falla con 303):
   const res = await client.get(`/payment_methods/${country}`);
   return unwrap(res);
-  */
 };
-
 
 // 6. CREAR ORDEN DE PAGO (Payin)
 export const createPaymentOrder = async (payload) => {

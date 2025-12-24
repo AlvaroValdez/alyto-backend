@@ -77,18 +77,22 @@ router.post('/', async (req, res, next) => {
 router.post('/:vitaOrderId/execute', async (req, res, next) => {
   try {
     const { vitaOrderId } = req.params;
-    //const { payment_data } = req.body || {}; // Datos del formulario (nombre, email, etc.)
-    const { payment_data = {}, method_id } = req.body || {}; // Datos del formulario + método opcional
+    const { method_id, payment_data, ...flat } = req.body || {};
 
-    if (!payment_data) {
-      return res.status(400).json({ ok: false, error: 'Faltan datos de pago (payment_data).' });
+    const details =
+      payment_data && typeof payment_data === 'object'
+        ? payment_data
+        : flat;
+
+    if (!details || Object.keys(details).length === 0) {
+      return res.status(400).json({ ok: false, error: 'Faltan datos de pago.' });
     }
 
-    // OJO: tu vitaService actual espera (data) o (payload) según implementación.
-    // Como tú lo estabas llamando executeDirectPayment(vitaOrderId, payment_data),
-    // lo mantenemos, pero debe coincidir con la firma de vitaService.
-    //const response = await executeDirectPayment({ uid: vitaOrderId, ...payment_data });
-    const response = await executeDirectPayment({ uid: vitaOrderId, method_id, ...payment_data });
+    const response = await executeDirectPayment({
+      uid: vitaOrderId,
+      method_id,
+      ...details,
+    });
 
     return res.json({ ok: true, data: response });
   } catch (e) {
