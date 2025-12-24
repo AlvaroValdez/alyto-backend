@@ -128,7 +128,8 @@ client.interceptors.request.use((config) => {
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
     config.headers['Content-Type'] = 'application/json';
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+    // Usar formato estándar con espacio: "Signature: {hash}"
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     console.log('[vitaClient]   x-date:', xDate);
     console.log('[vitaClient]   x-login:', xLogin);
