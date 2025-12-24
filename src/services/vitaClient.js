@@ -125,29 +125,30 @@ client.interceptors.request.use((config) => {
 
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
-    config.headers['x-trans-key'] = xTransKey;
 
-    // IMPORTANTÍSIMO: no enviar x-api-key en esta familia
-    delete config.headers['x-api-key'];
+    // ✅ EXACTO según documentación
+    // x-api-key = Business xTransKey
+    config.headers['x-api-key'] = xTransKey;
 
-    // Formato exacto (sin espacio extra)
-    //config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
-    //config.headers['Authorization'] = `V2-HMAC-SHA256, Signature=${signature}`;
-    config.headers['Authorization'] = `V2-HMAC-SHA256 Signature=${signature}`;
+    // ❌ NO enviar x-trans-key
+    delete config.headers['x-trans-key'];
+
+    // ✅ Formato exacto del Authorization header (como en la imagen)
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-      console.log('[vitaClient] 🔑 DirectPayFamily AUTH');
+      console.log('[vitaClient] 🔑 DirectPay AUTH');
       console.log('[vitaClient] ', method, config.url);
-      console.log('[vitaClient] x-date:', xDate);
       console.log('[vitaClient] x-login:', xLogin);
-      console.log('[vitaClient] x-trans-key:', xTransKey.substring(0, 10) + '...');
-      console.log('[vitaClient] hasBody:', hasBody, 'bodyLen:', bodyString.length);
+      console.log('[vitaClient] x-api-key:', xTransKey.substring(0, 10) + '...');
+      console.log('[vitaClient] x-date:', xDate);
       console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
       console.log('[vitaClient] signature(full):', signature);
     }
 
     return config;
   }
+
 
   // 2) Resto de endpoints (comportamiento actual):
   // - business_users: RAW JSON
