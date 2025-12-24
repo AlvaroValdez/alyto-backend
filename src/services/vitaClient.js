@@ -158,22 +158,40 @@ client.interceptors.request.use((config) => {
     // 2) direct_payment: Probar con buildSortedRequestBody
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      // Para direct_payment, Vita firma con el JSON RAW exacto (no sorted KV)
-      const signatureBody = hasBody ? bodyString : ''; // bodyString = JSON.stringify(payload) tal cual se manda
+      // Extraer payment_order_id desde la URL: /payment_orders/3611/direct_payment
+      const match = urlRaw.match(/\/payment_orders\/([^/]+)\/direct_payment/i);
+      const paymentOrderId = match?.[1] ? String(match[1]) : '';
+
+      // Body normalizado
+      const signatureBodyObj = hasBody
+        ? (() => {
+          let raw = config.data;
+          if (typeof raw === 'string') {
+            try { raw = JSON.parse(raw); } catch { raw = {}; }
+          }
+          raw = deepClean(raw) || {};
+          // ✅ incluir el parámetro embebido en URL como "payment_order_id"
+          return { ...raw, payment_order_id: paymentOrderId };
+        })()
+        : { payment_order_id: paymentOrderId };
+
+      // ✅ DirectPay: Vita firma como sorted key-value (como doc general) PERO incluyendo params de URL
+      const signatureBody = buildSortedRequestBody(signatureBodyObj);
       const signatureBase = `${xLogin}${xDate}${signatureBody}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
+      // Headers requeridos por DirectPay
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
-
-      // DirectPay exige ambos headers en la práctica (ya lo confirmaste en payment_methods)
-      config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
+      config.headers['x-api-key'] = xTransKey;
 
+      // Formato aceptado (el que te funcionó)
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 💳 POST /direct_payment - RAW JSON');
+        console.log('[vitaClient] 💳 POST /direct_payment - SORTED KV + URL PARAM');
+        console.log('[vitaClient] payment_order_id:', paymentOrderId);
         console.log('[vitaClient] signatureBody (first 300):', signatureBody.slice(0, 300));
         console.log('[vitaClient] signatureBase (first 300):', signatureBase.slice(0, 300));
         console.log('[vitaClient] signature:', signature);
@@ -181,7 +199,6 @@ client.interceptors.request.use((config) => {
 
       return config;
     }
-
 
     // ------------------------------------------------------------
     // 3) Resto: estándar actual (business_users RAW, otros SORTED_KV)
