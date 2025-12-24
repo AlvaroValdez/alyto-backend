@@ -78,19 +78,24 @@ router.post('/:vitaOrderId/execute', async (req, res, next) => {
     const { vitaOrderId } = req.params;
     const { method_id, payment_data, ...flat } = req.body || {};
 
-    const details =
+    // Construir payment_data: usar el objeto anidado si viene, si no usar campos planos
+    const paymentDetails =
       payment_data && typeof payment_data === 'object'
         ? payment_data
         : flat;
 
-    if (!details || Object.keys(details).length === 0) {
+    if (!paymentDetails || Object.keys(paymentDetails).length === 0) {
       return res.status(400).json({ ok: false, error: 'Faltan datos de pago.' });
     }
+
+    console.log('[executeDirectPayment] vitaOrderId:', vitaOrderId);
+    console.log('[executeDirectPayment] method_id:', method_id);
+    console.log('[executeDirectPayment] paymentDetails:', paymentDetails);
 
     const response = await executeDirectPayment({
       uid: vitaOrderId,
       method_id,
-      ...details,
+      payment_data: paymentDetails, // ✅ Pasar como objeto anidado
     });
 
     return res.json({ ok: true, data: response });
