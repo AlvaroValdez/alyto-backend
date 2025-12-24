@@ -123,18 +123,43 @@ client.interceptors.request.use((config) => {
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
 
-    config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
-
-    // ✅ EXACTO según documentación
-    // x-api-key = Business xTransKey
-    config.headers['x-api-key'] = xTransKey;
+    config.headers['x-date'] = xDate;
+    config.headers['x-api-key'] = xTransKey; // Business xTransKey
 
     // ❌ NO enviar x-trans-key
     delete config.headers['x-trans-key'];
 
     // ✅ Formato exacto del Authorization header (como en la imagen)
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+    const fmt = process.env.VITA_AUTH_FMT || 'comma_colon_space';
+
+    // Opciones:
+    // comma_colon_space => "V2-HMAC-SHA256, Signature: <hash>"
+    // comma_colon_nospace => "V2-HMAC-SHA256, Signature:<hash>"
+    // nocomma_colon_space => "V2-HMAC-SHA256 Signature: <hash>"
+    // comma_equal => "V2-HMAC-SHA256, Signature=<hash>"
+
+    let authValue;
+    switch (fmt) {
+      case 'comma_colon_nospace':
+        authValue = `V2-HMAC-SHA256, Signature:${signature}`;
+        break;
+      case 'nocomma_colon_space':
+        authValue = `V2-HMAC-SHA256 Signature: ${signature}`;
+        break;
+      case 'comma_equal':
+        authValue = `V2-HMAC-SHA256, Signature=${signature}`;
+        break;
+      case 'comma_colon_space':
+      default:
+        authValue = `V2-HMAC-SHA256, Signature: ${signature}`;
+        break;
+    }
+
+    config.headers['Authorization'] = authValue;
+
+    // Log full (sin truncar)
+    console.log('[vitaClient] Authorization (FULL):', config.headers['Authorization']);
 
     if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
       console.log('[vitaClient] 🔑 DirectPay AUTH');
