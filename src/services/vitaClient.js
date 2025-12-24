@@ -119,24 +119,27 @@ client.interceptors.request.use((config) => {
   // Authorization exacto: "V2-HMAC-SHA256, Signature:{signature}"
   // DirectPayment usa JSON RAW (bodyString) cuando hay body.
   if (isDirectPayFamily) {
+    // Canonicalización requerida por DirectPay family
+    const httpMethod = method.toUpperCase();                 // GET / POST
+    const requestPath = url;                                 // ya está en lowercase
     const signatureBody = hasBody ? bodyString : '';
-    const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+
+    // 🔐 Base real usada por Vita para DirectPay family
+    const signatureBase =
+      `${xLogin}${xDate}${xTransKey}${httpMethod}${requestPath}${signatureBody}`;
+
     const signature = hmacSha256Hex(secretKey, signatureBase);
 
     // Headers requeridos por Vita (confirmado por error 301)
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
-
-    // ⚠️ Vita exige AMBOS headers en estos endpoints
-    // ambos con el mismo valor (Business xTransKey)
     config.headers['x-api-key'] = xTransKey;
     config.headers['x-trans-key'] = xTransKey;
-
-    // Authorization con formato ya validado (pasó error 300)
     config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
       console.log('[vitaClient] 🔑 DirectPay AUTH');
+      console.log('[vitaClient] signatureBase(DirectPay):', signatureBase);
       console.log('[vitaClient] ', method, config.url);
       console.log('[vitaClient] x-login:', xLogin);
       console.log('[vitaClient] x-api-key:', xTransKey.substring(0, 10) + '...');
