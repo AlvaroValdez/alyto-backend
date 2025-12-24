@@ -206,15 +206,27 @@ export const createPaymentOrder = async (payload) => {
 
 // 7. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async (data) => {
-  const { uid, method_id, ...paymentDetails } = data || {};
+  const { uid, method_id, ...rest } = data || {};
 
-  const payload = method_id
-    ? { method_id, payment_data: paymentDetails }
-    : { payment_data: paymentDetails };
+  // Acepta ambos formatos de entrada:
+  // - { first_name, last_name, email, ... }
+  // - { payment_data: { ... } }
+  const nested = rest?.payment_data && typeof rest.payment_data === 'object'
+    ? rest.payment_data
+    : null;
+
+  // Payload PLANO (sin payment_data) para evitar problemas de firma con objetos anidados
+  const payload = {
+    ...(method_id ? { method_id } : {}),
+    ...(nested ? nested : rest),
+  };
+
+  // Limpieza defensiva: nunca enviar payment_data anidado a Vita
+  delete payload.payment_data;
 
   console.log('🔍 [executeDirectPayment] uid:', uid);
   console.log('🔍 [executeDirectPayment] method_id:', method_id);
-  console.log('🔍 [executeDirectPayment] payload:', JSON.stringify(payload, null, 2));
+  console.log('🔍 [executeDirectPayment] payload(flat):', JSON.stringify(payload, null, 2));
 
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
