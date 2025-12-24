@@ -118,28 +118,35 @@ client.interceptors.request.use((config) => {
     config.headers['x-login'] = xLogin;
 
     // ------------------------------------------------------------
-    // 1) payment_methods: (Corregido para evitar 300 y 303)
+    // 1) payment_methods: Firma incluyendo el parámetro de URL
     // ------------------------------------------------------------
     if (isPaymentMethods) {
-      // ✅ FIX 1: Eliminar milisegundos de la fecha (Crucial para HMAC)
-      const xDateFixed = new Date().toISOString().split('.')[0] + 'Z';
+      // Extraemos el código de país (ej: /payment_methods/cl -> "cl")
+      const countryCode = urlRaw.split('/').pop().toLowerCase();
 
-      // ✅ FIX 2: Base de firma limpia para GET (Solo Login + Fecha sin ms)
-      const signatureBase = `${xLogin}${xDateFixed}`;
+      /**
+       * REGLA VITA: Parámetros ordenados alfabéticamente y concatenados.
+       * Para este GET, el parámetro es 'country_iso_code'.
+       * Resultado esperado: "country_iso_codecl"
+       */
+      const signatureParam = `country_iso_code${countryCode}`;
+
+      // ✅ La base debe ser: Login + Fecha + Parámetros [cite: 1]
+      const signatureBase = `${xLogin}${xDate}${signatureParam}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      // Actualizamos los headers con la fecha normalizada
-      config.headers['x-date'] = xDateFixed;
+      config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
+
+      // Requerido explícitamente por el módulo Direct Payment 
       config.headers['x-trans-key'] = xTransKey;
       config.headers['x-api-key'] = xTransKey;
 
-      // ✅ FIX 3: Formato exacto con espacios (Evita error 300)
+      // ✅ Formato estricto: Espacio tras la coma y tras los dos puntos 
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods FIXED');
-        console.log('[vitaClient] x-date (no ms):', xDateFixed);
+        console.log('[vitaClient] 🔑 payment_methods FIXED (With Params)');
         console.log('[vitaClient] signatureBase:', signatureBase);
         console.log('[vitaClient] signature:', signature);
       }
