@@ -113,31 +113,7 @@ client.interceptors.request.use((config) => {
   // AUTENTICACIÓN SEGÚN DOCUMENTACIÓN OFICIAL
   // ====================================================================
 
-  // 🔑 GET /payment_methods/{country}: GET sin body
-  if (isPaymentMethods && method === 'GET') {
-    console.log('[vitaClient] 📋 GET /payment_methods - DirectPay Auth (no body)');
-    console.log('[vitaClient]   URL:', config.url);
-
-    // DirectPayment: GET sin body, signatureBody vacío
-    const signatureBody = '';
-    const signatureBase = `${xLogin}${xDate}${signatureBody}`;
-    const signature = hmacSha256Hex(secretKey, signatureBase);
-
-    config.headers['x-date'] = xDate;
-    config.headers['x-login'] = xLogin;
-    config.headers['x-api-key'] = xApiKey;
-    config.headers['x-trans-key'] = xApiKey;
-    config.headers['Content-Type'] = 'application/json';
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-
-    console.log('[vitaClient]   signatureBase:', signatureBase);
-    console.log('[vitaClient]   signature:', signature);
-    console.log('[vitaClient]   Authorization:', config.headers['Authorization']);
-
-    return config;
-  }
-
-  // 🔐 POST /direct_payment: DirectPayment usa JSON RAW, no sorted key-value
+  //  POST /direct_payment: DirectPayment usa JSON RAW, no sorted key-value
   if (isDirectPayment) {
     console.log('[vitaClient] 💳 POST /direct_payment - DirectPay Auth (JSON raw)');
 
