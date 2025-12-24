@@ -36,14 +36,66 @@ router.post('/', async (req, res, next) => {
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
     const successRedirectUrl = `${frontendUrl}/#/payment-success/${encodeURIComponent(orderId)}`;
 
-    const payload = {
-      amount: Math.round(Number(amount)),
-      country_iso_code: String(country).toUpperCase().trim(),
-      issue: `Pago de remesa #${orderId}`,
-      success_redirect_url: successRedirectUrl,
-    };
+    router.post('/payment-orders', async (req, res) => {
+      try {
+        const {
+          amount,
+          currency,
+          country,
+          issue,
+          success_redirect_url,
+          cancel_redirect_url,
+          error_redirect_url
+        } = req.body || {};
 
-    const response = await createPaymentOrder(payload);
+        // ✅ Validación mínima correcta
+        if (
+          amount === undefined ||
+          !currency ||
+          !country ||
+          !issue ||
+          !success_redirect_url
+        ) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Faltan datos requeridos.',
+            missing: {
+              amount: amount === undefined,
+              currency: !currency,
+              country: !country,
+              issue: !issue,
+              success_redirect_url: !success_redirect_url
+            }
+          });
+        }
+
+        const payload = {
+          amount,
+          currency,
+          country,
+          issue,
+          success_redirect_url,
+          ...(cancel_redirect_url ? { cancel_redirect_url } : {}),
+          ...(error_redirect_url ? { error_redirect_url } : {})
+        };
+
+        const data = await vitaService.createPaymentOrder(payload);
+
+        return res.json({
+          ok: true,
+          checkoutUrl: data?.url || data?.checkout_url,
+          raw: data
+        });
+
+      } catch (e) {
+        return res.status(500).json({
+          ok: false,
+          error: 'Error creando payment order',
+          details: e?.response?.data || e?.message
+        });
+      }
+    });
+
 
     // Normaliza por si vitaService devuelve data o axios response
     const raw = response?.data ?? response;
