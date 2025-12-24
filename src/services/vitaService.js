@@ -194,8 +194,17 @@ export const createWithdrawal = async (payload) => {
 
 // 5. MÉTODOS DE PAGO
 export const getPaymentMethods = async (country) => {
-  const cc = String(country).toLowerCase(); // requerido por Vita
-  const res = await client.get(`/payment_methods/${cc}`);
+  const cc = String(country).toLowerCase();
+
+  const res = await client.get(`/payment_methods/${cc}`, {
+    headers: {
+      // DirectPay exige explícitamente x-trans-key en lugar de (o además de) x-api-key
+      'x-trans-key': process.env.VITA_TRANS_KEY
+    },
+    // Bandera personalizada para que el interceptor sepa cómo firmar
+    isDirectPayment: true
+  });
+
   return unwrap(res);
 };
 

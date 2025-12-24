@@ -121,43 +121,26 @@ client.interceptors.request.use((config) => {
     // 1) payment_methods: (firma SIMPLE) + requiere x-trans-key
     // ------------------------------------------------------------
     if (isPaymentMethods) {
-      // Vita exige Authorization con formato válido, pero la base exacta no es consistente.
-      // Vamos a soportar varios intentos (se reintenta en response interceptor si da 303).
+      // SOLUCIÓN: Para GET /payment_methods, Vita exige firma limpia: Login + Date.
+      // No se debe concatenar body vacío ni llaves vacías "{}".
 
-      const attempt = Number(config._vita_pm_attempt || 0);
-
-      const path = String(urlRaw || '').toLowerCase();           // "/payment_methods/cl"
-      const m = method.toUpperCase();                            // "GET"
-
-      // Posibles bases (probadas en integraciones HMAC inconsistentes)
-      // NOTA: En GET no hay body.
-      const bases = [
-        `${xLogin}${xDate}`,                          // A0
-        `${xLogin}${xDate}${xTransKey}`,              // A1
-        `${xLogin}${xTransKey}${xDate}`,              // A2
-        `${xLogin}${xDate}${m}${path}`,               // A3
-        `${xLogin}${xDate}${path}`,                   // A4
-        `${xLogin}${xDate}${xTransKey}${path}`,       // A5
-      ];
-
-      const signatureBase = bases[Math.min(attempt, bases.length - 1)];
+      const signatureBase = `${xLogin}${xDate}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
 
-      // Vita ya te exigió explícitamente x-trans-key, y además mantenemos x-api-key
-      config.headers['x-api-key'] = xTransKey;
+      // REQUISITO CRÍTICO: Este endpoint exige el header 'x-trans-key' explícitamente.
+      // Mantenemos x-api-key por redundancia segura, pero x-trans-key es el mandatorio.
       config.headers['x-trans-key'] = xTransKey;
+      config.headers['x-api-key'] = xTransKey;
 
-      // Formato válido (evita code 300)
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods AUTH (attempt)', attempt);
-        console.log('[vitaClient] ', m, urlRaw);
+        console.log('[vitaClient] 🔑 payment_methods AUTH (FIXED)');
         console.log('[vitaClient] signatureBase:', signatureBase);
-        console.log('[vitaClient] signature(full):', signature);
+        console.log('[vitaClient] signature:', signature);
       }
 
       return config;
