@@ -74,11 +74,11 @@ client.interceptors.request.use((config) => {
 
   const xDate = new Date().toISOString();
   const url = String(config.url || '').toLowerCase();
-  const method = String(config.method || 'GET').toUpperCase();
 
   const isBusinessUsers = url.includes('/business_users');
   const isDirectPayment = url.includes('/direct_payment');
   const isPaymentMethods = url.includes('/payment_methods/');
+  const isDirectPayFamily = isDirectPayment || isPaymentMethods;
 
   let bodyObj = undefined;
   let bodyString = '';
@@ -126,7 +126,15 @@ client.interceptors.request.use((config) => {
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+    if (isDirectPayFamily) {
+      // Exacto según DirectPayment.txt:
+      // "V2-HMAC-SHA256, Signature:{signature}"
+      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+    } else {
+      // Mantén lo anterior para no tocar lo que ya funciona
+      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+    }
+
 
     console.log('[vitaClient]   signatureBody (first 200):', signatureBody.substring(0, 200));
     console.log('[vitaClient]   signatureBase (first 200):', signatureBase.substring(0, 200));
@@ -143,11 +151,19 @@ client.interceptors.request.use((config) => {
   const signatureBase = `${xLogin}${xDate}${signatureBody}`;
   const signature = hmacSha256Hex(secretKey, signatureBase);
 
+  config.headers = config.headers || {};
   config.headers['x-date'] = xDate;
   config.headers['x-login'] = xLogin;
-  config.headers['x-api-key'] = xApiKey;
-  config.headers['x-trans-key'] = xApiKey;
-  config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+
+  // Para DirectPay/payment_methods: SOLO x-trans-key (como el doc)
+  if (isDirectPayFamily) {
+    config.headers['x-trans-key'] = xApiKey;     // (xApiKey aquí es tu vita.transKey)
+    delete config.headers['x-api-key'];          // importantísimo: no enviar x-api-key
+  } else {
+    // Mantén tu comportamiento anterior para no romper nada existente
+    config.headers['x-api-key'] = xApiKey;
+    config.headers['x-trans-key'] = xApiKey;
+  }
 
   // DEBUG: Mostrar todos los headers
   console.log('[vitaClient] 🔑 AUTHORIZATION DEBUG:');
