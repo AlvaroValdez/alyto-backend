@@ -127,7 +127,7 @@ client.interceptors.request.use((config) => {
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
     config.headers['Content-Type'] = 'application/json';
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     console.log('[vitaClient]   signatureBase:', signatureBase);
     console.log('[vitaClient]   signature:', signature);
@@ -149,7 +149,7 @@ client.interceptors.request.use((config) => {
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     console.log('[vitaClient]   signatureBody (first 200):', signatureBody.substring(0, 200));
     console.log('[vitaClient]   signatureBase (first 200):', signatureBase.substring(0, 200));
