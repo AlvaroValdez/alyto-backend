@@ -155,11 +155,11 @@ client.interceptors.request.use((config) => {
     }
 
     // ------------------------------------------------------------
-    // 2) direct_payment: (firma RAW JSON con bodyString)
+    // 2) direct_payment: Probar con buildSortedRequestBody
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      // ⚠️ CRÍTICO: DirectPayment usa bodyString (JSON raw), NO buildSortedRequestBody
-      const signatureBody = hasBody ? bodyString : '';
+      // Intentar con sorted key-value como otros endpoints
+      const signatureBody = hasBody ? buildSortedRequestBody(bodyObj) : '';
       const signatureBase = `${xLogin}${xDate}${signatureBody}`;
 
       const signature = hmacSha256Hex(secretKey, signatureBase);
@@ -169,7 +169,7 @@ client.interceptors.request.use((config) => {
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 💳 POST /direct_payment - JSON RAW');
+        console.log('[vitaClient] 💳 POST /direct_payment - SORTED KEY-VALUE');
         console.log('[vitaClient] signatureBody (first 200):', signatureBody.substring(0, 200));
         console.log('[vitaClient] signatureBase (first 200):', signatureBase.substring(0, 200));
         console.log('[vitaClient] signature:', signature);
