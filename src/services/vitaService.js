@@ -216,10 +216,9 @@ export const executeDirectPayment = async (data) => {
     : null;
 
   // Payload PLANO (sin payment_data) para evitar problemas de firma con objetos anidados
-  const payload = {
-    ...(method_id ? { method_id } : {}),
-    ...(nested ? nested : rest),
-  };
+  const payload = method_id
+    ? { method_id, payment_data: paymentDetails }
+    : { payment_data: paymentDetails };
 
   // Limpieza defensiva: nunca enviar payment_data anidado a Vita
   delete payload.payment_data;

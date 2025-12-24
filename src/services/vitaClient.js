@@ -74,7 +74,11 @@ client.interceptors.request.use((config) => {
 
   const xDate = new Date().toISOString();
   const url = String(config.url || '').toLowerCase();
+
   const isBusinessUsers = url.includes('/business_users');
+  const isDirectPayment = url.includes('/direct_payment');
+  const isPaymentMethods = url.includes('/payment_methods/');
+  const isDirectPayFamily = isDirectPayment || isPaymentMethods;
 
   let bodyObj = undefined;
   let bodyString = '';
@@ -114,12 +118,26 @@ client.interceptors.request.use((config) => {
   config.headers = config.headers || {};
   config.headers['x-date'] = xDate;
   config.headers['x-login'] = xLogin;
-  config.headers['x-api-key'] = xApiKey;
-  config.headers['x-trans-key'] = xApiKey;
+
+  // ✅ Para DirectPay y payment_methods: usar SOLO x-trans-key (como el doc)
+  // ✅ Para el resto: mantenemos lo que ya venía funcionando en tu implementación
+  if (isDirectPayFamily) {
+    config.headers['x-trans-key'] = xApiKey;
+    // Importante: no mandar x-api-key aquí
+    delete config.headers['x-api-key'];
+  } else {
+    config.headers['x-api-key'] = xApiKey;
+    config.headers['x-trans-key'] = xApiKey; // lo dejas igual para no romper nada existente
+  }
 
   // Formato con espacio después de coma (común en autenticación HMAC)
-  config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-
+  if (isDirectPayFamily) {
+    // Exacto según doc: "V2-HMAC-SHA256, Signature:{signature}"
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+  } else {
+    // Mantén el formato actual para no romper endpoints existentes
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+  }
 
   // DEBUG: Mostrar todos los headers
   console.log('[vitaClient] 🔑 AUTHORIZATION DEBUG:');
