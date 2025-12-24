@@ -156,7 +156,8 @@ client.interceptors.request.use((config) => {
     ? (isBusinessUsers ? bodyString : buildSortedRequestBody(bodyObj))
     : '';
 
-  const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+  // ✅ DirectPay family: Vita valida X-Trans-Key y (en la práctica) lo incluye en la base firmada
+  const signatureBase = `${xLogin}${xDate}${xTransKey}${signatureBody}`;
   const signature = hmacSha256Hex(secretKey, signatureBase);
 
   config.headers['x-date'] = xDate;
