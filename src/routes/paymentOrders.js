@@ -25,7 +25,6 @@ router.get('/methods/:country', async (req, res) => {
 });
 
 // POST /api/payment-orders (Paso 1 del pago: Crear la Orden)
-// backend/src/routes/paymentOrders.js
 router.post('/', async (req, res, next) => {
   try {
     const { amount, country, orderId } = req.body || {};
@@ -36,71 +35,19 @@ router.post('/', async (req, res, next) => {
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
     const successRedirectUrl = `${frontendUrl}/#/payment-success/${encodeURIComponent(orderId)}`;
 
-    router.post('/payment-orders', async (req, res) => {
-      try {
-        const {
-          amount,
-          currency,
-          country,
-          issue,
-          success_redirect_url,
-          cancel_redirect_url,
-          error_redirect_url
-        } = req.body || {};
+    const payload = {
+      amount: Math.round(Number(amount)),
+      country_iso_code: String(country).toUpperCase().trim(),
+      issue: `Pago de remesa #${orderId}`,
+      success_redirect_url: successRedirectUrl,
+    };
 
-        // ✅ Validación mínima correcta
-        if (
-          amount === undefined ||
-          !currency ||
-          !country ||
-          !issue ||
-          !success_redirect_url
-        ) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Faltan datos requeridos.',
-            missing: {
-              amount: amount === undefined,
-              currency: !currency,
-              country: !country,
-              issue: !issue,
-              success_redirect_url: !success_redirect_url
-            }
-          });
-        }
-
-        const payload = {
-          amount,
-          currency,
-          country,
-          issue,
-          success_redirect_url,
-          ...(cancel_redirect_url ? { cancel_redirect_url } : {}),
-          ...(error_redirect_url ? { error_redirect_url } : {})
-        };
-
-        const data = await vitaService.createPaymentOrder(payload);
-
-        return res.json({
-          ok: true,
-          checkoutUrl: data?.url || data?.checkout_url,
-          raw: data
-        });
-
-      } catch (e) {
-        return res.status(500).json({
-          ok: false,
-          error: 'Error creando payment order',
-          details: e?.response?.data || e?.message
-        });
-      }
-    });
-
+    const response = await createPaymentOrder(payload);
 
     // Normaliza por si vitaService devuelve data o axios response
     const raw = response?.data ?? response;
 
-    // Log útil (sin secretos) — AHORA sí se ejecuta
+    // Log útil (sin secretos)
     console.log('[payment-orders] Vita response keys:', Object.keys(raw || {}));
     console.log('[payment-orders] Full response structure:', JSON.stringify(raw, null, 2));
 
