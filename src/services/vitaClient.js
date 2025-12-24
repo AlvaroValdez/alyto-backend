@@ -118,27 +118,33 @@ client.interceptors.request.use((config) => {
     config.headers['x-login'] = xLogin;
 
     // ------------------------------------------------------------
-    // 1) payment_methods: (firma SIMPLE) + requiere x-trans-key
+    // 1) payment_methods: Firma con parámetros de URL (Direct Payment)
     // ------------------------------------------------------------
     if (isPaymentMethods) {
-      // SOLUCIÓN: Para GET /payment_methods, Vita exige firma limpia: Login + Date.
-      // No se debe concatenar body vacío ni llaves vacías "{}".
+      // Extraemos el código de país de la URL (ej: /payment_methods/cl -> cl)
+      const countryCode = urlRaw.split('/').pop().toLowerCase();
 
-      const signatureBase = `${xLogin}${xDate}`;
+      /**
+       * REGLA VITA: xLogin + xDate + [Parámetros ordenados]
+       * Para este GET, el parámetro es 'country_iso_code'
+       * String a concatenar: "country_iso_code" + "valor"
+       */
+      const paramsString = `country_iso_code${countryCode}`;
+      const signatureBase = `${xLogin}${xDate}${paramsString}`;
+
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
 
-      // REQUISITO CRÍTICO: Este endpoint exige el header 'x-trans-key' explícitamente.
-      // Mantenemos x-api-key por redundancia segura, pero x-trans-key es el mandatorio.
+      // La documentación de Direct Pay exige x-trans-key 
       config.headers['x-trans-key'] = xTransKey;
-      config.headers['x-api-key'] = xTransKey;
 
-      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+      // NOTA: Se elimina el espacio después de 'Signature:' según el estándar estricto
+      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods AUTH (FIXED)');
+        console.log('[vitaClient] 🔑 payment_methods AUTH (DirectPay Style)');
         console.log('[vitaClient] signatureBase:', signatureBase);
         console.log('[vitaClient] signature:', signature);
       }
