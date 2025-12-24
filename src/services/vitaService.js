@@ -206,26 +206,26 @@ export const createPaymentOrder = async (payload) => {
 
 // 7. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async (data) => {
-  const { uid, method_id, ...rest } = data || {};
+  const { uid, method_id, payment_data, ...flatFields } = data || {};
 
-  // Acepta ambos formatos de entrada:
-  // - { first_name, last_name, email, ... }
-  // - { payment_data: { ... } }
-  const nested = rest?.payment_data && typeof rest.payment_data === 'object'
-    ? rest.payment_data
-    : null;
+  // Construir payment_data desde formato anidado o plano
+  // Si viene payment_data como objeto, usarlo; si no, usar campos planos
+  const paymentDetails = (payment_data && typeof payment_data === 'object')
+    ? payment_data
+    : flatFields;
 
-  // Payload PLANO (sin payment_data) para evitar problemas de firma con objetos anidados
-  const payload = method_id
-    ? { method_id, payment_data: paymentDetails }
-    : { payment_data: paymentDetails };
+  // Construir payload según especificación de Vita
+  const payload = {
+    payment_data: paymentDetails
+  };
 
-  // Limpieza defensiva: nunca enviar payment_data anidado a Vita
-  delete payload.payment_data;
+  // Agregar method_id si está presente
+  if (method_id) {
+    payload.method_id = String(method_id);
+  }
 
-  console.log('🔍 [executeDirectPayment] uid:', uid);
-  console.log('🔍 [executeDirectPayment] method_id:', method_id);
-  console.log('🔍 [executeDirectPayment] payload(flat):', JSON.stringify(payload, null, 2));
+  console.log('🔍 [executeDirectPayment] POST /payment_orders/' + uid + '/direct_payment');
+  console.log('🔍 [executeDirectPayment] payload:', JSON.stringify(payload, null, 2));
 
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);

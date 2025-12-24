@@ -74,16 +74,15 @@ client.interceptors.request.use((config) => {
 
   const xDate = new Date().toISOString();
   const url = String(config.url || '').toLowerCase();
+  const method = String(config.method || 'GET').toUpperCase();
 
   const isBusinessUsers = url.includes('/business_users');
   const isDirectPayment = url.includes('/direct_payment');
   const isPaymentMethods = url.includes('/payment_methods/');
-  const isDirectPayFamily = isDirectPayment || isPaymentMethods;
 
   let bodyObj = undefined;
   let bodyString = '';
 
-  const method = String(config.method || 'GET').toUpperCase();
   const hasRequestBody =
     method !== 'GET' &&
     config.data !== undefined &&
@@ -108,6 +107,47 @@ client.interceptors.request.use((config) => {
 
   const hasBody = Boolean(bodyString && bodyString !== '{}' && bodyString !== '');
 
+  config.headers = config.headers || {};
+
+  // ====================================================================
+  // AUTENTICACIÓN SEGÚN DOCUMENTACIÓN OFICIAL
+  // ====================================================================
+
+  // 🔑 GET /payment_methods/{country}: Solo x-login y x-trans-key (SIN FIRMA HMAC)
+  if (isPaymentMethods && method === 'GET') {
+    console.log('[vitaClient] 📋 GET /payment_methods - Autenticación SIMPLE (sin HMAC)');
+    config.headers['x-login'] = xLogin;
+    config.headers['x-trans-key'] = xApiKey;
+    // NO enviar x-date ni Authorization para este endpoint
+    return config;
+  }
+
+  // 🔐 POST /direct_payment: Usar HMAC estándar
+  if (isDirectPayment) {
+    console.log('[vitaClient] 💳 POST /direct_payment - Autenticación HMAC');
+
+    const signatureBody = hasBody
+      ? buildSortedRequestBody(bodyObj)
+      : '';
+
+    const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+    const signature = hmacSha256Hex(secretKey, signatureBase);
+
+    config.headers['x-date'] = xDate;
+    config.headers['x-login'] = xLogin;
+    config.headers['x-trans-key'] = xApiKey;
+    // Formato exacto según doc: "V2-HMAC-SHA256, Signature:{signature}" (sin espacio después de ":")
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+
+    console.log('[vitaClient] 🔑 DirectPayment Headers:');
+    console.log('[vitaClient]   x-date:', xDate);
+    console.log('[vitaClient]   x-login:', xLogin);
+    console.log('[vitaClient]   Authorization:', config.headers['Authorization'].substring(0, 60) + '...');
+
+    return config;
+  }
+
+  // 🔐 Resto de endpoints: Autenticación estándar (funcionando actualmente)
   const signatureBody = hasBody
     ? (isBusinessUsers ? bodyString : buildSortedRequestBody(bodyObj))
     : '';
@@ -115,29 +155,11 @@ client.interceptors.request.use((config) => {
   const signatureBase = `${xLogin}${xDate}${signatureBody}`;
   const signature = hmacSha256Hex(secretKey, signatureBase);
 
-  config.headers = config.headers || {};
   config.headers['x-date'] = xDate;
   config.headers['x-login'] = xLogin;
-
-  // ✅ Para DirectPay y payment_methods: usar SOLO x-trans-key (como el doc)
-  // ✅ Para el resto: mantenemos lo que ya venía funcionando en tu implementación
-  if (isDirectPayFamily) {
-    config.headers['x-trans-key'] = xApiKey;
-    // Importante: no mandar x-api-key aquí
-    delete config.headers['x-api-key'];
-  } else {
-    config.headers['x-api-key'] = xApiKey;
-    config.headers['x-trans-key'] = xApiKey; // lo dejas igual para no romper nada existente
-  }
-
-  // Formato con espacio después de coma (común en autenticación HMAC)
-  if (isDirectPayFamily) {
-    // Exacto según doc: "V2-HMAC-SHA256, Signature:{signature}"
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
-  } else {
-    // Mantén el formato actual para no romper endpoints existentes
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-  }
+  config.headers['x-api-key'] = xApiKey;
+  config.headers['x-trans-key'] = xApiKey;
+  config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
   // DEBUG: Mostrar todos los headers
   console.log('[vitaClient] 🔑 AUTHORIZATION DEBUG:');
