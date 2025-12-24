@@ -123,49 +123,24 @@ client.interceptors.request.use((config) => {
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
 
-    config.headers['x-login'] = xLogin;
+    // Headers requeridos por Vita (confirmado por error 301)
     config.headers['x-date'] = xDate;
-    config.headers['x-api-key'] = xTransKey; // Business xTransKey
+    config.headers['x-login'] = xLogin;
 
-    // ❌ NO enviar x-trans-key
-    delete config.headers['x-trans-key'];
+    // ⚠️ Vita exige AMBOS headers en estos endpoints
+    // ambos con el mismo valor (Business xTransKey)
+    config.headers['x-api-key'] = xTransKey;
+    config.headers['x-trans-key'] = xTransKey;
 
-    // ✅ Formato exacto del Authorization header (como en la imagen)
-    const fmt = process.env.VITA_AUTH_FMT || 'comma_colon_space';
-
-    // Opciones:
-    // comma_colon_space => "V2-HMAC-SHA256, Signature: <hash>"
-    // comma_colon_nospace => "V2-HMAC-SHA256, Signature:<hash>"
-    // nocomma_colon_space => "V2-HMAC-SHA256 Signature: <hash>"
-    // comma_equal => "V2-HMAC-SHA256, Signature=<hash>"
-
-    let authValue;
-    switch (fmt) {
-      case 'comma_colon_nospace':
-        authValue = `V2-HMAC-SHA256, Signature:${signature}`;
-        break;
-      case 'nocomma_colon_space':
-        authValue = `V2-HMAC-SHA256 Signature: ${signature}`;
-        break;
-      case 'comma_equal':
-        authValue = `V2-HMAC-SHA256, Signature=${signature}`;
-        break;
-      case 'comma_colon_space':
-      default:
-        authValue = `V2-HMAC-SHA256, Signature: ${signature}`;
-        break;
-    }
-
-    config.headers['Authorization'] = authValue;
-
-    // Log full (sin truncar)
-    console.log('[vitaClient] Authorization (FULL):', config.headers['Authorization']);
+    // Authorization con formato ya validado (pasó error 300)
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
     if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
       console.log('[vitaClient] 🔑 DirectPay AUTH');
       console.log('[vitaClient] ', method, config.url);
       console.log('[vitaClient] x-login:', xLogin);
       console.log('[vitaClient] x-api-key:', xTransKey.substring(0, 10) + '...');
+      console.log('[vitaClient] x-trans-key:', xTransKey.substring(0, 10) + '...');
       console.log('[vitaClient] x-date:', xDate);
       console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
       console.log('[vitaClient] signature(full):', signature);
@@ -173,7 +148,6 @@ client.interceptors.request.use((config) => {
 
     return config;
   }
-
 
   // 2) Resto de endpoints (comportamiento actual):
   // - business_users: RAW JSON
