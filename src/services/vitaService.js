@@ -194,9 +194,11 @@ export const createWithdrawal = async (payload) => {
 
 // 5. MÉTODOS DE PAGO
 export const getPaymentMethods = async (country) => {
-  const res = await client.get(`/payment_methods/${country}`);
+  const cc = String(country || '').trim().toLowerCase(); // ✅ DirectPay example usa lowercase
+  const res = await client.get(`/payment_methods/${cc}`);
   return unwrap(res);
 };
+
 
 // 6. CREAR ORDEN DE PAGO (Payin)
 export const createPaymentOrder = async (payload) => {
