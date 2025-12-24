@@ -125,6 +125,7 @@ client.interceptors.request.use((config) => {
 
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
+    config.headers['x-api-key'] = xApiKey;
     config.headers['x-trans-key'] = xApiKey;
     config.headers['Content-Type'] = 'application/json';
     config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
