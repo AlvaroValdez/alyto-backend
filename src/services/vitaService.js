@@ -194,11 +194,10 @@ export const createWithdrawal = async (payload) => {
 
 // 5. MÉTODOS DE PAGO
 export const getPaymentMethods = async (country) => {
-  const cc = String(country || '').trim().toLowerCase(); // ✅ DirectPay example usa lowercase
+  const cc = String(country).toLowerCase(); // requerido por Vita
   const res = await client.get(`/payment_methods/${cc}`);
   return unwrap(res);
 };
-
 
 // 6. CREAR ORDEN DE PAGO (Payin)
 export const createPaymentOrder = async (payload) => {
@@ -207,29 +206,21 @@ export const createPaymentOrder = async (payload) => {
 };
 
 // 7. EJECUTAR PAGO DIRECTO
-export const executeDirectPayment = async (data) => {
-  const { uid, method_id, payment_data, ...flatFields } = data || {};
-
-  // Construir payment_data desde formato anidado o plano
-  // Si viene payment_data como objeto, usarlo; si no, usar campos planos
-  const paymentDetails = (payment_data && typeof payment_data === 'object')
-    ? payment_data
-    : flatFields;
-
-  // Construir payload según especificación de Vita
-  const payload = {
-    payment_data: paymentDetails
-  };
-
-  // Agregar method_id si está presente
-  if (method_id) {
-    payload.method_id = String(method_id);
+export const executeDirectPayment = async ({ uid, method_id, payment_data }) => {
+  if (!uid || !payment_data) {
+    throw new Error('Missing uid or payment_data for DirectPay');
   }
 
-  console.log('🔍 [executeDirectPayment] POST /payment_orders/' + uid + '/direct_payment');
-  console.log('🔍 [executeDirectPayment] payload:', JSON.stringify(payload, null, 2));
+  const payload = {
+    ...(method_id ? { method_id } : {}),
+    payment_data,
+  };
 
-  const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
+  const res = await client.post(
+    `/payment_orders/${uid}/direct_payment`,
+    payload
+  );
+
   return unwrap(res);
 };
 
