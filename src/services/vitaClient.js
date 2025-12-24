@@ -76,9 +76,43 @@ client.interceptors.request.use((config) => {
 
   // Familias / modos
   const isBusinessUsers = url.includes('/business_users');
-  const isDirectPayment = url.includes('/direct_payment');
-  const isPaymentMethods = url.includes('/payment_methods/');
-  const isDirectPayFamily = isDirectPayment || isPaymentMethods;
+  if (isPaymentMethods) {
+    const signatureBase = `${xLogin}${xDate}`;
+    const signature = hmacSha256Hex(secretKey, signatureBase);
+
+    config.headers['x-date'] = xDate;
+    config.headers['x-login'] = xLogin;
+
+    // Vita exige ambos headers, pero NO los firma
+    config.headers['x-api-key'] = xTransKey;
+    config.headers['x-trans-key'] = xTransKey;
+
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+
+    if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+      console.log('[vitaClient] 🔑 payment_methods AUTH (SIMPLE)');
+      console.log('[vitaClient] signatureBase:', signatureBase);
+      console.log('[vitaClient] signature:', signature);
+    }
+
+    return config;
+  }
+
+  if (isDirectPayment) {
+    const signatureBody = hasBody ? bodyString : '';
+    const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+    const signature = hmacSha256Hex(secretKey, signatureBase);
+
+    config.headers['x-date'] = xDate;
+    config.headers['x-login'] = xLogin;
+    config.headers['x-api-key'] = xTransKey;
+    config.headers['x-trans-key'] = xTransKey;
+
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+
+    return config;
+  }
+
 
   // Detecta body
   let bodyObj;
