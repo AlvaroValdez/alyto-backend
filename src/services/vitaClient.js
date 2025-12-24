@@ -113,13 +113,12 @@ client.interceptors.request.use((config) => {
   // AUTENTICACIÓN SEGÚN DOCUMENTACIÓN OFICIAL
   // ====================================================================
 
-  // 🔑 GET /payment_methods/{country}: Usar HMAC (el ejemplo de la doc estaba incompleto)
-  // Vita requiere Authorization header (error 301 sin él)
+  // 🔑 GET /payment_methods/{country}: GET sin body
   if (isPaymentMethods && method === 'GET') {
-    console.log('[vitaClient] 📋 GET /payment_methods - Autenticación HMAC (sin body)');
+    console.log('[vitaClient] 📋 GET /payment_methods - DirectPay Auth (no body)');
     console.log('[vitaClient]   URL:', config.url);
 
-    // GET no tiene body, entonces signatureBody es vacío
+    // DirectPayment: GET sin body, signatureBody vacío
     const signatureBody = '';
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
@@ -128,23 +127,21 @@ client.interceptors.request.use((config) => {
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
     config.headers['Content-Type'] = 'application/json';
-    // Usar formato estándar con espacio: "Signature: {hash}"
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
 
-    console.log('[vitaClient]   x-date:', xDate);
-    console.log('[vitaClient]   x-login:', xLogin);
-    console.log('[vitaClient]   Authorization:', config.headers['Authorization'].substring(0, 60) + '...');
+    console.log('[vitaClient]   signatureBase:', signatureBase);
+    console.log('[vitaClient]   signature:', signature);
+    console.log('[vitaClient]   Authorization:', config.headers['Authorization']);
 
     return config;
   }
 
-  // 🔐 POST /direct_payment: Usar HMAC estándar
+  // 🔐 POST /direct_payment: DirectPayment usa JSON RAW, no sorted key-value
   if (isDirectPayment) {
-    console.log('[vitaClient] 💳 POST /direct_payment - Autenticación HMAC');
+    console.log('[vitaClient] 💳 POST /direct_payment - DirectPay Auth (JSON raw)');
 
-    const signatureBody = hasBody
-      ? buildSortedRequestBody(bodyObj)
-      : '';
+    // ⚠️ DIFERENCIA CLAVE: DirectPayment usa bodyString (JSON raw), NO buildSortedRequestBody
+    const signatureBody = hasBody ? bodyString : '';
 
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
@@ -152,13 +149,11 @@ client.interceptors.request.use((config) => {
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
-    // Formato exacto según doc: "V2-HMAC-SHA256, Signature:{signature}" (sin espacio después de ":")
     config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
 
-    console.log('[vitaClient] 🔑 DirectPayment Headers:');
-    console.log('[vitaClient]   x-date:', xDate);
-    console.log('[vitaClient]   x-login:', xLogin);
-    console.log('[vitaClient]   Authorization:', config.headers['Authorization'].substring(0, 60) + '...');
+    console.log('[vitaClient]   signatureBody (first 200):', signatureBody.substring(0, 200));
+    console.log('[vitaClient]   signatureBase (first 200):', signatureBase.substring(0, 200));
+    console.log('[vitaClient]   signature:', signature);
 
     return config;
   }
