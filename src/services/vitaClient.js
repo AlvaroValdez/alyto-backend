@@ -19,6 +19,8 @@ function deepClean(value) {
   return value;
 }
 
+// Stringify estable (keys ordenadas recursivamente) para valores objeto,
+// solo cuando estemos en SORTED_KV y haya objects/arrays como value.
 function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
@@ -30,9 +32,7 @@ function stableStringify(value) {
   return JSON.stringify(value); // strings/numbers/bools
 }
 
-// sorted_request_body:
-// keys top-level ordenadas + concat key+value (sin separadores)
-// objects/arrays: JSON.stringify(value)
+// sorted_request_body: keys top-level ordenadas + concat key+value (sin separadores)
 function buildSortedRequestBody(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
 
@@ -46,7 +46,6 @@ function buildSortedRequestBody(bodyObj) {
     if (typeof v === 'object') out += `${k}${stableStringify(v)}`;
     else out += `${k}${String(v)}`;
   }
-
   return out;
 }
 
@@ -54,33 +53,35 @@ function hmacSha256Hex(secret, msg) {
   return crypto.createHmac('sha256', secret).update(msg, 'utf8').digest('hex');
 }
 
-// vita.baseURL debe apuntar al Base URL de Business API:
 // stage: https://api.stage.vitawallet.io/api/businesses
 // prod:  https://api.vitawallet.io/api/businesses
 const client = axios.create({
   baseURL: vita.baseURL,
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json' },
 });
 
 client.interceptors.request.use((config) => {
   const xLogin = String(vita.login || '').replace(/\s+/g, '');
-  const xApiKey = String(vita.transKey || '').replace(/\s+/g, '');
+  const xTransKey = String(vita.transKey || '').replace(/\s+/g, '');
   const secretKey = String(vita.secret || '').replace(/\s+/g, '');
 
-  if (!xLogin || !xApiKey || !secretKey) {
+  if (!xLogin || !xTransKey || !secretKey) {
     throw new Error('Missing Vita credentials (VITA_LOGIN / VITA_TRANS_KEY / VITA_SECRET)');
   }
 
   const xDate = new Date().toISOString();
   const url = String(config.url || '').toLowerCase();
+  const method = String(config.method || 'GET').toUpperCase(); // ✅ FIX: define method
 
+  // Familias / modos
   const isBusinessUsers = url.includes('/business_users');
   const isDirectPayment = url.includes('/direct_payment');
   const isPaymentMethods = url.includes('/payment_methods/');
   const isDirectPayFamily = isDirectPayment || isPaymentMethods;
 
-  let bodyObj = undefined;
+  // Detecta body
+  let bodyObj;
   let bodyString = '';
 
   const hasRequestBody =
@@ -97,10 +98,10 @@ client.interceptors.request.use((config) => {
     }
     if (!raw || typeof raw !== 'object') raw = {};
 
-    // ✅ NO canonicalizar profundo
     bodyObj = deepClean(raw) || {};
     bodyString = JSON.stringify(bodyObj);
 
+    // aseguramos que lo firmado sea exactamente lo enviado
     config.data = bodyString;
     config.transformRequest = [(data) => data];
   }
@@ -109,41 +110,46 @@ client.interceptors.request.use((config) => {
 
   config.headers = config.headers || {};
 
-  // ====================================================================
-  // AUTENTICACIÓN SEGÚN DOCUMENTACIÓN OFICIAL
-  // ====================================================================
+  // =========================================================
+  // AUTENTICACIÓN (sin cambiar el algoritmo)
+  // =========================================================
 
-  //  POST /direct_payment: DirectPayment usa JSON RAW, no sorted key-value
-  if (isDirectPayment) {
-    console.log('[vitaClient] 💳 POST /direct_payment - DirectPay Auth (JSON raw)');
-
-    // ⚠️ DIFERENCIA CLAVE: DirectPayment usa bodyString (JSON raw), NO buildSortedRequestBody
+  // 1) DirectPay family (DirectPayment.txt):
+  // headers requeridos: x-login, x-trans-key, x-date, Authorization
+  // Authorization exacto: "V2-HMAC-SHA256, Signature:{signature}"
+  // DirectPayment usa JSON RAW (bodyString) cuando hay body.
+  if (isDirectPayFamily) {
     const signatureBody = hasBody ? bodyString : '';
-
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
 
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
-    config.headers['x-trans-key'] = xApiKey;
-    if (isDirectPayFamily) {
-      // Exacto según DirectPayment.txt:
-      // "V2-HMAC-SHA256, Signature:{signature}"
-      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
-    } else {
-      // Mantén lo anterior para no tocar lo que ya funciona
-      config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
+    config.headers['x-trans-key'] = xTransKey;
+
+    // IMPORTANTÍSIMO: no enviar x-api-key en esta familia
+    delete config.headers['x-api-key'];
+
+    // Formato exacto (sin espacio extra)
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+
+    if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+      console.log('[vitaClient] 🔑 DirectPayFamily AUTH');
+      console.log('[vitaClient] ', method, config.url);
+      console.log('[vitaClient] x-date:', xDate);
+      console.log('[vitaClient] x-login:', xLogin);
+      console.log('[vitaClient] x-trans-key:', xTransKey.substring(0, 10) + '...');
+      console.log('[vitaClient] hasBody:', hasBody, 'bodyLen:', bodyString.length);
+      console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
+      console.log('[vitaClient] signature(full):', signature);
     }
-
-
-    console.log('[vitaClient]   signatureBody (first 200):', signatureBody.substring(0, 200));
-    console.log('[vitaClient]   signatureBase (first 200):', signatureBase.substring(0, 200));
-    console.log('[vitaClient]   signature:', signature);
 
     return config;
   }
 
-  // 🔐 Resto de endpoints: Autenticación estándar (funcionando actualmente)
+  // 2) Resto de endpoints (comportamiento actual):
+  // - business_users: RAW JSON
+  // - otros: SORTED_KV
   const signatureBody = hasBody
     ? (isBusinessUsers ? bodyString : buildSortedRequestBody(bodyObj))
     : '';
@@ -151,48 +157,33 @@ client.interceptors.request.use((config) => {
   const signatureBase = `${xLogin}${xDate}${signatureBody}`;
   const signature = hmacSha256Hex(secretKey, signatureBase);
 
-  config.headers = config.headers || {};
   config.headers['x-date'] = xDate;
   config.headers['x-login'] = xLogin;
 
-  // Para DirectPay/payment_methods: SOLO x-trans-key (como el doc)
-  if (isDirectPayFamily) {
-    config.headers['x-trans-key'] = xApiKey;     // (xApiKey aquí es tu vita.transKey)
-    delete config.headers['x-api-key'];          // importantísimo: no enviar x-api-key
-  } else {
-    // Mantén tu comportamiento anterior para no romper nada existente
-    config.headers['x-api-key'] = xApiKey;
-    config.headers['x-trans-key'] = xApiKey;
-  }
+  // Mantén lo que te venía funcionando: x-api-key + x-trans-key
+  config.headers['x-api-key'] = xTransKey;
+  config.headers['x-trans-key'] = xTransKey;
 
-  // DEBUG: Mostrar todos los headers
-  console.log('[vitaClient] 🔑 AUTHORIZATION DEBUG:');
-  console.log('[vitaClient] x-date:', xDate);
-  console.log('[vitaClient] x-login:', xLogin);
-  console.log('[vitaClient] x-api-key:', xApiKey.substring(0, 10) + '...');
-  console.log('[vitaClient] Authorization:', config.headers['Authorization'].substring(0, 60) + '...');
-  console.log('[vitaClient] Signature base:', `${xLogin}${xDate}${signatureBody}`.substring(0, 100));
-  console.log('[vitaClient] Signature (full):', signature);
+  // Asegura Authorization también aquí (se te había perdido)
+  config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
-
+  // Debug seguro (no crashea si faltara algo)
   if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-    console.log(`[vitaClient] ${String(config.method || 'GET').toUpperCase()} ${config.url}`);
-    console.log(`[vitaClient] mode=${isBusinessUsers ? 'RAW_JSON business_users' : 'SORTED_KV'} hasBody=${hasBody}`);
-    console.log(`[vitaClient] bodyLen=${bodyString.length} sigBodyLen=${signatureBody.length}`);
+    console.log('[vitaClient] 🔑 STANDARD AUTH');
+    console.log('[vitaClient] ', method, config.url);
+    console.log('[vitaClient] x-date:', xDate);
+    console.log('[vitaClient] x-login:', xLogin);
+    console.log('[vitaClient] x-api-key:', xTransKey.substring(0, 10) + '...');
+    console.log('[vitaClient] Authorization:', String(config.headers['Authorization']).slice(0, 80) + '...');
+    console.log('[vitaClient] mode=', isBusinessUsers ? 'RAW_JSON business_users' : 'SORTED_KV', 'hasBody=', hasBody);
+    console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
+    console.log('[vitaClient] signature(full):', signature);
 
-    const sorted = hasBody ? buildSortedRequestBody(bodyObj) : '';
-    console.log(`[vitaClient] sorted_request_body(0..300): ${sorted.slice(0, 300)}`);
-    console.log(`[vitaClient] bodyString(0..300): ${bodyString.slice(0, 300)}`);
-
-    try {
-      const parsed = bodyString ? JSON.parse(bodyString) : {};
-      console.log('[vitaClient] types:', {
-        amount: typeof parsed.amount,
-        bank_code: typeof parsed.bank_code,
-        currency: typeof parsed.currency,
-      });
-    } catch { }
-
+    if (hasBody) {
+      const sorted = isBusinessUsers ? '(raw json mode)' : buildSortedRequestBody(bodyObj);
+      console.log('[vitaClient] sorted_request_body(0..300):', String(sorted).slice(0, 300));
+      console.log('[vitaClient] bodyString(0..300):', String(bodyString).slice(0, 300));
+    }
   }
 
   return config;
