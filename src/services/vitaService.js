@@ -220,7 +220,13 @@ export const executeDirectPayment = async ({ uid, method_id, payment_data }) => 
   if (!method_id) throw new Error('Missing method_id');
   if (!payment_data || typeof payment_data !== 'object') throw new Error('Missing payment_data');
 
-  const payload = { method_id, payment_data };
+  // ⚠️ CRÍTICO: method_id debe ser string para que la firma HMAC coincida
+  const payload = {
+    method_id: String(method_id),
+    payment_data
+  };
+
+  console.log('[vitaService] Ejecutando DirectPayment:', payload);
 
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
