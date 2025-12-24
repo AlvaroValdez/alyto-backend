@@ -113,12 +113,27 @@ client.interceptors.request.use((config) => {
   // AUTENTICACIÓN SEGÚN DOCUMENTACIÓN OFICIAL
   // ====================================================================
 
-  // 🔑 GET /payment_methods/{country}: Solo x-login y x-trans-key (SIN FIRMA HMAC)
+  // 🔑 GET /payment_methods/{country}: Usar HMAC (el ejemplo de la doc estaba incompleto)
+  // Vita requiere Authorization header (error 301 sin él)
   if (isPaymentMethods && method === 'GET') {
-    console.log('[vitaClient] 📋 GET /payment_methods - Autenticación SIMPLE (sin HMAC)');
+    console.log('[vitaClient] 📋 GET /payment_methods - Autenticación HMAC (sin body)');
+    console.log('[vitaClient]   URL:', config.url);
+
+    // GET no tiene body, entonces signatureBody es vacío
+    const signatureBody = '';
+    const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+    const signature = hmacSha256Hex(secretKey, signatureBase);
+
+    config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
     config.headers['x-trans-key'] = xApiKey;
-    // NO enviar x-date ni Authorization para este endpoint
+    config.headers['Content-Type'] = 'application/json';
+    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+
+    console.log('[vitaClient]   x-date:', xDate);
+    console.log('[vitaClient]   x-login:', xLogin);
+    console.log('[vitaClient]   Authorization:', config.headers['Authorization'].substring(0, 60) + '...');
+
     return config;
   }
 
