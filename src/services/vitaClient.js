@@ -158,40 +158,44 @@ client.interceptors.request.use((config) => {
     // 2) direct_payment: Probar con buildSortedRequestBody
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      // Extraer payment_order_id desde la URL: /payment_orders/3611/direct_payment
       const match = urlRaw.match(/\/payment_orders\/([^/]+)\/direct_payment/i);
       const paymentOrderId = match?.[1] ? String(match[1]) : '';
 
-      // Body normalizado
-      const signatureBodyObj = hasBody
-        ? (() => {
-          let raw = config.data;
-          if (typeof raw === 'string') {
-            try { raw = JSON.parse(raw); } catch { raw = {}; }
-          }
-          raw = deepClean(raw) || {};
-          // ✅ incluir el parámetro embebido en URL como "payment_order_id"
-          return { ...raw, payment_order_id: paymentOrderId };
-        })()
-        : { payment_order_id: paymentOrderId };
+      const attempt = Number(config._vita_dp_attempt || 0);
 
-      // ✅ DirectPay: Vita firma como sorted key-value (como doc general) PERO incluyendo params de URL
+      // Parse body ya serializado
+      let rawBody = {};
+      if (hasBody) {
+        try { rawBody = typeof config.data === 'string' ? JSON.parse(config.data) : (config.data || {}); }
+        catch { rawBody = {}; }
+      }
+      rawBody = deepClean(rawBody) || {};
+
+      // ✅ Variantes de nombre de parámetro (lo único que cambia)
+      const idKeys = [
+        'payment_order_id',   // tu intento actual
+        'payment_order_uid',
+        'payment_order',
+        'order_id',
+        'uid',
+        'id',
+      ];
+      const idKey = idKeys[Math.min(attempt, idKeys.length - 1)];
+
+      const signatureBodyObj = { ...rawBody, [idKey]: paymentOrderId };
+
       const signatureBody = buildSortedRequestBody(signatureBodyObj);
       const signatureBase = `${xLogin}${xDate}${signatureBody}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      // Headers requeridos por DirectPay
       config.headers['x-date'] = xDate;
       config.headers['x-login'] = xLogin;
       config.headers['x-trans-key'] = xTransKey;
       config.headers['x-api-key'] = xTransKey;
-
-      // Formato aceptado (el que te funcionó)
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 💳 POST /direct_payment - SORTED KV + URL PARAM');
-        console.log('[vitaClient] payment_order_id:', paymentOrderId);
+        console.log('[vitaClient] 💳 direct_payment attempt=', attempt, 'idKey=', idKey);
         console.log('[vitaClient] signatureBody (first 300):', signatureBody.slice(0, 300));
         console.log('[vitaClient] signatureBase (first 300):', signatureBase.slice(0, 300));
         console.log('[vitaClient] signature:', signature);
@@ -199,6 +203,7 @@ client.interceptors.request.use((config) => {
 
       return config;
     }
+
 
     // ------------------------------------------------------------
     // 3) Resto: estándar actual (business_users RAW, otros SORTED_KV)
@@ -235,12 +240,21 @@ client.interceptors.response.use(
   async (error) => {
     const status = error?.response?.status;
     const data = error?.response?.data;
-    const url = String(error?.config?.url || '');
     const code = data?.error?.code;
+    const url = String(error?.config?.url || '').toLowerCase();
+
+    const isDirectPayment = url.includes('/direct_payment');
+    const attempt = Number(error?.config?._vita_dp_attempt || 0);
+
+    // ✅ Reintentar SOLO si Vita devuelve 303 en direct_payment
+    if (isDirectPayment && status === 422 && code === 303 && attempt < 5) {
+      const newConfig = { ...error.config, _vita_dp_attempt: attempt + 1 };
+      // no toques body; solo cambiaremos el nombre del idKey en el interceptor
+      return client.request(newConfig);
+    }
 
     // ✅ Auto-retry SOLO para payment_methods cuando es 303
     const isPaymentMethods = url.toLowerCase().startsWith('/payment_methods/');
-    const attempt = Number(error?.config?._vita_pm_attempt || 0);
 
     if (isPaymentMethods && status === 422 && code === 303 && attempt < 5) {
       const newConfig = { ...error.config, _vita_pm_attempt: attempt + 1 };
