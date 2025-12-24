@@ -131,7 +131,9 @@ client.interceptors.request.use((config) => {
     delete config.headers['x-api-key'];
 
     // Formato exacto (sin espacio extra)
-    config.headers['Authorization'] = `V2-HMAC-SHA256, Signature=${signature}`;
+    //config.headers['Authorization'] = `V2-HMAC-SHA256, Signature:${signature}`;
+    //config.headers['Authorization'] = `V2-HMAC-SHA256, Signature=${signature}`;
+    config.headers['Authorization'] = `V2-HMAC-SHA256 Signature=${signature}`;
 
     if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
       console.log('[vitaClient] 🔑 DirectPayFamily AUTH');
