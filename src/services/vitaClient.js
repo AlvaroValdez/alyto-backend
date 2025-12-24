@@ -158,25 +158,30 @@ client.interceptors.request.use((config) => {
     // 2) direct_payment: Probar con buildSortedRequestBody
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      // Intentar con sorted key-value como otros endpoints
-      const signatureBody = hasBody ? buildSortedRequestBody(bodyObj) : '';
+      // Para direct_payment, Vita firma con el JSON RAW exacto (no sorted KV)
+      const signatureBody = hasBody ? bodyString : ''; // bodyString = JSON.stringify(payload) tal cual se manda
       const signatureBase = `${xLogin}${xDate}${signatureBody}`;
-
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
+      config.headers['x-date'] = xDate;
+      config.headers['x-login'] = xLogin;
+
+      // DirectPay exige ambos headers en la práctica (ya lo confirmaste en payment_methods)
       config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
+
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 💳 POST /direct_payment - SORTED KEY-VALUE');
-        console.log('[vitaClient] signatureBody (first 200):', signatureBody.substring(0, 200));
-        console.log('[vitaClient] signatureBase (first 200):', signatureBase.substring(0, 200));
+        console.log('[vitaClient] 💳 POST /direct_payment - RAW JSON');
+        console.log('[vitaClient] signatureBody (first 300):', signatureBody.slice(0, 300));
+        console.log('[vitaClient] signatureBase (first 300):', signatureBase.slice(0, 300));
         console.log('[vitaClient] signature:', signature);
       }
 
       return config;
     }
+
 
     // ------------------------------------------------------------
     // 3) Resto: estándar actual (business_users RAW, otros SORTED_KV)
