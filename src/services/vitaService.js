@@ -216,20 +216,13 @@ export const createPaymentOrder = async (payload) => {
 
 // 7. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async ({ uid, method_id, payment_data }) => {
-  if (!uid || !payment_data) {
-    throw new Error('Missing uid or payment_data for DirectPay');
-  }
+  if (!uid) throw new Error('Missing uid');
+  if (!method_id) throw new Error('Missing method_id');
+  if (!payment_data || typeof payment_data !== 'object') throw new Error('Missing payment_data');
 
-  const payload = {
-    ...(method_id ? { method_id } : {}),
-    payment_data,
-  };
+  const payload = { method_id, payment_data };
 
-  const res = await client.post(
-    `/payment_orders/${uid}/direct_payment`,
-    payload
-  );
-
+  const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
 };
 

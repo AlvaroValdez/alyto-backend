@@ -158,20 +158,15 @@ client.interceptors.request.use((config) => {
     // 2) direct_payment: (firma RAW JSON con bodyString)
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      const signatureBody = hasBody ? bodyString : '';
+      // ✅ REGLA VITA: Para POST, el cuerpo debe estar ordenado alfabéticamente
+      const signatureBody = hasBody ? buildSortedRequestBody(bodyObj) : '';
       const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
       config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-
-      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 direct_payment AUTH (RAW)');
-        console.log('[vitaClient] ', method, urlRaw);
-        console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
-        console.log('[vitaClient] signature(full):', signature);
-      }
 
       return config;
     }
