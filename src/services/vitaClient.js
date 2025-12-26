@@ -122,26 +122,34 @@ client.interceptors.request.use((config) => {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // ✅ CASO DIRECT PAY: Aplanado + PaymentOrderID
+    // ✅ CASO DIRECT PAY: Aplanado Puro (Strict Doc Compliance)
     else if (url.includes('/direct_payment') && method === 'POST') {
-      // 1. Extraer ID
-      const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
-      const urlId = idMatch ? idMatch[1] : '';
+      // 1. FECHA CON MILISEGUNDOS (Estándar Transaccional)
+      xDate = new Date().toISOString();
+      config.headers['x-date'] = xDate;
 
-      // 2. Preparar objeto con 'payment_order_id'
-      const paramsToSign = {
-        payment_order_id: urlId, // Usamos la llave larga
-        ...bodyObj
-      };
+      // Regenerar base con fecha precisa
+      signatureBase = `${xLogin}${xDate}`;
 
-      // Limpieza
-      delete paramsToSign.uid;
+      // 2. PREPARACIÓN DEL BODY
+      // Clonamos para no modificar el envío original
+      const paramsToSign = { ...bodyObj };
+
+      // 3. LIMPIEZA TOTAL DE IDs
+      // La hipótesis es que el ID va en la URL y NO se firma en el body.
       delete paramsToSign.id;
+      delete paramsToSign.uid;
+      delete paramsToSign.payment_order_id;
 
-      // 3. Firma APLANADA (Sin separadores JSON)
-      // Orden esperado: method_id -> payment_data -> payment_order_id
-      // Dentro de payment_data: bank_id -> document... (todo plano)
+      // 4. FIRMA APLANADA (Sin separadores JSON)
+      // Usamos buildDirectPaySignature (recursiva)
+      // Generará: method_id3payment_databank_id1007...
+      // SIN comillas, SIN llaves, SIN el ID de la orden.
       signatureBase += buildDirectPaySignature(paramsToSign);
+
+      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+        console.log('[DirectPay] SignatureBase (Flat + No ID):', signatureBase);
+      }
     }
     // CASO REDIRECT PAY: Legacy + Sin ID
     else if (hasBody) {
