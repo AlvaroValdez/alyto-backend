@@ -152,42 +152,32 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // LA SOLUCIÓN FINAL:
-        // 1. Fecha con Milisegundos (Correcto)
-        // 2. ID incluido en la firma (Correcto)
-        // 3. Body Aplanado Recursivo (Correcto - Sin separadores)
+        // ESTRATEGIA: "MIRROR REDIRECT PAY"
+        // 1. Usamos la misma función de firma que Redirect Pay (Legacy JSON)
+        // 2. NO inyectamos el ID (Igual que Redirect Pay)
+        // 3. Mantenemos la fecha con MS (Igual que Redirect Pay)
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
+        // 1. Fecha: CON Milisegundos
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
-
         signatureBase = `${xLogin}${xDate}`;
 
-        // 2. Extraer ID de la URL
-        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
-        const urlId = idMatch ? idMatch[1] : '';
+        // 2. Limpieza: NO firmamos el ID de la URL
+        const cleanBody = { ...bodyObj };
+        delete cleanBody.id;
+        delete cleanBody.uid;
+        delete cleanBody.payment_order_id;
 
-        // 3. Construir Objeto (ID + Body)
-        // Usamos 'id' como llave, tal como pide la documentación
-        const paramsToSign = {
-          id: urlId,
-          ...bodyObj
-        };
-
-        // Limpieza de seguridad
-        delete paramsToSign.uid;
-        delete paramsToSign.payment_order_id;
-
-        // 4. FIRMA APLANADA (Usa buildDirectPaySignature)
-        // Esto generará: id3637method_id3payment_dataemailval...
-        // SIN comillas, SIN llaves, SIN dos puntos.
-        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
+        // 3. FIRMA LEGACY (Exactamente igual a Redirect Pay)
+        // Usamos buildSortedRequestBodyLegacy que usa stableStringify (JSON)
+        // Esto generará: method_id3payment_data{"email":"..."}
+        const signatureBody = hasBody ? buildSortedRequestBodyLegacy(cleanBody) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...T20:55:xx.xxxZid3638method_id3payment_dataemailv...
-          console.log('[DirectPay POST] Base (Flat + ID + MS):', signatureBase);
+          // Debería verse: ...456Zmethod_id3payment_data{"email":"..."}
+          console.log('[DirectPay POST] Base (Mirror Redirect):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
