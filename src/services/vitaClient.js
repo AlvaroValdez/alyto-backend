@@ -151,31 +151,43 @@ client.interceptors.request.use((config) => {
         signatureBase += `country_iso_code${countryCode}`;
       }
       else if (isDirectPayment && method === 'POST') {
-        // POST Direct: 
+        // -----------------------------------------------------------------
+        // ESTRATEGIA: "HYBRID POST"
+        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
+        // 2. ID: Incluido en la firma (Igual que GET Methods)
+        // 3. Formato: Aplanado sin separadores (Regla Direct Pay)
+        // -----------------------------------------------------------------
 
-        // 1. RESTAURAR MILISEGUNDOS (Crucial para coincidir con Redirect Pay)
-        // Sobrescribimos la fecha truncada con la fecha completa original
+        // A. Restaurar Milisegundos (Sobrescribir la fecha truncada)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
 
-        // Regeneramos la base con la fecha correcta
+        // Regenerar la base con la nueva fecha precisa
         signatureBase = `${xLogin}${xDate}`;
 
-        // 2. LIMPIEZA DEL BODY (Sin ID, Solo Payload)
-        // El ID va en la URL. Según estándares REST y HMAC de Vita, 
-        // para POST solo se firma el contenido del body.
-        const cleanBody = { ...bodyObj };
-        delete cleanBody.id;
-        delete cleanBody.uid;
-        delete cleanBody.payment_order_id; // Aseguramos que no quede nada extra
+        // B. Extraer ID de la URL
+        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+        const urlId = idMatch ? idMatch[1] : '';
 
-        // 3. FIRMA SIN SEPARADORES (Regla DirectPayment.txt)
-        const signatureBody = hasBody ? buildDirectPaySignature(cleanBody) : '';
+        // C. Construir Objeto de Firma: ID + Body
+        // Usamos la llave 'id' porque así aparece en la tabla de parámetros del txt
+        const paramsToSign = {
+          id: urlId, // <--- REQUISITO CRÍTICO
+          ...bodyObj
+        };
+
+        // Limpieza de seguridad
+        delete paramsToSign.uid;
+        delete paramsToSign.payment_order_id;
+
+        // D. Generar Firma Aplanada (Sin separadores)
+        // buildDirectPaySignature ordenará: id -> method_id -> payment_data
+        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...44.123Zmethod_id3payment_dataemail...
-          console.log('[DirectPay] Base (Con MS + Sin ID):', signatureBase);
+          // Debería verse: ...417Zid3628method_id3payment_data...
+          console.log('[DirectPay POST] Base:', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
