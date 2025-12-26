@@ -155,55 +155,38 @@ client.interceptors.request.use((config) => {
     }
 
     // ------------------------------------------------------------
-    // 2) direct_payment: Probar con buildSortedRequestBody
+    // 2) direct_payment: (Firma RAW JSON limpia)
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      const match = urlRaw.match(/\/payment_orders\/([^/]+)\/direct_payment/i);
-      const paymentOrderId = match?.[1] ? String(match[1]) : '';
+      // ✅ FIX 1: Fecha sin milisegundos (estándar Vita)
+      const xDateFixed = new Date().toISOString().split('.')[0] + 'Z';
 
-      const attempt = Number(config._vita_dp_attempt || 0);
+      // ✅ FIX 2: Limpiar el body de campos de URL (como id o uid)
+      const cleanBody = { ...bodyObj };
+      delete cleanBody.id;
+      delete cleanBody.uid;
 
-      // Parse body ya serializado
-      let rawBody = {};
-      if (hasBody) {
-        try { rawBody = typeof config.data === 'string' ? JSON.parse(config.data) : (config.data || {}); }
-        catch { rawBody = {}; }
-      }
-      rawBody = deepClean(rawBody) || {};
+      // ✅ FIX 3: Firma RAW JSON (bodyString) en lugar de Sorted KV
+      // La doc muestra que DirectPay usa la estructura JSON directa [cite: 17]
+      const signatureBody = hasBody ? JSON.stringify(cleanBody) : '';
+      const signatureBase = `${xLogin}${xDateFixed}${signatureBody}`;
 
-      // ✅ Variantes de nombre de parámetro (lo único que cambia)
-      const idKeys = [
-        'payment_order_id',   // tu intento actual
-        'payment_order_uid',
-        'payment_order',
-        'order_id',
-        'uid',
-        'id',
-      ];
-      const idKey = idKeys[Math.min(attempt, idKeys.length - 1)];
-
-      const signatureBodyObj = { ...rawBody, [idKey]: paymentOrderId };
-
-      const signatureBody = buildSortedRequestBody(signatureBodyObj);
-      const signatureBase = `${xLogin}${xDate}${signatureBody}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      config.headers['x-date'] = xDate;
-      config.headers['x-login'] = xLogin;
-      config.headers['x-trans-key'] = xTransKey;
+      // Sincronizamos headers y data
+      config.headers['x-date'] = xDateFixed;
+      config.data = signatureBody; // Enviamos el JSON limpio
       config.headers['x-api-key'] = xTransKey;
+      config.headers['x-trans-key'] = xTransKey;
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 💳 direct_payment attempt=', attempt, 'idKey=', idKey);
-        console.log('[vitaClient] signatureBody (first 300):', signatureBody.slice(0, 300));
-        console.log('[vitaClient] signatureBase (first 300):', signatureBase.slice(0, 300));
-        console.log('[vitaClient] signature:', signature);
+        console.log('[vitaClient] 🔑 direct_payment FIXED');
+        console.log('[vitaClient] signatureBase:', signatureBase);
       }
 
       return config;
     }
-
 
     // ------------------------------------------------------------
     // 3) Resto: estándar actual (business_users RAW, otros SORTED_KV)
@@ -252,6 +235,7 @@ client.interceptors.response.use(
       // no toques body; solo cambiaremos el nombre del idKey en el interceptor
       return client.request(newConfig);
     }
+
 
     // ✅ Auto-retry SOLO para payment_methods cuando es 303
     const isPaymentMethods = url.toLowerCase().startsWith('/payment_methods/');
