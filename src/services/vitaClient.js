@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
 // ==========================================
-// 1. HELPERS LEGACY (ESTÁNDAR VITA)
+// 1. HELPERS (Lógica Legacy / JSON Estructurado)
 // ==========================================
 
 function deepClean(value) {
@@ -20,7 +20,7 @@ function deepClean(value) {
   return value;
 }
 
-// Helper para mantener estructura JSON {"a":"b"} ordenada
+// Mantiene {"a":"b"} ordenado y stringificado correctamente
 function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
@@ -32,7 +32,7 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-// Función de firma Legacy (JSON Style)
+// Construye la cadena de firma: key + stableStringify(value)
 function buildSortedRequestBodyLegacy(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
   const keys = Object.keys(bodyObj).sort();
@@ -51,7 +51,7 @@ function hmacSha256Hex(secret, msg) {
 }
 
 // ==========================================
-// 2. CONFIGURACIÓN CLIENTE
+// 2. INTERCEPTOR (El Cerebro)
 // ==========================================
 const client = axios.create({
   baseURL: vita.baseURL,
@@ -64,8 +64,6 @@ client.interceptors.request.use((config) => {
     const xLogin = String(vita.login || '').trim();
     const xTransKey = String(vita.transKey || '').trim();
     const secretKey = String(vita.secret || '').trim();
-
-    // 1. FECHA CON MILISEGUNDOS
     const xDate = new Date().toISOString();
 
     const urlRaw = String(config.url || '');
@@ -91,38 +89,36 @@ client.interceptors.request.use((config) => {
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
 
-    // Header Estricto: Solo x-trans-key para Direct Pay
+    // ⚠️ HEADER ESTRICTO: DirectPay exige x-trans-key y suele rechazar x-api-key
     if (url.includes('/direct_payment')) {
       config.headers['x-trans-key'] = xTransKey;
-      delete config.headers['x-api-key'];
+      if (config.headers['x-api-key']) delete config.headers['x-api-key'];
     } else {
       config.headers['x-trans-key'] = xTransKey;
-      config.headers['x-api-key'] = xTransKey;
+      config.headers['x-api-key'] = xTransKey; // Redirect lo usa
     }
 
     let signatureBase = `${xLogin}${xDate}`;
 
-    // ============================================================
+    // -----------------------------------------------------------------------
     // LÓGICA DE FIRMA
-    // ============================================================
+    // -----------------------------------------------------------------------
 
-    // CASO GET: Parámetros de URL
+    // CASO 1: GET Payment Methods (Firma parámetro URL)
     if (url.includes('/payment_methods/')) {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // ✅ CASO DIRECT PAY: Legacy + ID al principio
+    // CASO 2: POST Direct Payment (Firma ID + Body JSON)
     else if (url.includes('/direct_payment') && method === 'POST') {
-
-      // 1. Extraer ID
+      // Extraer ID de la URL
       const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
       const urlId = idMatch ? idMatch[1] : '';
 
-      // 2. Construir objeto de firma con 'id'
-      // 'id' empieza con 'i', que es menor que 'm' (method_id) y 'p' (payment_data)
-      // Por lo tanto, quedará al principio de la cadena del body.
+      // Construir objeto virtual para firma: { id, ...body }
+      // Alfabéticamente 'id' va antes que 'method_id', quedando al inicio.
       const paramsToSign = {
-        id: urlId, // <--- Usamos 'id' corto
+        id: urlId,
         ...bodyObj
       };
 
@@ -130,15 +126,14 @@ client.interceptors.request.use((config) => {
       delete paramsToSign.uid;
       delete paramsToSign.payment_order_id;
 
-      // 3. Firma LEGACY (JSON con separadores)
-      // Generará: id3650method_id3payment_data{"bank_id":"..."}
+      // Generar firma: id3650method_id...
       signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[DirectPay] SignatureBase (Legacy + ID):', signatureBase);
+        console.log('[DirectPay] SignatureBase:', signatureBase);
       }
     }
-    // CASO REDIRECT PAY
+    // CASO 3: POST Redirect Payment / Create Order (Firma solo Body)
     else if (hasBody) {
       const cleanBody = { ...bodyObj };
       delete cleanBody.id;
@@ -159,9 +154,9 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (res) => res,
   async (error) => {
-    // Logueamos siempre para ver si es 303 o 305/etc
-    if (error.response?.status === 422) {
-      console.error('⚠️ [Vita Validation Error]', JSON.stringify(error.response.data));
+    // Log detallado para depurar
+    if (error.response?.status === 422 || error.response?.status === 401) {
+      console.error('⚠️ [Vita Error Response]', JSON.stringify(error.response.data));
     }
     return Promise.reject(error);
   }
