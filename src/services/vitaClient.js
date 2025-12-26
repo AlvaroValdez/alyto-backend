@@ -152,50 +152,33 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // ESTRATEGIA: JSON VALUE SIGNATURE
-        // Volvemos a la lógica estándar de Vita para objetos complejos.
-        // payment_data se firma como '{"email":"..."}' no como 'email...'
+        // INTENTO: FLAT BODY ONLY + STANDARD DATE
+        // Probamos la regla de "Sin Separadores" pero SIN incluir el ID
+        // y manteniendo la fecha con milisegundos.
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
+        // 1. Fecha: CON Milisegundos (Estándar Transaccional)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
 
         signatureBase = `${xLogin}${xDate}`;
 
-        // 2. LIMPIEZA: NO inyectamos ID de URL. Firmamos solo el Body.
-        // Si Redirect Pay no firma el ID de la URL, Direct Pay tampoco debería.
+        // 2. LIMPIEZA TOTAL: Eliminamos cualquier ID de URL.
+        // Asumimos que para POST solo se firma el PAYLOAD.
         const cleanBody = { ...bodyObj };
         delete cleanBody.id;
         delete cleanBody.uid;
         delete cleanBody.payment_order_id;
 
-        // 3. FIRMA "KEY + JSON_VALUE"
-        // En lugar de usar buildDirectPaySignature (recursiva plana),
-        // usamos la lógica legacy que mantiene la estructura JSON de payment_data.
-
-        // Replicamos la lógica de buildSortedRequestBodyLegacy aquí mismo para asegurar:
-        const keys = Object.keys(cleanBody).sort();
-        let signatureBody = '';
-
-        for (const k of keys) {
-          const v = cleanBody[k];
-          if (v === undefined || v === null) continue;
-
-          // Si es objeto, lo convertimos a string JSON ordenado (stableStringify)
-          // Si es string/número, lo concatenamos directo
-          if (typeof v === 'object') {
-            signatureBody += `${k}${stableStringify(v)}`;
-          } else {
-            signatureBody += `${k}${String(v)}`;
-          }
-        }
-
+        // 3. FIRMA APLANADA (Sin separadores)
+        // Usamos buildDirectPaySignature (recursiva) en lugar de JSON.stringify
+        const signatureBody = hasBody ? buildDirectPaySignature(cleanBody) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...Zmethod_id3payment_data{"email":"v.alvaro..."...}
-          console.log('[DirectPay POST] Base (Legacy Style):', signatureBase);
+          // Debería verse: ...417Zmethod_id3payment_dataemail...
+          // SIN id3635 y SIN {"email":...}
+          console.log('[DirectPay POST] Base (Flat + No ID + MS):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
