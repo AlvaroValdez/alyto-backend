@@ -109,7 +109,28 @@ client.interceptors.request.use((config) => {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // CASO POST (Direct & Redirect): Firma solo el Body (Legacy JSON)
+    // ✅ CAMBIO APLICADO: Lógica específica para Direct Payment (POST)
+    // Se diferencia de Redirect Pay porque EXIGE firmar el ID de la orden.
+    else if (url.includes('/direct_payment') && method === 'POST') {
+      // 1. Extraer ID de la URL
+      const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+      const urlId = idMatch ? idMatch[1] : '';
+
+      // 2. Preparar parámetros con la llave TÉCNICA 'payment_order_id'
+      const paramsToSign = {
+        payment_order_id: urlId, // <--- Esto es lo que faltaba
+        ...bodyObj
+      };
+
+      // Limpieza de seguridad
+      delete paramsToSign.uid;
+      delete paramsToSign.id;
+
+      // 3. Firma Legacy (JSON Stringify)
+      // El orden será: method_id -> payment_data -> payment_order_id
+      signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
+    }
+    // CASO RESTO POST (Redirect Pay): Firma solo el Body, sin ID
     else if (hasBody) {
       // Limpiamos IDs de URL que no deben ir en la firma del body
       const cleanBody = { ...bodyObj };
