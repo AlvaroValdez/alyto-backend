@@ -152,28 +152,30 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // POST Direct: 
-        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
-        const urlId = idMatch ? idMatch[1] : '';
 
-        // CORRECCIÓN CRÍTICA:
-        // El parámetro de URL se llama 'payment_order_id' en la definición de la ruta, NO 'id'.
-        // Al cambiar esto, 'method_id' (m) quedará antes que 'payment_order_id' (p).
-        const paramsToSign = {
-          payment_order_id: urlId, // Cambiamos 'id' por 'payment_order_id'
-          ...bodyObj
-        };
+        // 1. RESTAURAR MILISEGUNDOS (Crucial para coincidir con Redirect Pay)
+        // Sobrescribimos la fecha truncada con la fecha completa original
+        xDate = new Date().toISOString();
+        config.headers['x-date'] = xDate;
 
-        // Limpiamos basura interna
-        delete paramsToSign.uid;
-        delete paramsToSign.id; // Nos aseguramos de borrar el 'id' corto si existía
+        // Regeneramos la base con la fecha correcta
+        signatureBase = `${xLogin}${xDate}`;
 
-        // Generamos firma aplanada SIN separadores
-        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
+        // 2. LIMPIEZA DEL BODY (Sin ID, Solo Payload)
+        // El ID va en la URL. Según estándares REST y HMAC de Vita, 
+        // para POST solo se firma el contenido del body.
+        const cleanBody = { ...bodyObj };
+        delete cleanBody.id;
+        delete cleanBody.uid;
+        delete cleanBody.payment_order_id; // Aseguramos que no quede nada extra
+
+        // 3. FIRMA SIN SEPARADORES (Regla DirectPayment.txt)
+        const signatureBody = hasBody ? buildDirectPaySignature(cleanBody) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...Zmethod_id3payment_data...payment_order_id3626
-          console.log('[DirectPay] Base Correcta:', signatureBase);
+          // Debería verse: ...44.123Zmethod_id3payment_dataemail...
+          console.log('[DirectPay] Base (Con MS + Sin ID):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
