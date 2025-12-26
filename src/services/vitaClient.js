@@ -152,10 +152,10 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // INTENTO FINAL: Combinación de Nombre de Ruta + Fecha Precisa
+        // LA COMBINACIÓN PERDIDA: payment_order_id + Milisegundos
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
+        // 1. Fecha: CON Milisegundos (Estándar Transaccional)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
 
@@ -166,23 +166,23 @@ client.interceptors.request.use((config) => {
         const urlId = idMatch ? idMatch[1] : '';
 
         // 3. Construir Objeto de Firma
-        // CAMBIO CLAVE: Usamos 'payment_order_id' (nombre de la ruta) en vez de 'id'
+        // CAMBIO CRÍTICO: Usamos 'payment_order_id'
         const paramsToSign = {
-          payment_order_id: urlId, // <--- La llave correcta según definición de ruta
+          payment_order_id: urlId, // <--- Probamos esto CON milisegundos
           ...bodyObj
         };
 
-        // Limpieza de seguridad
+        // Limpieza
         delete paramsToSign.uid;
-        delete paramsToSign.id; // Nos aseguramos de borrar 'id' corto
+        delete paramsToSign.id;
 
-        // 4. Generar Firma Aplanada (Sin separadores)
-        // El orden alfabético automático pondrá: method_id -> payment_data -> payment_order_id
+        // 4. Generar Firma Aplanada
+        // buildDirectPaySignature ordenará: method_id -> payment_data -> payment_order_id
         const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...443Zmethod_id3payment_data...payment_order_id3629
+          // Debería verse: ...443Zmethod_id3payment_data...payment_order_id3630
           console.log('[DirectPay POST] Base:', signatureBase);
         }
       }
