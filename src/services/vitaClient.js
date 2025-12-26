@@ -152,10 +152,10 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // LA COMBINACIÓN PERDIDA: payment_order_id + Milisegundos
+        // INTENTO: ID (Nombre oficial) + Fecha con MS (Estándar Transaccional)
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos (Estándar Transaccional)
+        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
 
@@ -166,23 +166,24 @@ client.interceptors.request.use((config) => {
         const urlId = idMatch ? idMatch[1] : '';
 
         // 3. Construir Objeto de Firma
-        // CAMBIO CRÍTICO: Usamos 'payment_order_id'
+        // CORRECCIÓN: La tabla de parámetros dice 'id', no 'payment_order_id'.
+        // Al usar 'id', el orden alfabético cambiará: id -> method_id -> payment_data
         const paramsToSign = {
-          payment_order_id: urlId, // <--- Probamos esto CON milisegundos
+          id: urlId,  // <--- Volvemos a 'id'
           ...bodyObj
         };
 
-        // Limpieza
+        // Limpieza de seguridad
         delete paramsToSign.uid;
-        delete paramsToSign.id;
+        delete paramsToSign.payment_order_id;
 
-        // 4. Generar Firma Aplanada
-        // buildDirectPaySignature ordenará: method_id -> payment_data -> payment_order_id
+        // 4. Generar Firma Aplanada (Sin separadores)
         const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...443Zmethod_id3payment_data...payment_order_id3630
+          // Debería verse: ...419Zid3631method_id3payment_data...
+          // Nota que 'id' (i) va antes que 'method_id' (m)
           console.log('[DirectPay POST] Base:', signatureBase);
         }
       }
