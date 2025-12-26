@@ -32,7 +32,6 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-// Función Legacy para Redirect Pay
 function buildSortedRequestBodyLegacy(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
   const keys = Object.keys(bodyObj).sort();
@@ -85,7 +84,7 @@ client.interceptors.request.use((config) => {
     const xTransKey = String(vita.transKey || '').trim();
     const secretKey = String(vita.secret || '').trim();
 
-    // ✅ FIX: Usamos 'let' para permitir reasignación si fuera necesario
+    // Variable LET para poder regenerarla si es necesario
     let xDate = new Date().toISOString();
 
     const urlRaw = String(config.url || '');
@@ -123,28 +122,32 @@ client.interceptors.request.use((config) => {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // ✅ CASO DIRECT PAY: Aplanado Puro (Strict Doc Compliance)
+    // ✅ CASO DIRECT PAY: Aplanado + PaymentOrderID
+    // Esta es la combinación que probablemente falló antes por datos incorrectos,
+    // pero es la única que tiene sentido técnico.
     else if (url.includes('/direct_payment') && method === 'POST') {
-      // Aseguramos fecha con milisegundos (redundante pero seguro)
-      xDate = new Date().toISOString();
-      config.headers['x-date'] = xDate;
 
-      // Regenerar base con fecha precisa
-      signatureBase = `${xLogin}${xDate}`;
+      // 1. Extraer ID
+      const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+      const urlId = idMatch ? idMatch[1] : '';
 
-      // Preparar parámetros a firmar
-      const paramsToSign = { ...bodyObj };
+      // 2. Preparar objeto (Cuerpo + ID)
+      // Usamos 'payment_order_id' para que quede al final de la cadena
+      const paramsToSign = {
+        payment_order_id: urlId,
+        ...bodyObj
+      };
 
-      // LIMPIEZA TOTAL DE IDs (No firmamos el ID de la URL en el body)
-      delete paramsToSign.id;
+      // Limpieza de seguridad
       delete paramsToSign.uid;
-      delete paramsToSign.payment_order_id;
+      delete paramsToSign.id;
 
-      // FIRMA APLANADA (Sin separadores JSON)
+      // 3. Firma APLANADA (Sin separadores JSON)
+      // Genera: method_id3payment_databank_id1007...payment_order_id3644
       signatureBase += buildDirectPaySignature(paramsToSign);
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[DirectPay] SignatureBase (Flat + No ID):', signatureBase);
+        console.log('[DirectPay] SignatureBase (Flat + PaymentOrderID):', signatureBase);
       }
     }
     // CASO REDIRECT PAY: Legacy + Sin ID
