@@ -152,7 +152,9 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // INTENTO: ID (Nombre oficial) + Fecha con MS (Estándar Transaccional)
+        // ESTRATEGIA: JSON VALUE SIGNATURE
+        // Volvemos a la lógica estándar de Vita para objetos complejos.
+        // payment_data se firma como '{"email":"..."}' no como 'email...'
         // -----------------------------------------------------------------
 
         // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
@@ -161,30 +163,39 @@ client.interceptors.request.use((config) => {
 
         signatureBase = `${xLogin}${xDate}`;
 
-        // 2. Extraer ID de la URL
-        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
-        const urlId = idMatch ? idMatch[1] : '';
+        // 2. LIMPIEZA: NO inyectamos ID de URL. Firmamos solo el Body.
+        // Si Redirect Pay no firma el ID de la URL, Direct Pay tampoco debería.
+        const cleanBody = { ...bodyObj };
+        delete cleanBody.id;
+        delete cleanBody.uid;
+        delete cleanBody.payment_order_id;
 
-        // 3. Construir Objeto de Firma
-        // CORRECCIÓN: La tabla de parámetros dice 'id', no 'payment_order_id'.
-        // Al usar 'id', el orden alfabético cambiará: id -> method_id -> payment_data
-        const paramsToSign = {
-          id: urlId,  // <--- Volvemos a 'id'
-          ...bodyObj
-        };
+        // 3. FIRMA "KEY + JSON_VALUE"
+        // En lugar de usar buildDirectPaySignature (recursiva plana),
+        // usamos la lógica legacy que mantiene la estructura JSON de payment_data.
 
-        // Limpieza de seguridad
-        delete paramsToSign.uid;
-        delete paramsToSign.payment_order_id;
+        // Replicamos la lógica de buildSortedRequestBodyLegacy aquí mismo para asegurar:
+        const keys = Object.keys(cleanBody).sort();
+        let signatureBody = '';
 
-        // 4. Generar Firma Aplanada (Sin separadores)
-        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
+        for (const k of keys) {
+          const v = cleanBody[k];
+          if (v === undefined || v === null) continue;
+
+          // Si es objeto, lo convertimos a string JSON ordenado (stableStringify)
+          // Si es string/número, lo concatenamos directo
+          if (typeof v === 'object') {
+            signatureBody += `${k}${stableStringify(v)}`;
+          } else {
+            signatureBody += `${k}${String(v)}`;
+          }
+        }
+
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...419Zid3631method_id3payment_data...
-          // Nota que 'id' (i) va antes que 'method_id' (m)
-          console.log('[DirectPay POST] Base:', signatureBase);
+          // Debería verse: ...Zmethod_id3payment_data{"email":"v.alvaro..."...}
+          console.log('[DirectPay POST] Base (Legacy Style):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
