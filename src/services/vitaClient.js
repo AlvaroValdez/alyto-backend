@@ -3,6 +3,10 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
+// ==========================================
+// Helpers de Limpieza y Serialización
+// ==========================================
+
 function deepClean(value) {
   if (value === undefined || value === null) return undefined;
   if (Array.isArray(value)) return value.map(deepClean).filter(v => v !== undefined);
@@ -29,6 +33,10 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
+/**
+ * REGLA VITA: Concatenación recursiva sin separadores (llavevalorllavevalor)
+ * Usada para Direct Payment y el estándar.
+ */
 function buildSortedRequestBody(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
 
@@ -39,8 +47,12 @@ function buildSortedRequestBody(bodyObj) {
     const v = bodyObj[k];
     if (v === undefined || v === null) continue;
 
-    if (typeof v === 'object') out += `${k}${stableStringify(v)}`;
-    else out += `${k}${String(v)}`;
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      // Recursividad para objetos anidados (ej: payment_data)
+      out += `${k}${buildSortedRequestBody(v)}`;
+    } else {
+      out += `${k}${String(v)}`;
+    }
   }
   return out;
 }
@@ -48,6 +60,10 @@ function buildSortedRequestBody(bodyObj) {
 function hmacSha256Hex(secret, msg) {
   return crypto.createHmac('sha256', secret).update(msg, 'utf8').digest('hex');
 }
+
+// ==========================================
+// Configuración del Cliente
+// ==========================================
 
 const client = axios.create({
   baseURL: vita.baseURL,
@@ -57,9 +73,7 @@ const client = axios.create({
 
 client.interceptors.request.use((config) => {
   try {
-    // ------------------------------------------------------------
-    // Credenciales
-    // ------------------------------------------------------------
+    // 1. Credenciales
     const xLogin = String(vita.login || '').replace(/\s+/g, '');
     const xTransKey = String(vita.transKey || '').replace(/\s+/g, '');
     const secretKey = String(vita.secret || '').replace(/\s+/g, '');
@@ -68,129 +82,85 @@ client.interceptors.request.use((config) => {
       throw new Error('Missing Vita credentials (VITA_LOGIN / VITA_TRANS_KEY / VITA_SECRET)');
     }
 
-    // ------------------------------------------------------------
-    // Request meta (SIEMPRE definido)
-    // ------------------------------------------------------------
-    const xDate = new Date().toISOString();
+    // 2. Metadatos de la petición
     const urlRaw = String(config.url || '');
-    const url = urlRaw.toLowerCase(); // canon para detección
+    const url = urlRaw.toLowerCase();
     const method = String(config.method || 'GET').toUpperCase();
 
-    // ✅ Flags SIEMPRE definidos (evita "isPaymentMethods is not defined")
-    const isPaymentMethods = url.startsWith('/payment_methods/');
+    // ✅ FIX: Fecha sin milisegundos para evitar errores 303 por discrepancia de tiempo 
+    const xDate = new Date().toISOString().split('.')[0] + 'Z';
+
+    // 3. Flags de Detección
+    const isPaymentMethods = url.includes('/payment_methods/');
     const isDirectPayment = url.includes('/direct_payment');
+    const isPaymentAttempt = url.includes('/attempts/');
     const isBusinessUsers = url.includes('/business_users');
 
-    // ------------------------------------------------------------
-    // Body (si aplica)
-    // ------------------------------------------------------------
+    // 4. Procesamiento del Body
     let bodyObj;
     let bodyString = '';
-
-    const hasRequestBody =
-      method !== 'GET' &&
-      config.data !== undefined &&
-      config.data !== null &&
-      config.data !== '';
+    const hasRequestBody = method !== 'GET' && config.data;
 
     if (hasRequestBody) {
       let raw = config.data;
-
       if (typeof raw === 'string') {
         try { raw = JSON.parse(raw); } catch { raw = {}; }
       }
-      if (!raw || typeof raw !== 'object') raw = {};
-
       bodyObj = deepClean(raw) || {};
       bodyString = JSON.stringify(bodyObj);
 
       config.data = bodyString;
       config.transformRequest = [(data) => data];
     }
+    const hasBody = Boolean(bodyString && bodyString !== '{}');
 
-    const hasBody = Boolean(bodyString && bodyString !== '{}' && bodyString !== '');
-
-    // ------------------------------------------------------------
-    // Headers base
-    // ------------------------------------------------------------
+    // 5. Configuración de Headers Base
     config.headers = config.headers || {};
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
+    config.headers['x-trans-key'] = xTransKey;
+    config.headers['x-api-key'] = xTransKey;
 
     // ------------------------------------------------------------
-    // 1) payment_methods: Firma incluyendo el parámetro de URL
+    // LÓGICA DE FIRMAS POR ENDPOINT
     // ------------------------------------------------------------
-    if (isPaymentMethods) {
-      // Extraemos el código de país (ej: /payment_methods/cl -> "cl")
-      const countryCode = urlRaw.split('/').pop().toLowerCase();
 
-      /**
-       * REGLA VITA: Parámetros ordenados alfabéticamente y concatenados.
-       * Para este GET, el parámetro es 'country_iso_code'.
-       * Resultado esperado: "country_iso_codecl"
-       */
-      const signatureParam = `country_iso_code${countryCode}`;
+    // A) payment_methods e intentos (GETs de Direct Payment) [cite: 1, 23]
+    if (isPaymentMethods || isPaymentAttempt) {
+      let signatureParam = '';
 
-      // ✅ La base debe ser: Login + Fecha + Parámetros [cite: 1]
+      if (isPaymentMethods) {
+        const countryCode = urlRaw.split('/').pop().toLowerCase();
+        signatureParam = `country_iso_code${countryCode}`;
+      }
+
       const signatureBase = `${xLogin}${xDate}${signatureParam}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      config.headers['x-date'] = xDate;
-      config.headers['x-login'] = xLogin;
-
-      // Requerido explícitamente por el módulo Direct Payment 
-      config.headers['x-trans-key'] = xTransKey;
-      config.headers['x-api-key'] = xTransKey;
-
-      // ✅ Formato estricto: Espacio tras la coma y tras los dos puntos 
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
-
-      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 payment_methods FIXED (With Params)');
-        console.log('[vitaClient] signatureBase:', signatureBase);
-        console.log('[vitaClient] signature:', signature);
-      }
-
       return config;
     }
 
-    // ------------------------------------------------------------
-    // 2) direct_payment: (Firma RAW JSON limpia)
-    // ------------------------------------------------------------
+    // B) direct_payment (POST de ejecución de pago) [cite: 1, 12]
     if (isDirectPayment) {
-      // ✅ FIX 1: Fecha sin milisegundos (estándar Vita)
-      const xDateFixed = new Date().toISOString().split('.')[0] + 'Z';
-
-      // ✅ FIX 2: Limpiar el body de campos de URL (como id o uid)
+      // Limpiamos el body para que el ID de la URL no ensucie la firma del body 
       const cleanBody = { ...bodyObj };
       delete cleanBody.id;
       delete cleanBody.uid;
 
-      // ✅ FIX 3: Firma RAW JSON (bodyString) en lugar de Sorted KV
-      // La doc muestra que DirectPay usa la estructura JSON directa [cite: 17]
-      const signatureBody = hasBody ? JSON.stringify(cleanBody) : '';
-      const signatureBase = `${xLogin}${xDateFixed}${signatureBody}`;
-
+      const signatureBody = hasBody ? buildSortedRequestBody(cleanBody) : '';
+      const signatureBase = `${xLogin}${xDate}${signatureBody}`;
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      // Sincronizamos headers y data
-      config.headers['x-date'] = xDateFixed;
-      config.data = signatureBody; // Enviamos el JSON limpio
-      config.headers['x-api-key'] = xTransKey;
-      config.headers['x-trans-key'] = xTransKey;
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 direct_payment FIXED');
-        console.log('[vitaClient] signatureBase:', signatureBase);
+        console.log('[vitaClient] 🔑 direct_payment SignatureBase:', signatureBase);
       }
-
       return config;
     }
 
-    // ------------------------------------------------------------
-    // 3) Resto: estándar actual (business_users RAW, otros SORTED_KV)
-    // ------------------------------------------------------------
+    // C) Resto: Redirect Pay y Otros (NO TOCAR - Mantiene lo que ya funciona) 
     const signatureBody = hasBody
       ? (isBusinessUsers ? bodyString : buildSortedRequestBody(bodyObj))
       : '';
@@ -198,25 +168,19 @@ client.interceptors.request.use((config) => {
     const signatureBase = `${xLogin}${xDate}${signatureBody}`;
     const signature = hmacSha256Hex(secretKey, signatureBase);
 
-    // Mantén lo que te funcionaba en el resto
-    config.headers['x-api-key'] = xTransKey;
-    config.headers['x-trans-key'] = xTransKey;
     config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
-    if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-      console.log('[vitaClient] 🔑 standard AUTH');
-      console.log('[vitaClient] ', method, urlRaw);
-      console.log('[vitaClient] mode=', isBusinessUsers ? 'RAW_JSON business_users' : 'SORTED_KV', 'hasBody=', hasBody);
-      console.log('[vitaClient] signatureBase(0..200):', signatureBase.slice(0, 200));
-      console.log('[vitaClient] signature(full):', signature);
-    }
-
     return config;
+
   } catch (e) {
     console.error('[vitaClient] ❌ Interceptor crash:', e?.stack || e);
     throw e;
   }
 });
+
+// ==========================================
+// Manejo de Respuestas y Reintentos
+// ==========================================
 
 client.interceptors.response.use(
   (res) => res,
@@ -224,29 +188,26 @@ client.interceptors.response.use(
     const status = error?.response?.status;
     const data = error?.response?.data;
     const code = data?.error?.code;
-    const url = String(error?.config?.url || '').toLowerCase();
+    const config = error?.config;
+    const url = String(config?.url || '').toLowerCase();
 
     const isDirectPayment = url.includes('/direct_payment');
-    const attempt = Number(error?.config?._vita_dp_attempt || 0);
+    const isPaymentMethods = url.includes('/payment_methods/');
+    const attempt = Number(config?._vita_retry_attempt || 0);
 
-    // ✅ Reintentar SOLO si Vita devuelve 303 en direct_payment
-    if (isDirectPayment && status === 422 && code === 303 && attempt < 5) {
-      const newConfig = { ...error.config, _vita_dp_attempt: attempt + 1 };
-      // no toques body; solo cambiaremos el nombre del idKey en el interceptor
-      return client.request(newConfig);
-    }
+    // ✅ Reintentar si Vita devuelve 303 (Firma Inválida) hasta 5 veces
+    if ((isDirectPayment || isPaymentMethods) && status === 422 && code === 303 && attempt < 5) {
+      const newConfig = {
+        ...config,
+        _vita_retry_attempt: attempt + 1,
+        headers: { ...config.headers }
+      };
 
-
-    // ✅ Auto-retry SOLO para payment_methods cuando es 303
-    const isPaymentMethods = url.toLowerCase().startsWith('/payment_methods/');
-
-    if (isPaymentMethods && status === 422 && code === 303 && attempt < 5) {
-      const newConfig = { ...error.config, _vita_pm_attempt: attempt + 1 };
-      // Evita loops raros
-      delete newConfig.headers?.Authorization;
+      // Limpiamos el header para que el interceptor genere uno nuevo con fecha fresca
+      delete newConfig.headers['Authorization'];
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log(`[vitaClient] 🔁 Retrying payment_methods (303) attempt=${attempt + 1}`);
+        console.log(`[vitaClient] 🔁 Retrying ${url} (303) attempt=${attempt + 1}`);
       }
 
       return client.request(newConfig);

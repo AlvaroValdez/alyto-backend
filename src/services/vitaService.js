@@ -241,3 +241,19 @@ export const createDirectPaymentOrder = executeDirectPayment;
 export const getQuote = async () => {
   throw new Error('getQuote no está implementado en vitaService. Usa /prices + lógica interna.');
 };
+
+/**
+ * Consulta el estado de un intento de pago específico.
+ * Útil para Polling desde el UI o verificación post-pago.
+ */
+export const getPaymentOrderAttempt = async (paymentOrderId, attemptAltId) => {
+  if (!paymentOrderId || !attemptAltId) {
+    throw new Error('Missing paymentOrderId or attemptAltId');
+  }
+
+  const res = await client.get(
+    `/payment_orders/${paymentOrderId}/attempts/${attemptAltId}`
+  );
+
+  return unwrap(res);
+};
