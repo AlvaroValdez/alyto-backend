@@ -152,33 +152,56 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // INTENTO: FLAT BODY ONLY + STANDARD DATE
-        // Probamos la regla de "Sin Separadores" pero SIN incluir el ID
-        // y manteniendo la fecha con milisegundos.
+        // SOLUCIÓN FINAL: HYBRID LEGACY
+        // 1. Usamos ID (Requerido por tabla)
+        // 2. Usamos Formato JSON para objetos (Porque el aplanado falló)
+        // 3. Usamos Fecha con MS (Requerido por POST)
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos (Estándar Transaccional)
+        // 1. Fecha: CON Milisegundos
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
-
         signatureBase = `${xLogin}${xDate}`;
 
-        // 2. LIMPIEZA TOTAL: Eliminamos cualquier ID de URL.
-        // Asumimos que para POST solo se firma el PAYLOAD.
-        const cleanBody = { ...bodyObj };
-        delete cleanBody.id;
-        delete cleanBody.uid;
-        delete cleanBody.payment_order_id;
+        // 2. Extraer ID de la URL
+        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+        const urlId = idMatch ? idMatch[1] : '';
 
-        // 3. FIRMA APLANADA (Sin separadores)
-        // Usamos buildDirectPaySignature (recursiva) en lugar de JSON.stringify
-        const signatureBody = hasBody ? buildDirectPaySignature(cleanBody) : '';
+        // 3. Preparar parámetros (Incluyendo ID)
+        // Usamos 'id' porque así aparece en la tabla de documentación
+        const paramsToSign = {
+          id: urlId,
+          ...bodyObj
+        };
+
+        // Limpieza de seguridad
+        delete paramsToSign.uid;
+        delete paramsToSign.payment_order_id;
+
+        // 4. FIRMA TIPO LEGACY (Igual que Redirect Pay)
+        // Recorremos las llaves ordenadas.
+        // Si el valor es objeto -> Stringify (JSON)
+        // Si el valor es primitivo -> String directo
+        const keys = Object.keys(paramsToSign).sort();
+        let signatureBody = '';
+
+        for (const k of keys) {
+          const v = paramsToSign[k];
+          if (v === undefined || v === null) continue;
+
+          if (typeof v === 'object') {
+            // AQUÍ ESTÁ LA CLAVE: No aplanamos recursivamente, usamos JSON string
+            signatureBody += `${k}${stableStringify(v)}`;
+          } else {
+            signatureBody += `${k}${String(v)}`;
+          }
+        }
+
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...417Zmethod_id3payment_dataemail...
-          // SIN id3635 y SIN {"email":...}
-          console.log('[DirectPay POST] Base (Flat + No ID + MS):', signatureBase);
+          // Esperamos ver: ...Zid3636method_id3payment_data{"email":"..."}
+          console.log('[DirectPay POST] Base (Legacy + ID):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
