@@ -152,28 +152,28 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // POST Direct: 
-        // 1. Extraemos el ID de la URL (ej: 3624)
         const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
         const urlId = idMatch ? idMatch[1] : '';
 
-        // 2. Preparamos el objeto a firmar: Body + ID
-        // Es vital incluir el 'id' para que coincida con la tabla de parámetros de Vita
+        // CORRECCIÓN CRÍTICA:
+        // El parámetro de URL se llama 'payment_order_id' en la definición de la ruta, NO 'id'.
+        // Al cambiar esto, 'method_id' (m) quedará antes que 'payment_order_id' (p).
         const paramsToSign = {
-          id: urlId,         // <--- ESTO FALTABA
-          ...bodyObj         // method_id y payment_data
+          payment_order_id: urlId, // Cambiamos 'id' por 'payment_order_id'
+          ...bodyObj
         };
 
-        // Eliminamos campos internos que no deban ir (por si acaso)
+        // Limpiamos basura interna
         delete paramsToSign.uid;
+        delete paramsToSign.id; // Nos aseguramos de borrar el 'id' corto si existía
 
-        // 3. Generamos firma aplanada SIN separadores
-        // buildDirectPaySignature ordenará: id -> method_id -> payment_data
+        // Generamos firma aplanada SIN separadores
         const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+          // Debería verse: ...Zmethod_id3payment_data...payment_order_id3626
           console.log('[DirectPay] Base Correcta:', signatureBase);
-          // Debería verse: ...Zid3624method_id3payment_dataemail...
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
