@@ -141,22 +141,31 @@ client.interceptors.request.use((config) => {
       return config;
     }
 
-    // B) direct_payment (POST de ejecución de pago) [cite: 1, 12]
+    // ------------------------------------------------------------
+    // 2) direct_payment: (OPCIÓN ÓPTIMA - FIRMA RAW JSON)
+    // ------------------------------------------------------------
     if (isDirectPayment) {
-      // Limpiamos el body para que el ID de la URL no ensucie la firma del body 
-      const cleanBody = { ...bodyObj };
-      delete cleanBody.id;
-      delete cleanBody.uid;
+      // ✅ FIX 1: Fecha sin milisegundos (Estándar estricto de Vita)
+      const xDateFixed = new Date().toISOString().split('.')[0] + 'Z';
 
-      const signatureBody = hasBody ? buildSortedRequestBody(cleanBody) : '';
-      const signatureBase = `${xLogin}${xDate}${signatureBody}`;
+      // ✅ FIX 2: Usar el JSON puro (bodyString) sin procesar con sorted
+      // Al igual que en business_users, los objetos complejos se firman como string JSON
+      const signatureBody = hasBody ? bodyString : '';
+      const signatureBase = `${xLogin}${xDateFixed}${signatureBody}`;
+
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
+      // Sincronizamos headers
+      config.headers['x-date'] = xDateFixed;
+      config.headers['x-api-key'] = xTransKey;
+      config.headers['x-trans-key'] = xTransKey;
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🔑 direct_payment SignatureBase:', signatureBase);
+        console.log('[vitaClient] 🚀 direct_payment OPTIMAL AUTH (RAW JSON)');
+        console.log('[vitaClient] signatureBase:', signatureBase);
       }
+
       return config;
     }
 

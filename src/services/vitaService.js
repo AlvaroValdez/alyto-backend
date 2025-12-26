@@ -216,18 +216,17 @@ export const createPaymentOrder = async (payload) => {
 
 // 7. EJECUTAR PAGO DIRECTO
 export const executeDirectPayment = async ({ uid, method_id, payment_data }) => {
-  if (!uid) throw new Error('Missing uid');
-  if (!method_id) throw new Error('Missing method_id');
-  if (!payment_data || typeof payment_data !== 'object') throw new Error('Missing payment_data');
+  // 1. Validaciones
+  if (!uid || !method_id || !payment_data) throw new Error('Missing params');
 
-  // ⚠️ CRÍTICO: method_id debe ser string para que la firma HMAC coincida
+  // 2. Construcción del payload limpio (Sin ID de URL)
+  // El ID va en la URL, NO en este objeto 
   const payload = {
-    method_id: String(method_id),
-    payment_data
+    method_id: String(method_id), // Siempre como string 
+    payment_data: payment_data
   };
 
-  console.log('[vitaService] Ejecutando DirectPayment:', payload);
-
+  // 3. Ejecución
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
 };
