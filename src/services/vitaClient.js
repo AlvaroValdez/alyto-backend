@@ -152,41 +152,37 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // ESTRATEGIA: "HYBRID POST"
-        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
-        // 2. ID: Incluido en la firma (Igual que GET Methods)
-        // 3. Formato: Aplanado sin separadores (Regla Direct Pay)
+        // INTENTO FINAL: Combinación de Nombre de Ruta + Fecha Precisa
         // -----------------------------------------------------------------
 
-        // A. Restaurar Milisegundos (Sobrescribir la fecha truncada)
+        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
 
-        // Regenerar la base con la nueva fecha precisa
         signatureBase = `${xLogin}${xDate}`;
 
-        // B. Extraer ID de la URL
+        // 2. Extraer ID de la URL
         const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
         const urlId = idMatch ? idMatch[1] : '';
 
-        // C. Construir Objeto de Firma: ID + Body
-        // Usamos la llave 'id' porque así aparece en la tabla de parámetros del txt
+        // 3. Construir Objeto de Firma
+        // CAMBIO CLAVE: Usamos 'payment_order_id' (nombre de la ruta) en vez de 'id'
         const paramsToSign = {
-          id: urlId, // <--- REQUISITO CRÍTICO
+          payment_order_id: urlId, // <--- La llave correcta según definición de ruta
           ...bodyObj
         };
 
         // Limpieza de seguridad
         delete paramsToSign.uid;
-        delete paramsToSign.payment_order_id;
+        delete paramsToSign.id; // Nos aseguramos de borrar 'id' corto
 
-        // D. Generar Firma Aplanada (Sin separadores)
-        // buildDirectPaySignature ordenará: id -> method_id -> payment_data
+        // 4. Generar Firma Aplanada (Sin separadores)
+        // El orden alfabético automático pondrá: method_id -> payment_data -> payment_order_id
         const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Debería verse: ...417Zid3628method_id3payment_data...
+          // Debería verse: ...443Zmethod_id3payment_data...payment_order_id3629
           console.log('[DirectPay POST] Base:', signatureBase);
         }
       }
