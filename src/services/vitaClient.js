@@ -32,6 +32,7 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
+// Función Legacy para Redirect Pay
 function buildSortedRequestBodyLegacy(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
   const keys = Object.keys(bodyObj).sort();
@@ -84,8 +85,8 @@ client.interceptors.request.use((config) => {
     const xTransKey = String(vita.transKey || '').trim();
     const secretKey = String(vita.secret || '').trim();
 
-    // 1. FECHA CON MILISEGUNDOS
-    const xDate = new Date().toISOString();
+    // ✅ FIX: Usamos 'let' para permitir reasignación si fuera necesario
+    let xDate = new Date().toISOString();
 
     const urlRaw = String(config.url || '');
     const url = urlRaw.toLowerCase();
@@ -124,27 +125,22 @@ client.interceptors.request.use((config) => {
     }
     // ✅ CASO DIRECT PAY: Aplanado Puro (Strict Doc Compliance)
     else if (url.includes('/direct_payment') && method === 'POST') {
-      // 1. FECHA CON MILISEGUNDOS (Estándar Transaccional)
+      // Aseguramos fecha con milisegundos (redundante pero seguro)
       xDate = new Date().toISOString();
       config.headers['x-date'] = xDate;
 
       // Regenerar base con fecha precisa
       signatureBase = `${xLogin}${xDate}`;
 
-      // 2. PREPARACIÓN DEL BODY
-      // Clonamos para no modificar el envío original
+      // Preparar parámetros a firmar
       const paramsToSign = { ...bodyObj };
 
-      // 3. LIMPIEZA TOTAL DE IDs
-      // La hipótesis es que el ID va en la URL y NO se firma en el body.
+      // LIMPIEZA TOTAL DE IDs (No firmamos el ID de la URL en el body)
       delete paramsToSign.id;
       delete paramsToSign.uid;
       delete paramsToSign.payment_order_id;
 
-      // 4. FIRMA APLANADA (Sin separadores JSON)
-      // Usamos buildDirectPaySignature (recursiva)
-      // Generará: method_id3payment_databank_id1007...
-      // SIN comillas, SIN llaves, SIN el ID de la orden.
+      // FIRMA APLANADA (Sin separadores JSON)
       signatureBase += buildDirectPaySignature(paramsToSign);
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
@@ -158,10 +154,6 @@ client.interceptors.request.use((config) => {
       delete cleanBody.uid;
       delete cleanBody.payment_order_id;
       signatureBase += buildSortedRequestBodyLegacy(cleanBody);
-    }
-
-    if (process.env.VITA_DEBUG_SIGNATURE === 'true' && url.includes('/direct_payment')) {
-      console.log('[DirectPay] SignatureBase:', signatureBase);
     }
 
     const signature = hmacSha256Hex(secretKey, signatureBase);
