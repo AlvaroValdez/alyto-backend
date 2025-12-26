@@ -38,7 +38,7 @@ function stableStringify(value) {
  * Usada para Direct Payment y el estándar.
  */
 function buildSortedRequestBody(bodyObj) {
-  if (!bodyObj || typeof bodyObj !== 'object') return '';
+  if (!bodyObj || typeof bodyObj !== 'object') return String(bodyObj || '');
 
   const keys = Object.keys(bodyObj).sort();
   let out = '';
@@ -48,15 +48,15 @@ function buildSortedRequestBody(bodyObj) {
     if (v === undefined || v === null) continue;
 
     if (typeof v === 'object' && !Array.isArray(v)) {
-      // Recursividad para objetos anidados (ej: payment_data)
+      // RECURSIVIDAD: Concatenar la llave y llamar de nuevo para aplanar el interior
       out += `${k}${buildSortedRequestBody(v)}`;
     } else {
+      // Concatenar llave + valor directamente (sin comillas ni llaves)
       out += `${k}${String(v)}`;
     }
   }
   return out;
 }
-
 function hmacSha256Hex(secret, msg) {
   return crypto.createHmac('sha256', secret).update(msg, 'utf8').digest('hex');
 }
@@ -145,25 +145,28 @@ client.interceptors.request.use((config) => {
     // 2) direct_payment: (OPCIÓN ÓPTIMA - FIRMA RAW JSON)
     // ------------------------------------------------------------
     if (isDirectPayment) {
-      // ✅ FIX 1: Fecha sin milisegundos (Estándar estricto de Vita)
+      // ✅ FIX 1: Fecha sin milisegundos (Vita es estricto en este módulo)
       const xDateFixed = new Date().toISOString().split('.')[0] + 'Z';
 
-      // ✅ FIX 2: Usar el JSON puro (bodyString) sin procesar con sorted
-      // Al igual que en business_users, los objetos complejos se firman como string JSON
-      const signatureBody = hasBody ? bodyString : '';
+      // ✅ FIX 2: Excluir estrictamente el ID de la URL de la firma
+      const cleanBody = { ...bodyObj };
+      delete cleanBody.id;
+      delete cleanBody.uid;
+
+      // ✅ FIX 3: Usar buildSortedRequestBody recursivo (sin separadores { } : ")
+      const signatureBody = hasBody ? buildSortedRequestBody(cleanBody) : '';
       const signatureBase = `${xLogin}${xDateFixed}${signatureBody}`;
 
       const signature = hmacSha256Hex(secretKey, signatureBase);
 
-      // Sincronizamos headers
       config.headers['x-date'] = xDateFixed;
       config.headers['x-api-key'] = xTransKey;
       config.headers['x-trans-key'] = xTransKey;
       config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
       if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[vitaClient] 🚀 direct_payment OPTIMAL AUTH (RAW JSON)');
-        console.log('[vitaClient] signatureBase:', signatureBase);
+        console.log('[vitaClient] 🚀 direct_payment SIGNATURE BASE CORRECTA:');
+        console.log(signatureBase); // Debería verse como: method_id3payment_dataemailv@v.com...
       }
 
       return config;
