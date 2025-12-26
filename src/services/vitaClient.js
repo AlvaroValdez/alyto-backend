@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { vita } from '../config/env.js';
 
 // ==========================================
-// 1. HELPERS LEGACY (ESTÁNDAR VITA)
+// 1. HELPERS DE FIRMA
 // ==========================================
 
 function deepClean(value) {
@@ -20,7 +20,7 @@ function deepClean(value) {
   return value;
 }
 
-// Mantiene la estructura JSON para objetos anidados (payment_data)
+// Helper Legacy (Con separadores JSON) - Para Redirect Pay
 function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
@@ -32,7 +32,6 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-// Función de firma estándar (Redirect Pay Style)
 function buildSortedRequestBodyLegacy(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
   const keys = Object.keys(bodyObj).sort();
@@ -40,15 +39,30 @@ function buildSortedRequestBodyLegacy(bodyObj) {
   for (const k of keys) {
     const v = bodyObj[k];
     if (v === undefined || v === null) continue;
-
-    // Si es objeto, se usa su string JSON. Si es primitivo, su valor string.
-    if (typeof v === 'object') {
-      out += `${k}${stableStringify(v)}`;
-    } else {
-      out += `${k}${String(v)}`;
-    }
+    if (typeof v === 'object') out += `${k}${stableStringify(v)}`;
+    else out += `${k}${String(v)}`;
   }
   return out;
+}
+
+// ✅ HELPER DIRECT PAY (Aplanado Puro / Sin Separadores)
+// Recursivo: payment_data -> bank_id1007document...
+function buildDirectPaySignature(obj) {
+  if (obj === null || obj === undefined) return '';
+  if (typeof obj !== 'object') return String(obj);
+
+  return Object.keys(obj)
+    .sort()
+    .reduce((acc, key) => {
+      const val = obj[key];
+      if (val === undefined || val === null) return acc;
+
+      const valString = (typeof val === 'object' && !Array.isArray(val))
+        ? buildDirectPaySignature(val)
+        : String(val);
+
+      return acc + key + valString;
+    }, '');
 }
 
 function hmacSha256Hex(secret, msg) {
@@ -70,14 +84,14 @@ client.interceptors.request.use((config) => {
     const xTransKey = String(vita.transKey || '').trim();
     const secretKey = String(vita.secret || '').trim();
 
-    // 1. FECHA CON MILISEGUNDOS (Requerido para validación correcta)
+    // 1. FECHA CON MILISEGUNDOS
     const xDate = new Date().toISOString();
 
     const urlRaw = String(config.url || '');
     const url = urlRaw.toLowerCase();
     const method = String(config.method || 'GET').toUpperCase();
 
-    // Procesar Body
+    // Procesar Body (Siempre enviamos JSON válido al servidor)
     let bodyObj;
     let bodyString = '';
     if (method !== 'GET' && config.data) {
@@ -104,41 +118,37 @@ client.interceptors.request.use((config) => {
     // LÓGICA DE FIRMA
     // ============================================================
 
-    // CASO GET: Parámetros de URL en la firma
     if (url.includes('/payment_methods/')) {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // ✅ CAMBIO APLICADO: Lógica específica para Direct Payment (POST)
-    // Se diferencia de Redirect Pay porque EXIGE firmar el ID de la orden.
+    // ✅ CASO DIRECT PAY: Aplanado + PaymentOrderID
     else if (url.includes('/direct_payment') && method === 'POST') {
-      // 1. Extraer ID de la URL
+      // 1. Extraer ID
       const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
       const urlId = idMatch ? idMatch[1] : '';
 
-      // 2. Preparar parámetros con la llave TÉCNICA 'payment_order_id'
+      // 2. Preparar objeto con 'payment_order_id'
       const paramsToSign = {
-        payment_order_id: urlId, // <--- Esto es lo que faltaba
+        payment_order_id: urlId, // Usamos la llave larga
         ...bodyObj
       };
 
-      // Limpieza de seguridad
+      // Limpieza
       delete paramsToSign.uid;
       delete paramsToSign.id;
 
-      // 3. Firma Legacy (JSON Stringify)
-      // El orden será: method_id -> payment_data -> payment_order_id
-      signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
+      // 3. Firma APLANADA (Sin separadores JSON)
+      // Orden esperado: method_id -> payment_data -> payment_order_id
+      // Dentro de payment_data: bank_id -> document... (todo plano)
+      signatureBase += buildDirectPaySignature(paramsToSign);
     }
-    // CASO RESTO POST (Redirect Pay): Firma solo el Body, sin ID
+    // CASO REDIRECT PAY: Legacy + Sin ID
     else if (hasBody) {
-      // Limpiamos IDs de URL que no deben ir en la firma del body
       const cleanBody = { ...bodyObj };
       delete cleanBody.id;
       delete cleanBody.uid;
       delete cleanBody.payment_order_id;
-
-      // Usamos la firma Legacy (JSON estructurado)
       signatureBase += buildSortedRequestBodyLegacy(cleanBody);
     }
 
@@ -155,11 +165,9 @@ client.interceptors.request.use((config) => {
   }
 });
 
-// Interceptor de respuesta para logs claros
 client.interceptors.response.use(
   (res) => res,
   async (error) => {
-    // Loguear errores detallados de validación (422)
     if (error.response?.status === 422) {
       console.error('⚠️ [Vita Validation Error]', JSON.stringify(error.response.data));
     }
