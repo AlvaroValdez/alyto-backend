@@ -32,7 +32,7 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-// Función de firma: Recorre llaves ordenadas y stringifica valores (JSON Style)
+// Función de firma Legacy (JSON Style)
 function buildSortedRequestBodyLegacy(bodyObj) {
   if (!bodyObj || typeof bodyObj !== 'object') return '';
   const keys = Object.keys(bodyObj).sort();
@@ -65,7 +65,7 @@ client.interceptors.request.use((config) => {
     const xTransKey = String(vita.transKey || '').trim();
     const secretKey = String(vita.secret || '').trim();
 
-    // 1. Fecha con Milisegundos (Estándar)
+    // 1. FECHA CON MILISEGUNDOS
     const xDate = new Date().toISOString();
 
     const urlRaw = String(config.url || '');
@@ -91,13 +91,11 @@ client.interceptors.request.use((config) => {
     config.headers['x-date'] = xDate;
     config.headers['x-login'] = xLogin;
 
-    // ⚠️ CAMBIO IMPORTANTE: Headers Estrictos
-    // Direct Payment especifica x-trans-key. NO enviamos x-api-key para evitar conflictos.
+    // Header Estricto: Solo x-trans-key para Direct Pay
     if (url.includes('/direct_payment')) {
       config.headers['x-trans-key'] = xTransKey;
-      delete config.headers['x-api-key']; // Aseguramos que no se envíe
+      delete config.headers['x-api-key'];
     } else {
-      // Para Redirect Pay y otros, mantenemos compatibilidad enviando ambos
       config.headers['x-trans-key'] = xTransKey;
       config.headers['x-api-key'] = xTransKey;
     }
@@ -113,20 +111,40 @@ client.interceptors.request.use((config) => {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // CASO POST (Direct & Redirect): Firma solo el Body (Legacy JSON)
+    // ✅ CASO DIRECT PAY: Legacy + ID al principio
+    else if (url.includes('/direct_payment') && method === 'POST') {
+
+      // 1. Extraer ID
+      const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+      const urlId = idMatch ? idMatch[1] : '';
+
+      // 2. Construir objeto de firma con 'id'
+      // 'id' empieza con 'i', que es menor que 'm' (method_id) y 'p' (payment_data)
+      // Por lo tanto, quedará al principio de la cadena del body.
+      const paramsToSign = {
+        id: urlId, // <--- Usamos 'id' corto
+        ...bodyObj
+      };
+
+      // Limpieza de seguridad
+      delete paramsToSign.uid;
+      delete paramsToSign.payment_order_id;
+
+      // 3. Firma LEGACY (JSON con separadores)
+      // Generará: id3650method_id3payment_data{"bank_id":"..."}
+      signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
+
+      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
+        console.log('[DirectPay] SignatureBase (Legacy + ID):', signatureBase);
+      }
+    }
+    // CASO REDIRECT PAY
     else if (hasBody) {
-      // Limpiamos cualquier ID de URL del objeto a firmar
       const cleanBody = { ...bodyObj };
       delete cleanBody.id;
       delete cleanBody.uid;
       delete cleanBody.payment_order_id;
-
-      // Usamos firma Legacy: method_id3payment_data{"..."}
       signatureBase += buildSortedRequestBodyLegacy(cleanBody);
-    }
-
-    if (process.env.VITA_DEBUG_SIGNATURE === 'true' && url.includes('/direct_payment')) {
-      console.log('[DirectPay] SignatureBase (Legacy No-ID):', signatureBase);
     }
 
     const signature = hmacSha256Hex(secretKey, signatureBase);
@@ -141,8 +159,8 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (res) => res,
   async (error) => {
+    // Logueamos siempre para ver si es 303 o 305/etc
     if (error.response?.status === 422) {
-      // Logueamos el error completo para ver si es validación (code 30X) o datos
       console.error('⚠️ [Vita Validation Error]', JSON.stringify(error.response.data));
     }
     return Promise.reject(error);
