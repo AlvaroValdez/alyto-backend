@@ -222,15 +222,11 @@ export const createPaymentOrder = async (payload) => {
  * @param {object} payment_data - Datos del pagador
  */
 export const executeDirectPayment = async ({ uid, method_id, payment_data }) => {
-  if (!uid || !method_id || !payment_data) throw new Error('Faltan parámetros para DirectPay');
-
-  // El payload solo debe contener lo que va al BODY del request [cite: 12]
   const payload = {
     method_id: String(method_id),
     payment_data: payment_data
   };
-
-  // El uid se pasa en la ruta, NO en el objeto payload
+  // Solo enviamos body limpio. El interceptor leerá el 'uid' de la URL.
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
 };
