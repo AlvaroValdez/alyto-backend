@@ -215,18 +215,22 @@ export const createPaymentOrder = async (payload) => {
 };
 
 // 7. EJECUTAR PAGO DIRECTO
+/**
+ * Ejecuta el pago directo para CUALQUIER orden de pago. [cite: 12]
+ * @param {string} uid - El ID de la orden (ej: "3622")
+ * @param {string|number} method_id - El ID del método (ej: "3")
+ * @param {object} payment_data - Datos del pagador
+ */
 export const executeDirectPayment = async ({ uid, method_id, payment_data }) => {
-  // 1. Validaciones
-  if (!uid || !method_id || !payment_data) throw new Error('Missing params');
+  if (!uid || !method_id || !payment_data) throw new Error('Faltan parámetros para DirectPay');
 
-  // 2. Construcción del payload limpio (Sin ID de URL)
-  // El ID va en la URL, NO en este objeto 
+  // El payload solo debe contener lo que va al BODY del request [cite: 12]
   const payload = {
-    method_id: String(method_id), // Siempre como string 
+    method_id: String(method_id),
     payment_data: payment_data
   };
 
-  // 3. Ejecución
+  // El uid se pasa en la ruta, NO en el objeto payload
   const res = await client.post(`/payment_orders/${uid}/direct_payment`, payload);
   return unwrap(res);
 };
