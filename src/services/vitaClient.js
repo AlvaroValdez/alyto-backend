@@ -152,23 +152,24 @@ client.interceptors.request.use((config) => {
       }
       else if (isDirectPayment && method === 'POST') {
         // -----------------------------------------------------------------
-        // SOLUCIÓN FINAL: HYBRID LEGACY
-        // 1. Usamos ID (Requerido por tabla)
-        // 2. Usamos Formato JSON para objetos (Porque el aplanado falló)
-        // 3. Usamos Fecha con MS (Requerido por POST)
+        // LA SOLUCIÓN FINAL:
+        // 1. Fecha con Milisegundos (Correcto)
+        // 2. ID incluido en la firma (Correcto)
+        // 3. Body Aplanado Recursivo (Correcto - Sin separadores)
         // -----------------------------------------------------------------
 
-        // 1. Fecha: CON Milisegundos
+        // 1. Fecha: CON Milisegundos (Igual que Redirect Pay)
         xDate = new Date().toISOString();
         config.headers['x-date'] = xDate;
+
         signatureBase = `${xLogin}${xDate}`;
 
         // 2. Extraer ID de la URL
         const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
         const urlId = idMatch ? idMatch[1] : '';
 
-        // 3. Preparar parámetros (Incluyendo ID)
-        // Usamos 'id' porque así aparece en la tabla de documentación
+        // 3. Construir Objeto (ID + Body)
+        // Usamos 'id' como llave, tal como pide la documentación
         const paramsToSign = {
           id: urlId,
           ...bodyObj
@@ -178,30 +179,15 @@ client.interceptors.request.use((config) => {
         delete paramsToSign.uid;
         delete paramsToSign.payment_order_id;
 
-        // 4. FIRMA TIPO LEGACY (Igual que Redirect Pay)
-        // Recorremos las llaves ordenadas.
-        // Si el valor es objeto -> Stringify (JSON)
-        // Si el valor es primitivo -> String directo
-        const keys = Object.keys(paramsToSign).sort();
-        let signatureBody = '';
-
-        for (const k of keys) {
-          const v = paramsToSign[k];
-          if (v === undefined || v === null) continue;
-
-          if (typeof v === 'object') {
-            // AQUÍ ESTÁ LA CLAVE: No aplanamos recursivamente, usamos JSON string
-            signatureBody += `${k}${stableStringify(v)}`;
-          } else {
-            signatureBody += `${k}${String(v)}`;
-          }
-        }
-
+        // 4. FIRMA APLANADA (Usa buildDirectPaySignature)
+        // Esto generará: id3637method_id3payment_dataemailval...
+        // SIN comillas, SIN llaves, SIN dos puntos.
+        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          // Esperamos ver: ...Zid3636method_id3payment_data{"email":"..."}
-          console.log('[DirectPay POST] Base (Legacy + ID):', signatureBase);
+          // Debería verse: ...T20:55:xx.xxxZid3638method_id3payment_dataemailv...
+          console.log('[DirectPay POST] Base (Flat + ID + MS):', signatureBase);
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
