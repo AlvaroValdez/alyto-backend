@@ -140,7 +140,6 @@ client.interceptors.request.use((config) => {
     if (isDirectPayment || isPaymentMethods || isAttempt) {
 
       // Fix Fecha: Direct Pay suele ser estricto con los milisegundos
-      // Sobrescribimos xDate SOLO para este caso
       xDate = new Date().toISOString().split('.')[0] + 'Z';
       config.headers['x-date'] = xDate;
 
@@ -152,17 +151,29 @@ client.interceptors.request.use((config) => {
         signatureBase += `country_iso_code${countryCode}`;
       }
       else if (isDirectPayment && method === 'POST') {
-        // POST Direct: Body aplanado SIN separadores
-        // Importante: Excluir ID de URL de la firma del body
-        const cleanBody = { ...bodyObj };
-        delete cleanBody.id;
-        delete cleanBody.uid;
+        // POST Direct: 
+        // 1. Extraemos el ID de la URL (ej: 3624)
+        const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
+        const urlId = idMatch ? idMatch[1] : '';
 
-        const signatureBody = hasBody ? buildDirectPaySignature(cleanBody) : '';
+        // 2. Preparamos el objeto a firmar: Body + ID
+        // Es vital incluir el 'id' para que coincida con la tabla de parámetros de Vita
+        const paramsToSign = {
+          id: urlId,         // <--- ESTO FALTABA
+          ...bodyObj         // method_id y payment_data
+        };
+
+        // Eliminamos campos internos que no deban ir (por si acaso)
+        delete paramsToSign.uid;
+
+        // 3. Generamos firma aplanada SIN separadores
+        // buildDirectPaySignature ordenará: id -> method_id -> payment_data
+        const signatureBody = hasBody ? buildDirectPaySignature(paramsToSign) : '';
         signatureBase += signatureBody;
 
         if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-          console.log('[DirectPay] Base:', signatureBase);
+          console.log('[DirectPay] Base Correcta:', signatureBase);
+          // Debería verse: ...Zid3624method_id3payment_dataemail...
         }
       }
       // isAttempt (GET) usa solo Login + Date (ya en base)
