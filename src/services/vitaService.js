@@ -16,6 +16,7 @@ let pricesPromise = null;
 
 // --- MAPA DE COMPATIBILIDAD (Moneda -> País) ---
 // Vital para que el Frontend muestre las banderas correctamente
+// Alineado con SUPPORTED_ORIGINS de supportedOrigins.js
 const CURRENCY_TO_COUNTRY = {
   COP: 'CO', // Colombia
   ARS: 'AR', // Argentina
@@ -23,63 +24,103 @@ const CURRENCY_TO_COUNTRY = {
   BRL: 'BR', // Brasil
   MXN: 'MX', // México
   CLP: 'CL', // Chile
-  VES: 'VE', // Venezuela
+  BOB: 'BO', // Bolivia (Anchor Manual)
+  VES: 'VE', // Venezuela (futuro)
   USD: 'US', // USA
-  EUR: 'EU', // Europa
-  BOL: 'BO', // Bolivia
-  BOB: 'BO'  // Bolivia
+  EUR: 'EU'  // Europa
 };
 
 // Tasas de respaldo con códigos de PAÍS (2 letras) para asegurar compatibilidad
 // RATES: Costo en CLP de 1 unidad de la moneda destino (aprox)
+// Solo se usan en modo desarrollo cuando Vita API no está disponible
 const FALLBACK_RATES = [
   { code: 'CO', rate: 0.23 },   // 1 COP = 0.23 CLP
   { code: 'AR', rate: 0.95 },   // 1 ARS = 0.95 CLP
   { code: 'PE', rate: 255.0 },  // 1 PEN = 255 CLP
   { code: 'BR', rate: 190.0 },  // 1 BRL = 190 CLP
   { code: 'MX', rate: 55.0 },   // 1 MXN = 55 CLP
+  { code: 'BO', rate: 140.0 },  // 1 BOB = 140 CLP (Anchor Manual)
   { code: 'VE', rate: 0.025 },  // 1 VES = 0.025 CLP
   { code: 'US', rate: 980.0 },  // 1 USD = 980 CLP
   { code: 'EU', rate: 1050.0 }, // 1 EUR = 1050 CLP
-  { code: 'CL', rate: 1.0 },
-  { code: 'BO', rate: 140.0 }   // 1 BOB = 140 CLP
+  { code: 'CL', rate: 1.0 }     // 1 CLP = 1 CLP
 ];
 
 // --- HELPER NORMALIZADOR ---
+/**
+ * Normaliza la respuesta de precios de Vita API
+ * 
+ * Estructura de Vita (PROMTBusinessAPI.txt líneas 251-323):
+ * {
+ *   "clp": { "withdrawal": { "prices": { "attributes": { "clp_sell": {...}, "fixed_cost": {...} } } } },
+ *   "usd": { "withdrawal": { "prices": { "attributes": { "usd_sell": {...}, "fixed_cost_usd": {...} } } } }
+ * }
+ * 
+ * Extrae precios de TODOS los balances disponibles (no solo CLP)
+ * 
+ * @param {Object} responseData - Respuesta completa de /prices
+ * @returns {Array} Array de objetos { code, rate, fixedCost, sourceCurrency }
+ */
 const normalizePricesFromVita = (responseData) => {
   const result = [];
 
-  // Extraer sección CLP del response de Vita
-  const clp = responseData?.clp?.withdrawal;
-  if (!clp?.prices?.attributes?.clp_sell) {
-    console.warn('⚠️ [vitaService] No CLP balance found in Vita response');
+  // Iterar sobre todos los balances de moneda disponibles (clp, usd, etc.)
+  const availableBalances = Object.keys(responseData || {}).filter(key =>
+    key.toLowerCase() === 'clp' || key.toLowerCase() === 'usd' || key.toLowerCase() === 'eur'
+  );
+
+  if (availableBalances.length === 0) {
+    console.warn('⚠️ [vitaService] No se encontraron balances en la respuesta de Vita');
     return [];
   }
 
-  const sellRates = clp.prices.attributes.clp_sell;
-  const fixedCosts = clp.prices.attributes.fixed_cost || {};
+  availableBalances.forEach(balanceKey => {
+    const balanceData = responseData[balanceKey];
+    const withdrawal = balanceData?.withdrawal;
 
-  Object.entries(sellRates).forEach(([country, rate]) => {
-    // Convertir códigos a mayúsculas: "co" → "CO"
-    const countryCode = country.toUpperCase();
+    if (!withdrawal?.prices?.attributes) {
+      console.warn(`⚠️ [vitaService] Balance ${balanceKey} no tiene estructura de precios válida`);
+      return;
+    }
 
-    // Evitar duplicados (cocop es lo mismo que co)
-    if (countryCode === 'COCOP') return;
+    const attributes = withdrawal.prices.attributes;
+    const sourceCurrency = balanceKey.toUpperCase(); // CLP, USD, EUR
 
-    // Normalizar códigos especiales
-    if (countryCode.length <= 2 || countryCode === 'GT' || countryCode === 'USRTP') {
+    // Determinar qué campo de tasas usar según la moneda de origen
+    // Para CLP: clp_sell, para USD: usd_sell, etc.
+    const sellRatesKey = `${balanceKey.toLowerCase()}_sell`;
+    const fixedCostKey = sourceCurrency === 'USD' ? 'fixed_cost_usd' : 'fixed_cost';
+
+    const sellRates = attributes[sellRatesKey];
+    const fixedCosts = attributes[fixedCostKey] || {};
+
+    if (!sellRates) {
+      console.warn(`⚠️ [vitaService] No se encontró ${sellRatesKey} en balance ${balanceKey}`);
+      return;
+    }
+
+    // Extraer tasas para cada país destino
+    Object.entries(sellRates).forEach(([country, rate]) => {
+      const countryCode = country.toUpperCase();
+
+      // Evitar duplicados y códigos especiales inválidos
+      if (countryCode === 'COCOP' || countryCode.length > 2) return;
+
       result.push({
         code: countryCode,
         rate: Number(rate),
-        fixedCost: Number(fixedCosts[country] || 0)
+        fixedCost: Number(fixedCosts[country] || 0),
+        sourceCurrency: sourceCurrency // CLP, USD, EUR
       });
-    }
+    });
+
+    console.log(`✅ [vitaService] Extraídos precios de balance ${sourceCurrency}: ${Object.keys(sellRates).length} países`);
   });
 
   return result;
 };
 
-// Función legacy normalizePrices para compatibilidad
+// Función legacy normalizePrices para compatibilidad con código antiguo
 const normalizePrices = (responseData) => {
   // Si viene estructura antigua (array), mantener compatibilidad
   const raw = responseData?.data ?? responseData;

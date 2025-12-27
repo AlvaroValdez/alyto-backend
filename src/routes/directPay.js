@@ -15,10 +15,19 @@ const router = express.Router();
 router.post('/:paymentOrderId', async (req, res) => {
     try {
         const { paymentOrderId } = req.params;
-        const { payment_data } = req.body;
+        const { method_id, payment_data } = req.body;
 
         console.log('[directPay] Processing direct payment for order:', paymentOrderId);
+        console.log('[directPay] Method ID:', method_id);
         console.log('[directPay] Payment data:', JSON.stringify(payment_data, null, 2));
+
+        // Validate method_id (required by Vita API)
+        if (!method_id) {
+            return res.status(400).json({
+                ok: false,
+                error: 'method_id is required. Must be the ID of the selected payment method.'
+            });
+        }
 
         // Validate payment_data
         if (!payment_data || typeof payment_data !== 'object') {
@@ -28,11 +37,15 @@ router.post('/:paymentOrderId', async (req, res) => {
             });
         }
 
-        // Forward to Vita API
+        // Forward to Vita API with both method_id and payment_data
+        // According to PROMTBusinessAPI.txt (lines 1172-1179), both fields are required
         // vitaClient will handle authentication headers and signature
         const response = await client.post(
             `/payment_orders/${paymentOrderId}/direct_payment`,
-            { payment_data }
+            {
+                method_id: String(method_id),
+                payment_data
+            }
         );
 
         console.log('[directPay] Vita response:', response.status);

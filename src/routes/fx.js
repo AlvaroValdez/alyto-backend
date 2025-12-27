@@ -14,12 +14,20 @@ router.get('/quote', async (req, res) => {
 
     const originCurrency = (origin || 'CLP').toUpperCase();
 
-    // Si FE no manda originCountry, intentamos deducirlo por moneda
-    const safeOriginCountry = (
-      originCountry ||
-      (SUPPORTED_ORIGINS.find(o => o.currency === originCurrency)?.code) ||
-      'CL'
-    ).toUpperCase();
+    // IMPORTANTE: El frontend SIEMPRE debe enviar originCountry explícitamente
+    // Si no viene, intentamos deducirlo pero registramos advertencia
+    let safeOriginCountry;
+
+    if (!originCountry) {
+      console.warn('⚠️ [FX] originCountry no fue enviado. El frontend debe enviarlo explícitamente.');
+      // Fallback: deducir de SUPPORTED_ORIGINS por compatibilidad
+      safeOriginCountry = (
+        SUPPORTED_ORIGINS.find(o => o.currency === originCurrency)?.code || 'CL'
+      ).toUpperCase();
+      console.warn(`⚠️ [FX] Auto-deducido originCountry=${safeOriginCountry} desde currency=${originCurrency}`);
+    } else {
+      safeOriginCountry = originCountry.toUpperCase();
+    }
 
     console.log(`🧮 [FX] Solicitud: ${amount} ${originCurrency} (${safeOriginCountry}) -> ${destCountry}`);
 
