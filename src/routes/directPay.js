@@ -1,68 +1,83 @@
-// backend/src/routes/directPay.js
+// backend/src/routes/directPayment.js
 import express from 'express';
 import { client } from '../services/vitaClient.js';
 
 const router = express.Router();
 
 /**
- * POST /api/direct-pay/:paymentOrderId
+ * POST /api/direct-payment/:paymentOrderId
  * 
- * Proxy endpoint for Vita DirectPay
- * Forwards payment_data to Vita's direct_payment endpoint
+ * Ejecuta un pago directo según especificación de Vita Wallet Business API
  * 
- * Based on: BusinessAPI.txt - POST Direct Payment
+ * Basado en:
+ * - PROMTBusinessAPI.txt líneas 1154-1356
+ * - DirectPayment-dos.txt líneas 838-877
+ * 
+ * Request Body (CORRECTO):
+ * {
+ *   "payment_method": "pse" | "nequi" | "daviplata" | "tdc" | "fintoc",
+ *   "payment_data": {
+ *     // Campos específicos del método seleccionado
+ *   }
+ * }
+ * 
+ * ⚠️ IMPORTANTE: El campo es "payment_method" (NO "method_id")
  */
 router.post('/:paymentOrderId', async (req, res) => {
     try {
         const { paymentOrderId } = req.params;
-        const { method_id, payment_data } = req.body;
+        const { payment_method, payment_data } = req.body;
 
-        console.log('[directPay] Processing direct payment for order:', paymentOrderId);
-        console.log('[directPay] Method ID:', method_id);
-        console.log('[directPay] Payment data:', JSON.stringify(payment_data, null, 2));
+        console.log('[DirectPayment] Processing for order:', paymentOrderId);
+        console.log('[DirectPayment] Payment method:', payment_method);
+        console.log('[DirectPayment] Payment data:', JSON.stringify(payment_data, null, 2));
 
-        // Validate method_id (required by Vita API)
-        if (!method_id) {
+        // Validar payment_method (requerido por Vita API)
+        if (!payment_method) {
             return res.status(400).json({
                 ok: false,
-                error: 'method_id is required. Must be the ID of the selected payment method.'
+                error: 'payment_method es requerido. Debe ser el código del método (ej: "pse", "nequi", "fintoc")'
             });
         }
 
-        // Validate payment_data
+        // Validar payment_data
         if (!payment_data || typeof payment_data !== 'object') {
             return res.status(400).json({
                 ok: false,
-                error: 'payment_data object is required'
+                error: 'payment_data es requerido y debe ser un objeto con los campos del método'
             });
         }
 
-        // Forward to Vita API with both method_id and payment_data
-        // According to PROMTBusinessAPI.txt (lines 1172-1179), both fields are required
-        // vitaClient will handle authentication headers and signature
+        // Llamar a Vita API
+        // El vitaClient manejará automáticamente:
+        // - Headers de autenticación (x-date, x-login, x-trans-key)
+        // - Generación de firma HMAC-SHA256
+        // - Serialización correcta del payload
         const response = await client.post(
             `/payment_orders/${paymentOrderId}/direct_payment`,
             {
-                method_id: String(method_id),
+                payment_method,
                 payment_data
             }
         );
 
-        console.log('[directPay] Vita response:', response.status);
+        console.log('[DirectPayment] Vita response status:', response.status);
 
+        // Retornar respuesta de Vita
         res.json({
             ok: true,
             data: response.data
         });
+
     } catch (error) {
-        console.error('[directPay] Error:', error.response?.data || error.message);
+        console.error('[DirectPayment] Error:', error.response?.data || error.message);
 
         const status = error?.response?.status || 500;
         const vitaError = error?.response?.data;
 
         res.status(status).json({
             ok: false,
-            error: 'Error processing direct payment',
+            error: 'Error procesando pago directo',
             details: vitaError || error.message
         });
     }
