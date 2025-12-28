@@ -40,8 +40,17 @@ function buildSortedRequestBodyLegacy(bodyObj) {
   for (const k of keys) {
     const v = bodyObj[k];
     if (v === undefined || v === null) continue;
-    if (typeof v === 'object') out += `${k}${stableStringify(v)}`;
-    else out += `${k}${String(v)}`;
+
+    // ⚠️ IMPORTANTE: Omitir objetos vacíos {} y arrays vacíos []
+    // Vita no los incluye en la firma cuando están vacíos
+    if (typeof v === 'object') {
+      const stringified = stableStringify(v);
+      // Si es {} o [], no incluir en la firma
+      if (stringified === '{}' || stringified === '[]') continue;
+      out += `${k}${stringified}`;
+    } else {
+      out += `${k}${String(v)}`;
+    }
   }
   return out;
 }
