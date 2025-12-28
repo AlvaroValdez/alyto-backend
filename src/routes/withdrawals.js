@@ -85,7 +85,7 @@ router.post('/', async (req, res) => {
       console.warn(`[withdrawals] ⚠️  Transacción requiere aprobación manual: ${amount} ${currency}`);
     }
 
-
+    console.log('[withdrawals] Purpose enviado:', purpose); // Debug log
 
     const withdrawalPayload = {
       url_notify: notifyUrl,
