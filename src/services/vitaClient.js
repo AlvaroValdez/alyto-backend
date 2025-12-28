@@ -39,7 +39,7 @@ function stableStringify(value) {
       }
       return `:${k}=>${v}`;
     });
-    return `{${entries.join(', ')}}`;
+    return `{${entries.join(',')}}`;  // Sin espacio después de coma
   }
   return JSON.stringify(value);
 }
