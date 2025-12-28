@@ -55,7 +55,7 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Serialización correcta del payload
 
         const payload = {
-            method_id: payment_method, // Vita espera "method_id", no "payment_method"
+            payment_method: payment_method, // Revertir a payment_method (el código es 'fintoc')
             payment_data
         };
 
