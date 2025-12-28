@@ -54,14 +54,10 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
-        // ⚠️ IMPORTANTE: No enviar payment_data si está vacío
-        // Vita no lo espera en la firma cuando está vacío
-        const payload = { payment_method };
-
-        // Solo agregar payment_data si tiene contenido
-        if (payment_data && Object.keys(payment_data).length > 0) {
-            payload.payment_data = payment_data;
-        }
+        const payload = {
+            payment_method,
+            payment_data
+        };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
 

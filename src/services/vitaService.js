@@ -260,11 +260,57 @@ export const getPaymentMethods = async (country) => {
       'Khipu': 'khipu'
     };
 
-    data.payment_methods = data.payment_methods.map(method => ({
-      ...method,
-      code: method.code || nameToCode[method.name] || method.name?.toLowerCase(),
-      payment_method: method.code || nameToCode[method.name] || method.name?.toLowerCase()
-    }));
+    // Campos requeridos para Fintoc (Vita no los devuelve correctamente)
+    const fintocRequiredFields = [
+      {
+        name: 'bank_id',
+        type: 'select',
+        label: 'Banco',
+        required: true,
+        options: [
+          { value: 'cl_banco_de_chile', label: 'Banco de Chile' },
+          { value: 'cl_banco_estado', label: 'Banco Estado' },
+          { value: 'cl_banco_santander', label: 'Banco Santander' },
+          { value: 'cl_banco_bci', label: 'Banco BCI' },
+          { value: 'cl_banco_scotiabank', label: 'Scotiabank' },
+          { value: 'cl_banco_itau', label: 'Banco Itaú' }
+        ]
+      },
+      {
+        name: 'rut',
+        type: 'text',
+        label: 'RUT',
+        required: true,
+        placeholder: '12.345.678-9',
+        validation: {
+          pattern: '^[0-9]{1,2}\\.[0-9]{3}\\.[0-9]{3}-[0-9Kk]$',
+          message: 'Formato: 12.345.678-9'
+        }
+      },
+      {
+        name: 'email',
+        type: 'email',
+        label: 'Email',
+        required: true,
+        placeholder: 'tu@email.com'
+      }
+    ];
+
+    data.payment_methods = data.payment_methods.map(method => {
+      const code = method.code || nameToCode[method.name] || method.name?.toLowerCase();
+
+      // Si es Fintoc y no tiene required_fields, agregarlos
+      const requiredFields = (code === 'fintoc' && (!method.required_fields || method.required_fields.length === 0))
+        ? fintocRequiredFields
+        : method.required_fields;
+
+      return {
+        ...method,
+        code,
+        payment_method: code,
+        required_fields: requiredFields
+      };
+    });
   }
 
   return data;
