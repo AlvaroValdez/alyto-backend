@@ -62,10 +62,17 @@ router.post('/:paymentOrderId', async (req, res) => {
             finalPaymentData = {};
         }
 
+        // ESTRATEGIA HÍBRIDA: Fintoc necesita saber el banco, pero quizás RUT/Email rompen la firma por formato.
+        // Probamos enviando SOLO bank_id.
+        let pd = finalPaymentData;
+        if (payment_method === 'fintoc' && finalPaymentData.bank_id) {
+            console.log('[DirectPay] Filtrando payment_data para enviar solo bank_id');
+            pd = { bank_id: finalPaymentData.bank_id };
+        }
+
         const payload = {
-            // ESTRATEGIA FINAL: Soportada por DirectPaymentFintoc.txt y fix de firma vacía
-            payment_method: payment_method, // 'fintoc'
-            payment_data: finalPaymentData  // {}
+            payment_method: payment_method,
+            payment_data: pd
         };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
