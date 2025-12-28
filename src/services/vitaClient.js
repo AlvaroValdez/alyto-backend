@@ -130,30 +130,22 @@ client.interceptors.request.use((config) => {
       const countryCode = urlRaw.split('/').pop().toLowerCase();
       signatureBase += `country_iso_code${countryCode}`;
     }
-    // CASO 2: POST Direct Payment (Firma ID + Body JSON)
+    // CASO 2: POST Direct Payment (Firma SOLO Body, SIN id)
     else if (url.includes('/direct_payment') && method === 'POST') {
-      // Extraer ID de la URL
-      const idMatch = urlRaw.match(/\/payment_orders\/([^\/]+)\/direct_payment/);
-      const urlId = idMatch ? idMatch[1] : '';
+      // Para DirectPay, NO incluir id en la firma, solo el body
+      // Según documentación, la firma es: x_login + x_date + sorted_body
+      const cleanBody = { ...bodyObj };
+      delete cleanBody.id;
+      delete cleanBody.uid;
+      delete cleanBody.payment_order_id;
 
-      // Construir objeto virtual para firma: { id, ...body }
-      // Alfabéticamente 'id' va antes que 'method_id', quedando al inicio.
-      const paramsToSign = {
-        id: urlId,
-        ...bodyObj
-      };
-
-      // Limpieza de seguridad
-      delete paramsToSign.uid;
-      delete paramsToSign.payment_order_id;
-
-      // Generar firma: id3650method_id...
-      signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
+      // Generar firma solo con el body
+      signatureBase += buildSortedRequestBodyLegacy(cleanBody);
 
       // Log siempre activo para debugging
       console.log('[DirectPay] URL:', urlRaw);
       console.log('[DirectPay] Body enviado:', JSON.stringify(bodyObj, null, 2));
-      console.log('[DirectPay] Params para firma:', JSON.stringify(paramsToSign, null, 2));
+      console.log('[DirectPay] Params para firma (SIN id):', JSON.stringify(cleanBody, null, 2));
       console.log('[DirectPay] SignatureBase:', signatureBase);
     }
     // CASO 3: POST Redirect Payment / Create Order (Firma solo Body)
