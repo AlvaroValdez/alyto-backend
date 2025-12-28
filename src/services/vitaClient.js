@@ -27,8 +27,10 @@ function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   if (value && typeof value === 'object' && value.constructor === Object) {
-    // NO ordenar - usar Object.entries directamente (orden de inserción)
-    const entries = Object.entries(value).map(([k, v]) => {
+    // IMPORTANTE: Ordenar claves alfabéticamente SIEMPRE según regla linea 425
+    const keys = Object.keys(value).sort();
+    const entries = keys.map(k => {
+      const v = value[k];
       // Formato Ruby: :key=>"value" para strings, :key=>value para números
       if (typeof v === 'string') {
         return `:${k}=>"${v}"`;
