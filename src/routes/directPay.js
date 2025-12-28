@@ -54,11 +54,12 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
-        // CORRECCIÓN FINAL: El usuario confirma que la estructura anterior era incorrecta.
-        // La imagen de Docs (Step 672) solo lista 'payment_data' como parámetro.
-        // Eliminamos 'payment_method'.
+        // CORRECCIÓN: Volvemos a 'payment_method' según DirectPaymentFintoc.txt
+        // El intento con "solo payment_data" falló (303).
+        // Combinamos esto con RUT limpio desde Frontend.
 
         const payload = {
+            payment_method: payment_method,
             payment_data: payment_data
         };
 
