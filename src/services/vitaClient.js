@@ -148,8 +148,8 @@ client.interceptors.request.use((config) => {
       // Log siempre activo para debugging
       console.log('[DirectPay] URL:', urlRaw);
       console.log('[DirectPay] Body enviado:', JSON.stringify(bodyObj, null, 2));
-      console.log('[DirectPay] Params para firma (SIN id):', JSON.stringify(cleanBody, null, 2));
-      console.log('[DirectPay] SignatureBase:', signatureBase);
+      // console.log('[DirectPay] Params para firma (SIN id):', JSON.stringify(cleanBody, null, 2));
+      console.log('[DirectPay] SignatureBase (con ID):', signatureBase);
     }
     // CASO 3: POST Redirect Payment / Create Order (Firma solo Body)
     else if (hasBody) {
