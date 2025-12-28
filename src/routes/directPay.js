@@ -63,7 +63,7 @@ router.post('/:paymentOrderId', async (req, res) => {
         }
 
         const payload = {
-            payment_method: payment_method,
+            // SEGÚN IMAGEN DOCS: Solo se envía payment_data (id va en URL)
             payment_data: finalPaymentData
         };
 

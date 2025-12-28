@@ -60,8 +60,7 @@ function buildSortedRequestBodyLegacy(bodyObj) {
     // Vita no los incluye en la firma cuando están vacíos
     if (typeof v === 'object') {
       const stringified = stableStringify(v);
-      // Si es {} o [], no incluir en la firma
-      if (stringified === '{}' || stringified === '[]') continue;
+      // IMPORTANTE: NO omitir objetos vacíos. GeneracionFirmas.txt no tiene lógica para omitirlos.
       out += `${k}${stringified}`;
     } else {
       out += `${k}${String(v)}`;
