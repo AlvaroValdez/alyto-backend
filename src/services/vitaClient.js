@@ -22,13 +22,13 @@ function deepClean(value) {
 
 // Serializa objetos en formato Ruby-like según especificación de Vita
 // Ejemplo: {bank_id: "test", rut: "123"} => {:bank_id=>"test", :rut=>"123"}
+// IMPORTANTE: NO ordena claves de objetos anidados (solo el objeto raíz)
 function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   if (value && typeof value === 'object' && value.constructor === Object) {
-    const keys = Object.keys(value).sort();
-    const entries = keys.map(k => {
-      const v = value[k];
+    // NO ordenar - usar Object.entries directamente (orden de inserción)
+    const entries = Object.entries(value).map(([k, v]) => {
       // Formato Ruby: :key=>"value" para strings, :key=>value para números
       if (typeof v === 'string') {
         return `:${k}=>"${v}"`;
