@@ -129,9 +129,11 @@ client.interceptors.request.use((config) => {
       // Generar firma: id3650method_id...
       signatureBase += buildSortedRequestBodyLegacy(paramsToSign);
 
-      if (process.env.VITA_DEBUG_SIGNATURE === 'true') {
-        console.log('[DirectPay] SignatureBase:', signatureBase);
-      }
+      // Log siempre activo para debugging
+      console.log('[DirectPay] URL:', urlRaw);
+      console.log('[DirectPay] Body enviado:', JSON.stringify(bodyObj, null, 2));
+      console.log('[DirectPay] Params para firma:', JSON.stringify(paramsToSign, null, 2));
+      console.log('[DirectPay] SignatureBase:', signatureBase);
     }
     // CASO 3: POST Redirect Payment / Create Order (Firma solo Body)
     else if (hasBody) {

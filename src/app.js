@@ -9,7 +9,6 @@ import pricesRoutes from './routes/prices.js';
 import withdrawalsRoutes from './routes/withdrawals.js';
 import ipnRoutes from './routes/ipn.js';
 import ipnEventsRoutes from './routes/ipnEvents.js';
-// ✅ AQUÍ ESTÁ LA SOLUCIÓN: fxRoutes importado UNA SOLA VEZ
 import fxRoutes from './routes/fx.js';
 import transactionsRoutes from './routes/transactions.js';
 import authRoutes from './routes/auth.js';
