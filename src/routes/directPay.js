@@ -54,9 +54,17 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
+        // CORRECCIÓN SEGÚN IMAGEN USUARIO: Fintoc requiere payment_data VACÍO
+        // Si enviamos datos extra, el servidor los filtra y la firma no coincide (Error 303)
+        let finalPaymentData = payment_data;
+        if (payment_method === 'fintoc' || payment_method === 'Fintoc') {
+            console.log('[DirectPay] Fintoc detectado: Forzando payment_data vacío según documentación.');
+            finalPaymentData = {};
+        }
+
         const payload = {
-            payment_method: payment_method, // Revertir a payment_method (el código es 'fintoc')
-            payment_data
+            payment_method: payment_method,
+            payment_data: finalPaymentData
         };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
