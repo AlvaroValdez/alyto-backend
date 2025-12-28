@@ -54,13 +54,11 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
-        // ESTRATEGIA DEFINITIVA: "Full Standard"
-        // 1. Enviamos payment_method (no method_id)
-        // 2. Enviamos payment_data COMPLETO (sin borrar nada)
-        // 3. La firma ya soporta objetos anidados y vacíos correctamente.
+        // CORRECCIÓN FINAL: El usuario confirma que la estructura anterior era incorrecta.
+        // La imagen de Docs (Step 672) solo lista 'payment_data' como parámetro.
+        // Eliminamos 'payment_method'.
 
         const payload = {
-            payment_method: payment_method,
             payment_data: payment_data
         };
 
