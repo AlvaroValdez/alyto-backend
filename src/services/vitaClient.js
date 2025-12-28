@@ -20,14 +20,26 @@ function deepClean(value) {
   return value;
 }
 
-// Mantiene {"a":"b"} ordenado y stringificado correctamente
+// Serializa objetos en formato Ruby-like según especificación de Vita
+// Ejemplo: {bank_id: "test", rut: "123"} => {:bank_id=>"test", :rut=>"123"}
 function stableStringify(value) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   if (value && typeof value === 'object' && value.constructor === Object) {
     const keys = Object.keys(value).sort();
-    const props = keys.map(k => `"${k}":${stableStringify(value[k])}`);
-    return `{${props.join(',')}}`;
+    const entries = keys.map(k => {
+      const v = value[k];
+      // Formato Ruby: :key=>"value" para strings, :key=>value para números
+      if (typeof v === 'string') {
+        return `:${k}=>"${v}"`;
+      } else if (typeof v === 'number') {
+        return `:${k}=>${v}`;
+      } else if (typeof v === 'object') {
+        return `:${k}=>${stableStringify(v)}`;
+      }
+      return `:${k}=>${v}`;
+    });
+    return `{${entries.join(', ')}}`;
   }
   return JSON.stringify(value);
 }
