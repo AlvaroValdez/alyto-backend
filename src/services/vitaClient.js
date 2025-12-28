@@ -136,13 +136,14 @@ client.interceptors.request.use((config) => {
     else if (url.includes('/direct_payment') && method === 'POST') {
       // Para DirectPay, NO incluir id en la firma, solo el body
       // Según documentación, la firma es: x_login + x_date + sorted_body
-      const cleanBody = { ...bodyObj };
-      delete cleanBody.id;
-      delete cleanBody.uid;
-      delete cleanBody.payment_order_id;
+      // CORRECCIÓN: La documentación muestra 'id' como parámetro. Si lo enviamos en body, debemos firmarlo.
+      // const cleanBody = { ...bodyObj };
+      // delete cleanBody.id; // COMENTADO para permitir firmar id
+      // delete cleanBody.uid;
+      // delete cleanBody.payment_order_id;
 
-      // Generar firma solo con el body
-      signatureBase += buildSortedRequestBodyLegacy(cleanBody);
+      // Generar firma con el body completo (incluyendo id si existe)
+      signatureBase += buildSortedRequestBodyLegacy(bodyObj);
 
       // Log siempre activo para debugging
       console.log('[DirectPay] URL:', urlRaw);
