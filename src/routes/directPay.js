@@ -54,25 +54,14 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
-        // CORRECCIÓN SEGÚN IMAGEN USUARIO: Fintoc requiere payment_data VACÍO
-        // Si enviamos datos extra, el servidor los filtra y la firma no coincide (Error 303)
-        let finalPaymentData = payment_data;
-        if (payment_method === 'fintoc' || payment_method === 'Fintoc') {
-            console.log('[DirectPay] Fintoc detectado: Forzando payment_data vacío según documentación.');
-            finalPaymentData = {};
-        }
-
-        // ESTRATEGIA HÍBRIDA: Fintoc necesita saber el banco, pero quizás RUT/Email rompen la firma por formato.
-        // Probamos enviando SOLO bank_id.
-        let pd = finalPaymentData;
-        if (payment_method === 'fintoc' && finalPaymentData.bank_id) {
-            console.log('[DirectPay] Filtrando payment_data para enviar solo bank_id');
-            pd = { bank_id: finalPaymentData.bank_id };
-        }
+        // ESTRATEGIA DEFINITIVA: "Full Standard"
+        // 1. Enviamos payment_method (no method_id)
+        // 2. Enviamos payment_data COMPLETO (sin borrar nada)
+        // 3. La firma ya soporta objetos anidados y vacíos correctamente.
 
         const payload = {
             payment_method: payment_method,
-            payment_data: pd
+            payment_data: payment_data
         };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
