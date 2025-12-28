@@ -39,7 +39,8 @@ function stableStringify(value) {
       }
       return `:${k}=>${v}`;
     });
-    return `{${entries.join(',')}}`;  // Sin espacio después de coma
+    // IMPORTANTE: Unir con coma Y ESPACIO según GeneracionFirmas.txt (ej: line 69, 178)
+    return `{${entries.join(', ')}}`;
   }
   return JSON.stringify(value);
 }
