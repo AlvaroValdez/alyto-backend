@@ -63,9 +63,9 @@ router.post('/:paymentOrderId', async (req, res) => {
         }
 
         const payload = {
-            // SEGÚN TABLA PARÁMETROS: id + payment_data
-            id: paymentOrderId,
-            payment_data: finalPaymentData
+            // ESTRATEGIA FINAL: Soportada por DirectPaymentFintoc.txt y fix de firma vacía
+            payment_method: payment_method, // 'fintoc'
+            payment_data: finalPaymentData  // {}
         };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
