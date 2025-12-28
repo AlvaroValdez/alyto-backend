@@ -246,7 +246,28 @@ export const getPaymentMethods = async (country) => {
     isDirectPayment: true
   });
 
-  return unwrap(res);
+  const data = unwrap(res);
+
+  // Normalizar métodos para agregar campo 'code' si no existe
+  // Vita devuelve method_id y name, pero DirectPay necesita code
+  if (data?.payment_methods) {
+    const nameToCode = {
+      'Webpay': 'webpay',
+      'Fintoc': 'fintoc',
+      'PSE': 'pse',
+      'Nequi': 'nequi',
+      'Daviplata': 'daviplata',
+      'Khipu': 'khipu'
+    };
+
+    data.payment_methods = data.payment_methods.map(method => ({
+      ...method,
+      code: method.code || nameToCode[method.name] || method.name?.toLowerCase(),
+      payment_method: method.code || nameToCode[method.name] || method.name?.toLowerCase()
+    }));
+  }
+
+  return data;
 };
 
 // 6. CREAR ORDEN DE PAGO (Payin)
