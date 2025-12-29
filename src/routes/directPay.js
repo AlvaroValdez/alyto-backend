@@ -79,12 +79,12 @@ router.post('/:paymentOrderId', async (req, res) => {
                     const methodsResponse = await client.get('/payment_methods/CL');
                     const methods = methodsResponse.data?.payment_methods || methodsResponse.data || [];
 
-                    const fintocMethod = methods.find(m => m.code === 'fintoc');
+                    const fintocMethod = methods.find(m => m.name && m.name.toLowerCase() === 'fintoc');
 
-                    if (fintocMethod && fintocMethod.id) {
-                        console.log(`[DirectPayment] ID de Fintoc encontrado: ${fintocMethod.id}`);
+                    if (fintocMethod && fintocMethod.method_id) {
+                        console.log(`[DirectPayment] ID de Fintoc encontrado: ${fintocMethod.method_id}`);
                         finalPayload = {
-                            method_id: String(fintocMethod.id),
+                            method_id: String(fintocMethod.method_id),
                             payment_data: {}
                         };
                     } else {
