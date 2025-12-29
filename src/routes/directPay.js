@@ -88,12 +88,15 @@ router.post('/:paymentOrderId', async (req, res) => {
                             payment_data: {}
                         };
                     } else {
-                        throw new Error('No se pudo encontrar el ID de Fintoc en la API de Vita');
+                        throw new Error('No se pudo encontrar el ID de Fintoc en la API de Vita para el pais CL');
                     }
                 } catch (err) {
                     console.error('[DirectPayment] Error buscando ID de Fintoc:', err.message);
-                    // Fallback desesperado: mandamos string "fintoc"
-                    finalPayload = { method_id: 'fintoc', payment_data: {} };
+                    return res.status(400).json({
+                        ok: false,
+                        error: 'Error configurando pago Fintoc: No se pudo obtener el method_id',
+                        details: err.message
+                    });
                 }
             }
             // 3. Otros métodos con payment_method (PSE, etc)
