@@ -59,27 +59,45 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Generación de firma HMAC-SHA256
         // - Serialización correcta del payload
 
-        // CORRECCIÓN: Usar 'method_id' según ejemplo JSON de documentación (DirectPaymentFintoc.txt line 441)
+        // CORRECCIÓN ROBUSTA: Resolver ID dinámicamente si es necesario
 
         let finalPayload;
 
-        // Si method_id viene explícito, usarlo tal cual
-        if (method_id) {
-            finalPayload = { method_id: method_id, payment_data: {} };
+        // 1. Si ya tenemos un ID numérico claro, lo usamos
+        if (method_id && !isNaN(method_id)) {
+            finalPayload = { method_id: String(method_id), payment_data: {} };
         }
-        // Si viene payment_method, verificar si es "fintoc" o un ID numérico (Fintoc usa IDs como "1", "2")
-        // O si el frontend mandó "fintoc" en payment_method pero debería ser method_id
-        else if (payment_method) {
-            // Caso especial: si el frontend envía "fintoc" como payment_method, asumimos que es method_id
-            // (esto es un parche de seguridad por si el frontend falla en enviar method_id)
-            if (payment_method === 'fintoc' || !isNaN(payment_method)) {
-                // Si es Fintoc, Vita requiere payment_data vacío y method_id
-                finalPayload = {
-                    method_id: payment_method,
-                    payment_data: {}
-                };
-            } else {
-                // Otros métodos (PSE, Nequi, etc)
+        else {
+            // 2. Si vino "fintoc" (texto) ya sea en payment_method o method_id
+            const isFintocStart = (payment_method === 'fintoc') || (method_id === 'fintoc');
+
+            if (isFintocStart) {
+                console.log('[DirectPayment] Detectado intento Fintoc sin ID numérico. Buscando ID en API...');
+                try {
+                    // Obtenemos métodos de Chile (CL) para buscar el ID de Fintoc
+                    // Nota: Asumimos CL para este fix específico
+                    const methodsResponse = await client.get('/payment_orders/methods/CL');
+                    const methods = methodsResponse.data?.payment_methods || methodsResponse.data || [];
+
+                    const fintocMethod = methods.find(m => m.code === 'fintoc');
+
+                    if (fintocMethod && fintocMethod.id) {
+                        console.log(`[DirectPayment] ID de Fintoc encontrado: ${fintocMethod.id}`);
+                        finalPayload = {
+                            method_id: String(fintocMethod.id),
+                            payment_data: {}
+                        };
+                    } else {
+                        throw new Error('No se pudo encontrar el ID de Fintoc en la API de Vita');
+                    }
+                } catch (err) {
+                    console.error('[DirectPayment] Error buscando ID de Fintoc:', err.message);
+                    // Fallback desesperado: mandamos string "fintoc"
+                    finalPayload = { method_id: 'fintoc', payment_data: {} };
+                }
+            }
+            // 3. Otros métodos con payment_method (PSE, etc)
+            else if (payment_method) {
                 finalPayload = {
                     payment_method: payment_method,
                     payment_data: payment_data
