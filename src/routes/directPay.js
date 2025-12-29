@@ -116,6 +116,7 @@ router.post('/:paymentOrderId', async (req, res) => {
         );
 
         console.log('[DirectPayment] Vita response status:', response.status);
+        console.log('[DirectPayment] Vita response data:', JSON.stringify(response.data, null, 2));
 
         // Retornar respuesta de Vita
         res.json({
