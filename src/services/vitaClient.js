@@ -129,7 +129,15 @@ client.interceptors.request.use((config) => {
 
     // CASO 1: GET Payment Methods (Firma parámetro URL)
     if (url.includes('/payment_methods/')) {
-      const countryCode = urlRaw.split('/').pop().toLowerCase();
+      // Vital: Vita espera el country_iso_code en mayúscula en la firma?
+      // Revisando la URL real: /payment_methods/CL
+      // El split debe tomar el último segmento
+      const segments = urlRaw.split('/');
+      const countryCode = segments[segments.length - 1];
+
+      // IMPORTANTE: Según docs, si es query param o path param, se incluye en sorted_body
+      // En este caso es un path param, pero actúa como "body implícito" para la firma
+      // La clave debe ser exacta: "country_iso_code"
       signatureBase += `country_iso_code${countryCode}`;
     }
     // CASO 2: POST Direct Payment (Firma SOLO Body, SIN id)
