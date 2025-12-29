@@ -60,18 +60,38 @@ router.post('/:paymentOrderId', async (req, res) => {
         // - Serialización correcta del payload
 
         // CORRECCIÓN: Usar 'method_id' según ejemplo JSON de documentación (DirectPaymentFintoc.txt line 441)
-        // La clave 'payment_method' parece ser de una versión o SDK diferente.
 
-        const payload = method_id
-            ? { method_id: method_id, payment_data: {} }
-            : { payment_method: payment_method, payment_data: payment_data };
+        let finalPayload;
 
+        // Si method_id viene explícito, usarlo tal cual
+        if (method_id) {
+            finalPayload = { method_id: method_id, payment_data: {} };
+        }
+        // Si viene payment_method, verificar si es "fintoc" o un ID numérico (Fintoc usa IDs como "1", "2")
+        // O si el frontend mandó "fintoc" en payment_method pero debería ser method_id
+        else if (payment_method) {
+            // Caso especial: si el frontend envía "fintoc" como payment_method, asumimos que es method_id
+            // (esto es un parche de seguridad por si el frontend falla en enviar method_id)
+            if (payment_method === 'fintoc' || !isNaN(payment_method)) {
+                // Si es Fintoc, Vita requiere payment_data vacío y method_id
+                finalPayload = {
+                    method_id: payment_method,
+                    payment_data: {}
+                };
+            } else {
+                // Otros métodos (PSE, Nequi, etc)
+                finalPayload = {
+                    payment_method: payment_method,
+                    payment_data: payment_data
+                };
+            }
+        }
 
-        console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
+        console.log('[DirectPayment] Payload final:', JSON.stringify(finalPayload, null, 2));
 
         const response = await client.post(
             `/payment_orders/${paymentOrderId}/direct_payment`,
-            payload
+            finalPayload
         );
 
         console.log('[DirectPayment] Vita response status:', response.status);
