@@ -76,7 +76,7 @@ router.post('/:paymentOrderId', async (req, res) => {
                 try {
                     // Obtenemos métodos de Chile (CL) para buscar el ID de Fintoc
                     // Nota: Asumimos CL para este fix específico
-                    const methodsResponse = await client.get('/payment_orders/methods/CL');
+                    const methodsResponse = await client.get('/payment_methods/CL');
                     const methods = methodsResponse.data?.payment_methods || methodsResponse.data || [];
 
                     const fintocMethod = methods.find(m => m.code === 'fintoc');
