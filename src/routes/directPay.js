@@ -58,8 +58,7 @@ router.post('/:paymentOrderId', async (req, res) => {
         // La clave 'payment_method' parece ser de una versión o SDK diferente.
 
         const payload = {
-            method_id: payment_method, // Debe ser el ID (ej: "1") o el código, según lo que envíe el front.
-            payment_data: payment_data
+            payment_data: {}
         };
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
