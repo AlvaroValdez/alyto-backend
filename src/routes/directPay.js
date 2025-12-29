@@ -28,7 +28,16 @@ router.post('/:paymentOrderId', async (req, res) => {
         const { paymentOrderId } = req.params;
         const { payment_method, payment_data, method_id } = req.body;
 
-        // payment_method validation handled earlier; no additional check needed here.
+        console.log('[DirectPayment] Request body recibido:', JSON.stringify(req.body, null, 2));
+
+        // Validar que se envíe al menos payment_method o method_id
+        if (!payment_method && !method_id) {
+            return res.status(400).json({
+                ok: false,
+                error: 'payment_method o method_id es requerido (ej: "pse", "nequi", "fintoc")'
+            });
+        }
+
 
         console.log('[DirectPayment] Processing for order:', paymentOrderId);
         console.log('[DirectPayment] Payment method:', payment_method || method_id);
