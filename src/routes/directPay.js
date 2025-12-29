@@ -26,25 +26,21 @@ const router = express.Router();
 router.post('/:paymentOrderId', async (req, res) => {
     try {
         const { paymentOrderId } = req.params;
-        const { payment_method, payment_data } = req.body;
+        const { payment_method, payment_data, method_id } = req.body;
+
+        // payment_method validation handled earlier; no additional check needed here.
 
         console.log('[DirectPayment] Processing for order:', paymentOrderId);
-        console.log('[DirectPayment] Payment method:', payment_method);
+        console.log('[DirectPayment] Payment method:', payment_method || method_id);
         console.log('[DirectPayment] Payment data:', JSON.stringify(payment_data, null, 2));
 
-        // Validar payment_method (requerido por Vita API)
-        if (!payment_method) {
-            return res.status(400).json({
-                ok: false,
-                error: 'payment_method es requerido. Debe ser el código del método (ej: "pse", "nequi", "fintoc")'
-            });
-        }
+        // No validar payment_method aquí; la validación se hace arriba aceptando method_id o payment_method.
 
-        // Validar payment_data
-        if (!payment_data || typeof payment_data !== 'object') {
+        // Validar payment_data (puede estar vacío para algunos métodos)
+        if (payment_data && typeof payment_data !== 'object') {
             return res.status(400).json({
                 ok: false,
-                error: 'payment_data es requerido y debe ser un objeto con los campos del método'
+                error: 'payment_data debe ser un objeto cuando se envía'
             });
         }
 
@@ -57,9 +53,10 @@ router.post('/:paymentOrderId', async (req, res) => {
         // CORRECCIÓN: Usar 'method_id' según ejemplo JSON de documentación (DirectPaymentFintoc.txt line 441)
         // La clave 'payment_method' parece ser de una versión o SDK diferente.
 
-        const payload = {
-            payment_data: {}
-        };
+        const payload = method_id
+            ? { method_id: method_id, payment_data: {} }
+            : { payment_method: payment_method, payment_data: payment_data };
+
 
         console.log('[DirectPayment] Payload final:', JSON.stringify(payload, null, 2));
 
