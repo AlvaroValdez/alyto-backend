@@ -118,10 +118,23 @@ router.post('/:paymentOrderId', async (req, res) => {
         console.log('[DirectPayment] Vita response status:', response.status);
         console.log('[DirectPayment] Vita response data:', JSON.stringify(response.data, null, 2));
 
-        // Retornar respuesta de Vita
+        // Normalizar la URL de redirección en el Backend
+        const vitaData = response.data || {};
+        const redirectUrl =
+            vitaData.redirect_url ||
+            vitaData.url ||
+            vitaData.attributes?.url ||
+            vitaData.attributes?.payment_info?.provider_url ||
+            vitaData.data?.attributes?.url ||
+            null;
+
+        console.log('[DirectPayment] Extracted Redirect URL:', redirectUrl);
+
+        // Retornar respuesta normalizada
         res.json({
             ok: true,
-            data: response.data
+            redirect_url: redirectUrl, // Enviar explícitamente
+            data: vitaData
         });
 
     } catch (error) {
