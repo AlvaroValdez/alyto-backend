@@ -126,6 +126,7 @@ router.post('/:paymentOrderId', async (req, res) => {
             vitaData.attributes?.url ||
             vitaData.attributes?.payment_info?.provider_url ||
             vitaData.data?.attributes?.url ||
+            vitaData.data?.attributes?.payment_info?.provider_url || // <-- PATH CORRECTO SEGÚN DOMUMENTACIÓN
             null;
 
         console.log('[DirectPayment] Extracted Redirect URL:', redirectUrl);
