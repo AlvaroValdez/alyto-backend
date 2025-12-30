@@ -57,6 +57,62 @@ router.get('/quote', async (req, res) => {
       // 💰 Obtener comisión desde Markup
       const Markup = (await import('../models/Markup.js')).default;
 
+      // 🆕 BUSCAR OVERRIDE MANUAL (Ej: Chile -> Bolivia)
+      // Buscamos la config del país de ORIGEN (CL) para ver si tiene reglas para el DESTINO (BO)
+      const originConfig = await TransactionConfig.findOne({ originCountry: safeOriginCountry });
+      const destOverride = originConfig?.destinations?.find(d => d.countryCode === targetCode && d.isEnabled);
+
+      if (destOverride && destOverride.manualExchangeRate > 0) {
+        // --- LOGICA MANUAL DE DESTINO ---
+        console.log(`[FX] Usando tasa manual para ${safeOriginCountry} -> ${targetCode}`);
+
+        const manualRate = Number(destOverride.manualExchangeRate);
+
+        // Calcular Comisión
+        let feePercent = 0;
+        let feeCLP = 0;
+
+        if (destOverride.feeType === 'percentage') {
+          feePercent = destOverride.feeAmount || 0;
+          feeCLP = inputAmount * (feePercent / 100);
+        } else if (destOverride.feeType === 'fixed') {
+          feeCLP = destOverride.feeAmount || 0;
+          feePercent = inputAmount > 0 ? (feeCLP / inputAmount) * 100 : 0;
+        }
+
+        const clpAmountWithFee = inputAmount + feeCLP;
+
+        // Calcular Monto a Recibir
+        // Formula: (Monto CLP * Tasa Manual) - FixedPayoutFee
+        const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
+        const finalAmount = (inputAmount * manualRate) - payoutFixedCost;
+
+        return res.json({
+          ok: true,
+          data: {
+            originCurrency,
+            originCountry: safeOriginCountry,
+            destCurrency: 'BOB', // Forzamos BOB si es Bolivia, o targetCode
+            // Si targetCode es BO, currency es BOB. Si es otra cosa, usamos lo que sea.
+            // Mejor usar priceData.code si disponible o mapa, pero targetCode es el país. 
+            // Asumiremos BOB para BO.
+            currency: targetCode === 'BO' ? 'BOB' : priceData?.code || 'USD',
+
+            rate: manualRate,
+            amount: inputAmount,
+            fee: Number(feeCLP.toFixed(2)),
+            feePercent: Number(feePercent.toFixed(2)),
+            feeOriginAmount: Number(feeCLP.toFixed(2)),
+            clpAmountWithFee: Number(clpAmountWithFee.toFixed(2)),
+
+            payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+
+            receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)),
+            isManual: true
+          }
+        });
+      }
+
       // Buscar markup específico para CLP→destCountry
       const markupPair = await Markup.findOne({
         originCurrency: 'CLP',

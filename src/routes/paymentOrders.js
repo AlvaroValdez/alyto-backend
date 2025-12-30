@@ -35,9 +35,17 @@ router.post('/', async (req, res, next) => {
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
     const successRedirectUrl = `${frontendUrl}/#/payment-success/${encodeURIComponent(orderId)}`;
 
+    const SUPPORTED_COUNTRIES = ['AR', 'CL', 'CO', 'MX', 'BR'];
+    let safeCountry = String(country).toUpperCase().trim();
+
+    if (!SUPPORTED_COUNTRIES.includes(safeCountry)) {
+      console.warn(`⚠️ [payment-orders] Country ${safeCountry} not supported by Vita. Falling back to CL.`);
+      safeCountry = 'CL';
+    }
+
     const payload = {
       amount: Math.round(Number(amount)),
-      country_iso_code: String(country).toUpperCase().trim(),
+      country_iso_code: safeCountry,
       issue: `Pago de remesa #${orderId}`,
       success_redirect_url: successRedirectUrl,
     };

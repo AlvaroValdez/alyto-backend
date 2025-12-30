@@ -28,6 +28,17 @@ const transactionConfigSchema = new mongoose.Schema({
 
   depositQrImage: { type: String },
 
+  // --- NUEVO CAMPO: Configuraciones por Destino (Override) ---
+  destinations: [{
+    countryCode: { type: String, required: true }, // Ej: BO
+    isEnabled: { type: Boolean, default: true },
+    manualExchangeRate: { type: Number, default: 0 }, // Tasa Manual (1 CLP = X Dest)
+    feeType: { type: String, enum: ['percentage', 'fixed', 'none'], default: 'none' },
+    feeAmount: { type: Number, default: 0 },
+    payoutFixedFee: { type: Number, default: 0 }, // Costo fijo del retiro en destino
+    _id: false
+  }],
+
   // --- NUEVO CAMPO: Tasa Manual ---
   // Ej: 135 (1 BOB = 135 CLP) o la conversión que definas
   manualExchangeRate: { type: Number, default: 0 },

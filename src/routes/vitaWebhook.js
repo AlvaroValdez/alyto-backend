@@ -89,6 +89,27 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
                 return res.status(400).json({ error: 'Incomplete metadata' });
             }
 
+            // Verificar si el destino es Manual Anchor (No ejecutar retiro automático)
+            const { SUPPORTED_ORIGINS } = await import('../data/supportedOrigins.js');
+            const destCountryCode = destination.country.toUpperCase();
+
+            // Buscar si el país de destino está configurado como 'manual_anchor'
+            const isManualAnchor = SUPPORTED_ORIGINS.some(o => o.code === destCountryCode && o.mode === 'manual_anchor');
+
+            if (isManualAnchor) {
+                console.log(`[Vita Webhook] 🛑 Destino ${destCountryCode} es Manual Anchor. Saltando retiro automático.`);
+                transaction.payinStatus = 'completed';
+                transaction.payoutStatus = 'pending_manual_payout'; // Nuevo estado para indicar acción manual requerida
+                transaction.status = 'processing';
+                await transaction.save();
+
+                return res.json({
+                    ok: true,
+                    message: 'Payin confirmed. Payout queued for manual processing.',
+                    manual: true
+                });
+            }
+
             // Crear Withdrawal (Payout)
             try {
                 const withdrawalPayload = {
