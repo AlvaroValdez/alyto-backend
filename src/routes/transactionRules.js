@@ -76,7 +76,8 @@ router.put('/', protect, isAdmin, async (req, res) => {
       depositQrImage: body.depositQrImage,
       manualExchangeRate: safeNumber(body.manualExchangeRate, 0),
       feeType: body.feeType || 'percentage',
-      feeAmount: safeNumber(body.feeAmount, 0)
+      feeAmount: safeNumber(body.feeAmount, 0),
+      destinations: body.destinations || [] // Permitir guardar array de destinos
     };
 
     const rule = await TransactionConfig.findOneAndUpdate(
