@@ -63,51 +63,56 @@ router.get('/quote', async (req, res) => {
       const destOverride = originConfig?.destinations?.find(d => d.countryCode === targetCode && d.isEnabled);
 
       if (destOverride && destOverride.manualExchangeRate > 0) {
-        // --- LOGICA MANUAL DE DESTINO ---
-        console.log(`[FX] Usando tasa manual para ${safeOriginCountry} -> ${targetCode}`);
+        // --- LOGICA MANUAL DE DESTINO (SPREAD MODEL) ---
+        console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}`);
 
         const manualRate = Number(destOverride.manualExchangeRate);
+        const inputCLP = inputAmount;
 
-        // Calcular Comisión
-        let feePercent = 0;
-        let feeCLP = 0;
+        // 1. Calcular Margen (Spread)
+        // El fee se RESTA de la tasa para que el cliente reciba menos (Ganancia para nosotros)
+        let marginPercent = 0;
+        let marginAmount = 0; // Solo referencial, implícito en la tasa
 
         if (destOverride.feeType === 'percentage') {
-          feePercent = destOverride.feeAmount || 0;
-          feeCLP = inputAmount * (feePercent / 100);
-        } else if (destOverride.feeType === 'fixed') {
-          feeCLP = destOverride.feeAmount || 0;
-          feePercent = inputAmount > 0 ? (feeCLP / inputAmount) * 100 : 0;
+          marginPercent = (destOverride.feeAmount || 0) / 100; // Ej: 2% -> 0.02
         }
 
-        const clpAmountWithFee = inputAmount + feeCLP;
+        // 2. Calcular Tasa Cliente (Effective Rate)
+        // Rate = ManualRate * (1 - margin)
+        // Ej: 0.01053 * (1 - 0.02) = 0.0103194
+        const clientRate = manualRate * (1 - marginPercent);
 
-        // Calcular Monto a Recibir
-        // Formula: (Monto CLP * Tasa Manual) - FixedPayoutFee
+        // 3. Calcular Monto a Recibir Bruto
+        const grossReceiveAmount = inputCLP * clientRate;
+
+        // 4. Descontar Payout Fixed Fee (si existe)
         const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
-        const finalAmount = (inputAmount * manualRate) - payoutFixedCost;
+        const finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
 
         return res.json({
           ok: true,
           data: {
             originCurrency,
             originCountry: safeOriginCountry,
-            destCurrency: 'BOB', // Forzamos BOB si es Bolivia, o targetCode
-            // Si targetCode es BO, currency es BOB. Si es otra cosa, usamos lo que sea.
-            // Mejor usar priceData.code si disponible o mapa, pero targetCode es el país. 
-            // Asumiremos BOB para BO.
+            destCurrency: targetCode === 'BO' ? 'BOB' : priceData?.code || 'USD',
             currency: targetCode === 'BO' ? 'BOB' : priceData?.code || 'USD',
 
-            rate: manualRate,
-            amount: inputAmount,
-            fee: Number(feeCLP.toFixed(2)),
-            feePercent: Number(feePercent.toFixed(2)),
-            feeOriginAmount: Number(feeCLP.toFixed(2)),
-            clpAmountWithFee: Number(clpAmountWithFee.toFixed(2)),
+            // Datos Base
+            amount: inputCLP, // Lo que paga el cliente (Neto = Total)
+            clpAmountWithFee: inputCLP, // NO hay cobro extra visible
 
+            // Tasas
+            manualExchangeRate, // Tasa "Real" (Binance/Costo)
+            rate: Number(clientRate.toFixed(8)), // Tasa al Cliente (con spread)
+
+            // Fees (Informativos / Debug)
+            fee: 0, // No se cobra aparte
+            feePercent: Number((marginPercent * 100).toFixed(2)),
+
+            // Totales
             payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
-
-            receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)),
+            receiveAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
             isManual: true
           }
         });
