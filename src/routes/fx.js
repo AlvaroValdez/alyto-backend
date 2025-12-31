@@ -37,6 +37,7 @@ router.get('/quote', async (req, res) => {
 
     // 1) Obtener tasas Vita para tramo CLP -> destino
     const prices = await getListPrices();
+    const inputAmount = Number(amount);
 
     // 2) Encontrar tasa destino (flexible)
     const targetCode = destCountry.toUpperCase();
@@ -45,78 +46,68 @@ router.get('/quote', async (req, res) => {
       return pCode === targetCode || pCode === `${targetCode}P` || pCode.startsWith(targetCode);
     });
 
+    // 🆕 IMPORTANTE: Primero comprobar si hay una Regla Manual (Override)
+    // Esto evita que falle si Vita no tiene precios para "BO", pero nosotros sí lo soportamos manualmente.
+    const originConfig = await TransactionConfig.findOne({ originCountry: safeOriginCountry });
+    const destOverride = originConfig?.destinations?.find(d => d.countryCode === targetCode && d.isEnabled);
+
+    // --- LOGICA MANUAL DE DESTINO (SPREAD MODEL) ---
+    if (destOverride && destOverride.manualExchangeRate > 0) {
+      console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}`);
+
+      const manualRate = Number(destOverride.manualExchangeRate);
+      const inputCLP = inputAmount;
+
+      // 1. Margen
+      let marginPercent = 0;
+      if (destOverride.feeType === 'percentage') {
+        marginPercent = (destOverride.feeAmount || 0) / 100;
+      }
+
+      // 2. Tasa Cliente
+      const clientRate = manualRate * (1 - marginPercent);
+
+      // 3. Monto Recibir Bruto
+      const grossReceiveAmount = inputCLP * clientRate;
+
+      // 4. Payout Fixed Fee
+      const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
+      const finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
+
+      // Mock currency for manual destinations if not known
+      const destCurrency = targetCode === 'BO' ? 'BOB' : 'USD';
+
+      return res.json({
+        ok: true,
+        data: {
+          originCurrency,
+          originCountry: safeOriginCountry,
+          destCurrency,
+          currency: destCurrency,
+          amount: inputCLP,
+          clpAmountWithFee: inputCLP,
+          manualExchangeRate,
+          rate: Number(clientRate.toFixed(8)),
+          fee: 0,
+          feePercent: Number((marginPercent * 100).toFixed(2)),
+          payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+          receiveAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
+          isManual: true
+        }
+      });
+    }
+
+    // --- Si no hay manual override, buscamos precio oficial ---
     if (!priceData) {
       return res.status(404).json({ ok: false, error: `No hay tasa disponible para el país ${destCountry}` });
     }
 
     const clpToDestRate = Number(priceData.rate);
-    const inputAmount = Number(amount);
 
     // --- Caso 1: Origen CLP (flujo actual, intacto) ---
     if (originCurrency === 'CLP') {
       // 💰 Obtener comisión desde Markup
       const Markup = (await import('../models/Markup.js')).default;
-
-      // 🆕 BUSCAR OVERRIDE MANUAL (Ej: Chile -> Bolivia)
-      // Buscamos la config del país de ORIGEN (CL) para ver si tiene reglas para el DESTINO (BO)
-      const originConfig = await TransactionConfig.findOne({ originCountry: safeOriginCountry });
-      const destOverride = originConfig?.destinations?.find(d => d.countryCode === targetCode && d.isEnabled);
-
-      if (destOverride && destOverride.manualExchangeRate > 0) {
-        // --- LOGICA MANUAL DE DESTINO (SPREAD MODEL) ---
-        console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}`);
-
-        const manualRate = Number(destOverride.manualExchangeRate);
-        const inputCLP = inputAmount;
-
-        // 1. Calcular Margen (Spread)
-        // El fee se RESTA de la tasa para que el cliente reciba menos (Ganancia para nosotros)
-        let marginPercent = 0;
-        let marginAmount = 0; // Solo referencial, implícito en la tasa
-
-        if (destOverride.feeType === 'percentage') {
-          marginPercent = (destOverride.feeAmount || 0) / 100; // Ej: 2% -> 0.02
-        }
-
-        // 2. Calcular Tasa Cliente (Effective Rate)
-        // Rate = ManualRate * (1 - margin)
-        // Ej: 0.01053 * (1 - 0.02) = 0.0103194
-        const clientRate = manualRate * (1 - marginPercent);
-
-        // 3. Calcular Monto a Recibir Bruto
-        const grossReceiveAmount = inputCLP * clientRate;
-
-        // 4. Descontar Payout Fixed Fee (si existe)
-        const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
-        const finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
-
-        return res.json({
-          ok: true,
-          data: {
-            originCurrency,
-            originCountry: safeOriginCountry,
-            destCurrency: targetCode === 'BO' ? 'BOB' : priceData?.code || 'USD',
-            currency: targetCode === 'BO' ? 'BOB' : priceData?.code || 'USD',
-
-            // Datos Base
-            amount: inputCLP, // Lo que paga el cliente (Neto = Total)
-            clpAmountWithFee: inputCLP, // NO hay cobro extra visible
-
-            // Tasas
-            manualExchangeRate, // Tasa "Real" (Binance/Costo)
-            rate: Number(clientRate.toFixed(8)), // Tasa al Cliente (con spread)
-
-            // Fees (Informativos / Debug)
-            fee: 0, // No se cobra aparte
-            feePercent: Number((marginPercent * 100).toFixed(2)),
-
-            // Totales
-            payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
-            receiveAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
-            isManual: true
-          }
-        });
-      }
 
       // Buscar markup específico para CLP→destCountry
       const markupPair = await Markup.findOne({
@@ -157,94 +148,7 @@ router.get('/quote', async (req, res) => {
       });
     }
 
-    // --- Caso 2: Origen manual (Bolivia BOB) ---
-    // Requiere TransactionConfig: isEnabled=true, provider=internal_manual, manualExchangeRate>0
-    const config = await TransactionConfig.findOne({ originCountry: safeOriginCountry });
 
-    if (
-      !config ||
-      !config.isEnabled ||
-      config.provider !== 'internal_manual' ||
-      !config.manualExchangeRate ||
-      Number(config.manualExchangeRate) <= 0
-    ) {
-      return res.status(422).json({
-        ok: false,
-        error: `Origen manual no configurado para ${safeOriginCountry}. Habilítalo en Admin → Reglas (provider=internal_manual, isEnabled=true, manualExchangeRate>0).`,
-        details: {
-          originCountry: safeOriginCountry,
-          originCurrency,
-          provider: config?.provider || null,
-          isEnabled: config?.isEnabled || false,
-          manualExchangeRate: config?.manualExchangeRate || 0
-        }
-      });
-    }
-
-    // manualExchangeRate = CLP por 1 unidad de moneda origen (ej: 1 BOB = 140 CLP)
-    const manualExchangeRate = Number(config.manualExchangeRate);
-    const clpAmount = inputAmount * manualExchangeRate;
-
-    // 💰 Cálculo de comisión
-    let feePercent = 0;
-    let feeCLP = 0;
-    let feeOriginAmount = 0;
-
-    if (config.feeType === 'percentage') {
-      feePercent = config.feeAmount || 0;
-      feeCLP = clpAmount * (feePercent / 100);
-      feeOriginAmount = inputAmount * (feePercent / 100);
-    } else if (config.feeType === 'fixed') {
-      feeCLP = config.feeAmount || 0;
-      feePercent = clpAmount > 0 ? (feeCLP / clpAmount) * 100 : 0;
-      feeOriginAmount = feeCLP / manualExchangeRate;
-    }
-
-    // 🔍 DEBUG FEE
-    console.log('🔍 [FX] Config para', safeOriginCountry, ':', {
-      feeType: config.feeType,
-      feeAmount: config.feeAmount
-    });
-    console.log('🔍 [FX] Cálculo fee BOB:', {
-      inputAmount,
-      clpAmount,
-      feePercent,
-      feeCLP,
-      feeOriginAmount
-    });
-
-    const clpAmountWithFee = clpAmount + feeCLP;
-
-    // 🆕 Incluir fixed_cost de Vita en el payout
-    const payoutFixedCost = Number(priceData.fixedCost || 0);
-    const finalAmount = (clpAmount * clpToDestRate) - payoutFixedCost;
-
-    // Tasa efectiva destino por 1 unidad origen (ej: COP por 1 BOB)
-    const effectiveRate = manualExchangeRate * clpToDestRate;
-
-    return res.json({
-      ok: true,
-      data: {
-        originCurrency,
-        originCountry: safeOriginCountry,
-        destCurrency: priceData.code,
-        amount: inputAmount,
-        clpAmount: Number(clpAmount.toFixed(2)),
-        fee: Number(feeCLP.toFixed(2)),
-        feePercent: Number(feePercent.toFixed(2)),
-        feeOriginAmount: Number(feeOriginAmount.toFixed(2)),
-        clpAmountWithFee: Number(clpAmountWithFee.toFixed(2)),
-        rateCLPToDest: clpToDestRate,
-        manualExchangeRate,
-        rate: Number(effectiveRate.toFixed(8)),
-
-        // 🆕 Costos de payout
-        payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
-
-        receiveAmount: Number(finalAmount.toFixed(2)),
-        currency: priceData.code
-      }
-    });
 
   } catch (error) {
     console.error('❌ [FX] Error crítico calculando:', error);
