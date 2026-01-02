@@ -3,6 +3,11 @@ import cors from 'cors';
 import morgan from 'morgan';
 import connectMongo from './config/mongo.js';
 import { protect, isAdmin } from './middleware/authMiddleware.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
+import hpp from 'hpp';
+import rateLimit from 'express-rate-limit';
 
 // Importación de rutas
 import pricesRoutes from './routes/prices.js';
@@ -28,6 +33,9 @@ import vitaWebhookRoutes from './routes/vitaWebhook.js';
 const app = express();
 
 connectMongo();
+
+// Confian en proxy si está detrás de un balanceador de carga (necesario para rateLimit en Render/Heroku)
+app.set('trust proxy', 1);
 
 // --- Configuración de CORS ---
 const allowedOrigins = [
@@ -55,7 +63,27 @@ app.use('/api/ipn', ipnRoutes);
 // 2.5 Webhook de Vita para Payment Orders (también antes de express.json())
 app.use('/api/webhooks/vita', vitaWebhookRoutes);
 // 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
+// 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
 app.use(express.json());
+
+// --- SEGURIDAD ---
+// Set Security Headers
+app.use(helmet());
+
+// Prevent NoSQL Injection
+app.use(mongoSanitize());
+
+// Prevent Parameter Pollution
+app.use(hpp());
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutos
+  max: 100, // Limite de 100 peticiones por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter);
 
 // --- Rutas de la API ---
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'Backend funcionando 🚀' }));
@@ -82,5 +110,8 @@ app.use('/api/admin/kyc', protect, isAdmin, adminKycRoutes);
 app.use('/api/admin/treasury', protect, isAdmin, adminTreasuryRoutes);
 app.use('/api/admin/compliance', protect, isAdmin, adminComplianceRoutes);
 app.use('/api/direct-payment', protect, directPayRoutes); // DirectPay proxy (marca blanca)
+
+// --- MANEJO DE ERRORES GLOBAL ---
+app.use(errorHandler);
 
 export default app;

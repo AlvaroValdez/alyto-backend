@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { createPaymentOrder, getPaymentMethods, executeDirectPayment } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
 import { notifyOrderCreated } from '../services/notificationService.js';
+import { body } from 'express-validator';
+import { validateResult } from '../middleware/validate.js';
 
 const router = Router();
 
@@ -26,7 +28,12 @@ router.get('/methods/:country', async (req, res) => {
 });
 
 // POST /api/payment-orders (Paso 1 del pago: Crear la Orden)
-router.post('/', async (req, res, next) => {
+router.post('/', [
+  body('amount').isNumeric().withMessage('El monto debe ser numérico'),
+  body('country').isIn(['AR', 'CL', 'CO', 'MX', 'BR', 'PE', 'US', 'ar', 'cl', 'co', 'mx', 'br', 'pe', 'us']).withMessage('País no soportado'),
+  body('orderId').notEmpty().withMessage('ID de orden requerido'),
+  validateResult
+], async (req, res, next) => {
   try {
     const { amount, country, orderId } = req.body || {};
     if (amount === undefined || amount === null || !country || !orderId) {

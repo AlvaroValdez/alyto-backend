@@ -12,6 +12,10 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
 
+  // --- SEGURIDAD DE ACCESO (Account Lockout) ---
+  loginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date },
+
   // --- CAMPOS PARA RECUPERACIÓN DE CONTRASEÑA ---
   resetPasswordToken: String,
   resetPasswordExpire: Date,
@@ -52,7 +56,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Middleware pre-save
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   // Hash de contraseña
   if (this.isModified('password')) {
     try {
@@ -65,13 +69,13 @@ userSchema.pre('save', async function(next) {
 
   // Lógica automática Nivel 1: Si tiene datos básicos, es Nivel 1
   const hasBasicData = this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address;
-  
+
   if (hasBasicData) {
     this.isProfileComplete = true;
     // Si estaba en nivel 0, lo subimos a 1 automáticamente
     if (this.kyc.level < 1) {
-        this.kyc.level = 1;
-        this.kyc.status = 'approved'; // El nivel 1 es automático
+      this.kyc.level = 1;
+      this.kyc.status = 'approved'; // El nivel 1 es automático
     }
   } else {
     this.isProfileComplete = false;
@@ -81,11 +85,11 @@ userSchema.pre('save', async function(next) {
 });
 
 // Métodos existentes (con cambios)
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.methods.generateEmailVerificationToken = function() {
+userSchema.methods.generateEmailVerificationToken = function () {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   this.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
   this.emailVerificationExpires = Date.now() + 10 * 60 * 1000;
@@ -93,7 +97,7 @@ userSchema.methods.generateEmailVerificationToken = function() {
 };
 
 // --- NUEVO MÉTODO: Generar token de reseteo ---
-userSchema.methods.getResetPasswordToken = function() {
+userSchema.methods.getResetPasswordToken = function () {
   // 1. Generar token aleatorio
   const resetToken = crypto.randomBytes(20).toString('hex');
 

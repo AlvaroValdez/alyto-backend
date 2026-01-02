@@ -1,10 +1,23 @@
-// backend/src/middleware/errorHandler.js
-module.exports = function errorHandler(err, req, res, next) {
+import logger from '../config/logger.js';
+
+export const errorHandler = (err, req, res, next) => {
   const status = err.status || 500;
-  const body = {
+  const message = err.message || 'Error interno del servidor';
+
+  // Log estructurado
+  logger.error({
+    message: message,
+    status: status,
+    stack: err.stack,
+    path: req.originalUrl,
+    method: req.method,
+    ip: req.ip
+  });
+
+  res.status(status).json({
     ok: false,
-    error: err.message || 'Error interno',
-  };
-  if (err.data) body.details = err.data;
-  res.status(status).json(body);
+    error: message,
+    // Mostrar stack trace solo en desarrollo para depuración
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
 };

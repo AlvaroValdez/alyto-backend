@@ -18,8 +18,13 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ ok: false, error: 'Todos los campos son obligatorios.' });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' });
+    // --- VALIDACIÓN DE SEGURIDAD (Password Policy) ---
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@._$!%*?&])[A-Za-z\d@._$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'La contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y al menos un carácter especial (@._$!%*?&).'
+      });
     }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -100,8 +105,33 @@ router.post('/login', async (req, res) => {
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
+
+    // --- VERIFICAR BLOQUEO DE CUENTA (Brute Force Protection) ---
+    if (user && user.lockUntil && user.lockUntil > Date.now()) {
+      const waitMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
+      return res.status(403).json({
+        ok: false,
+        error: `Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente nuevamente en ${waitMinutes} minutos.`
+      });
+    }
+
     if (!user || !(await user.comparePassword(password))) {
+      // --- INCREMENTAR INTENTOS FALLIDOS ---
+      if (user) {
+        user.loginAttempts = (user.loginAttempts || 0) + 1;
+        if (user.loginAttempts >= 5) {
+          user.lockUntil = Date.now() + 15 * 60 * 1000; // Bloqueo de 15 minutos
+        }
+        await user.save();
+      }
       return res.status(401).json({ ok: false, error: 'Credenciales inválidas.' });
+    }
+
+    // --- RESETEAR INTENTOS SI EL LOGIN ES EXITOSO ---
+    if (user.loginAttempts > 0 || user.lockUntil) {
+      user.loginAttempts = 0;
+      user.lockUntil = undefined;
+      await user.save();
     }
 
     if (!user.isEmailVerified) {
