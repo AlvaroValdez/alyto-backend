@@ -86,7 +86,7 @@ router.get('/quote', async (req, res) => {
           currency: destCurrency,
           amount: inputCLP,
           clpAmountWithFee: inputCLP,
-          manualExchangeRate,
+          manualExchangeRate: manualRate,
           rate: Number(clientRate.toFixed(8)),
           fee: 0,
           feePercent: Number((marginPercent * 100).toFixed(2)),
