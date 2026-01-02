@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { verifyVitaSignature } from '../middleware/vitaSignature.js';
 import VitaEvent from '../models/VitaEvent.js';
 import Transaction from '../models/Transaction.js';
+import { notifyTransactionFailed } from '../services/notificationService.js';
 
 const router = Router();
 
@@ -31,10 +32,19 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
         { status: 'succeeded', $push: { ipnEvents: vitaEvent._id } }
       );
     } else if (event?.type === 'payment.failed') {
-      await Transaction.findOneAndUpdate(
-        { order: event?.object?.order },
-        { status: 'failed', $push: { ipnEvents: vitaEvent._id } }
-      );
+      // Usar findOne para poder popular y notificar
+      const transaction = await Transaction.findOne({ order: event?.object?.order }).populate('createdBy');
+
+      if (transaction) {
+        transaction.status = 'failed';
+        transaction.ipnEvents.push(vitaEvent._id);
+        await transaction.save();
+
+        // Notificar al usuario
+        notifyTransactionFailed(transaction, 'Tu pago ha fallado. Por favor intenta nuevamente.').catch(err => console.error('[IPN] Notification error:', err));
+      } else {
+        console.warn(`[IPN] Transaction not found for order: ${event?.object?.order}`);
+      }
     }
 
     res.json({ ok: true, id: vitaEvent._id });

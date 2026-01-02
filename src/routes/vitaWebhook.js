@@ -4,6 +4,12 @@ import crypto from 'crypto';
 import Transaction from '../models/Transaction.js';
 import { createWithdrawal } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
+import {
+    notifyPayinSuccess,
+    notifyPayoutSuccess,
+    notifyManualPayoutQueued,
+    notifyTransactionFailed
+} from '../services/notificationService.js';
 
 const router = Router();
 
@@ -58,7 +64,7 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
             console.log('[Vita Webhook] Metadata:', JSON.stringify(metadata, null, 2));
 
             // Buscar transacción en DB
-            const transaction = await Transaction.findOne({ vitaPaymentOrderId: paymentOrderId });
+            const transaction = await Transaction.findOne({ vitaPaymentOrderId: paymentOrderId }).populate('createdBy');
 
             if (!transaction) {
                 console.error('[Vita Webhook] ❌ Transacción no encontrada para Payment Order:', paymentOrderId);
@@ -77,6 +83,9 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
             await transaction.save();
 
             console.log('[Vita Webhook] ✅ Payin completado, creando Withdrawal...');
+
+            // Notificar Payin Exitoso
+            notifyPayinSuccess(transaction).catch(err => console.error('[Notification] Error:', err.message));
 
             // Extraer datos del beneficiario del metadata
             const { beneficiary, destination } = metadata;
@@ -102,6 +111,9 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
                 transaction.payoutStatus = 'pending_manual_payout'; // Nuevo estado para indicar acción manual requerida
                 transaction.status = 'processing';
                 await transaction.save();
+
+                // Notificar Manual Queue
+                notifyManualPayoutQueued(transaction).catch(err => console.error('[Notification] Error:', err.message));
 
                 return res.json({
                     ok: true,
@@ -148,6 +160,9 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
                 transaction.status = 'processing'; // Estado general
                 await transaction.save();
 
+                // Notificar Payout Exitoso (o al menos iniciado)
+                notifyPayoutSuccess(transaction).catch(err => console.error('[Notification] Error:', err.message));
+
                 console.log('[Vita Webhook] ✅ Transacción actualizada exitosamente');
 
                 return res.json({
@@ -164,6 +179,9 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
                 transaction.payoutStatus = 'failed';
                 transaction.errorMessage = withdrawalError.response?.data?.message || withdrawalError.message;
                 await transaction.save();
+
+                // Notificar Fallo en Payout
+                notifyTransactionFailed(transaction, 'Error al crear el envío automático. Contactando soporte.').catch(err => console.error('[Notification] Error:', err.message));
 
                 return res.status(500).json({
                     error: 'Failed to create withdrawal',
@@ -182,6 +200,9 @@ router.post('/', validateVitaWebhookSignature, async (req, res) => {
                 transaction.status = 'failed';
                 await transaction.save();
                 console.log('[Vita Webhook] ❌ Payment Order falló:', paymentOrderId);
+
+                // Notificar Fallo en Payin
+                notifyTransactionFailed(transaction, 'Tu pago no pudo ser procesado o fue rechazado.').catch(err => console.error('[Notification] Error:', err.message));
             }
 
             return res.json({ ok: true, message: 'Payment failed processed' });

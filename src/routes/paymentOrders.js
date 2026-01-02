@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createPaymentOrder, getPaymentMethods, executeDirectPayment } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
+import { notifyOrderCreated } from '../services/notificationService.js';
 
 const router = Router();
 
@@ -68,6 +69,16 @@ router.post('/', async (req, res, next) => {
     } else {
       console.error('[payment-orders] ❌ Vita no devolvió URL de checkout');
       console.error('[payment-orders] Response:', raw);
+    }
+
+    // Notificar creación de orden
+    if (req.user?.email) {
+      notifyOrderCreated({
+        orderId,
+        amount: Math.round(Number(amount)),
+        country: safeCountry,
+        email: req.user.email
+      }).catch(err => console.error('[Notification] Error sending order email:', err.message));
     }
 
     return res.status(201).json({
