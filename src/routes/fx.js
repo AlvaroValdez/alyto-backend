@@ -55,7 +55,7 @@ router.get('/quote', async (req, res) => {
     if (destOverride && destOverride.manualExchangeRate > 0) {
       console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}`);
 
-      const manualRate = Number(destOverride.manualExchangeRate);
+      const manualExchangeRate = Number(destOverride.manualExchangeRate);
       const inputCLP = inputAmount;
 
       // 1. Margen
@@ -65,7 +65,7 @@ router.get('/quote', async (req, res) => {
       }
 
       // 2. Tasa Cliente
-      const clientRate = manualRate * (1 - marginPercent);
+      const clientRate = manualExchangeRate * (1 - marginPercent);
 
       // 3. Monto Recibir Bruto
       const grossReceiveAmount = inputCLP * clientRate;
@@ -86,7 +86,7 @@ router.get('/quote', async (req, res) => {
           currency: destCurrency,
           amount: inputCLP,
           clpAmountWithFee: inputCLP,
-          manualExchangeRate: manualRate,
+          manualExchangeRate,
           rate: Number(clientRate.toFixed(8)),
           fee: 0,
           feePercent: Number((marginPercent * 100).toFixed(2)),
