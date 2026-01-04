@@ -148,7 +148,94 @@ router.get('/quote', async (req, res) => {
       });
     }
 
+    // --- Caso 2: Origen Manual (BOB → CLP → Destino) ---
+    // Si el origen NO es CLP, buscamos configuración manual
+    if (originCurrency !== 'CLP') {
+      console.log(`🔄 [FX] Detectado origen manual: ${originCurrency} (${safeOriginCountry})`);
 
+      if (!originConfig || !originConfig.isEnabled || originConfig.provider !== 'internal_manual') {
+        return res.status(400).json({
+          ok: false,
+          error: `El país de origen ${safeOriginCountry} no está habilitado para envíos manuales.`
+        });
+      }
+
+      const manualRate = Number(originConfig.manualExchangeRate || 0);
+      if (manualRate <= 0) {
+        return res.status(500).json({
+          ok: false,
+          error: `No hay tasa de cambio configurada para ${originCurrency}.`
+        });
+      }
+
+      // 1. Convertir monto origen a CLP (pivot)
+      const clpAmount = inputAmount * manualRate;
+      console.log(`💱 [FX] Conversión: ${inputAmount} ${originCurrency} × ${manualRate} = ${clpAmount} CLP`);
+
+      // 2. Calcular comisión (sobre el monto origen)
+      const feeType = originConfig.feeType || 'percent';
+      const feeAmount = Number(originConfig.feeAmount || 0);
+
+      let feeInOriginCurrency = 0;
+      if (feeType === 'percent') {
+        feeInOriginCurrency = inputAmount * (feeAmount / 100);
+      } else if (feeType === 'fixed') {
+        feeInOriginCurrency = feeAmount;
+      }
+
+      const totalOriginAmount = inputAmount + feeInOriginCurrency;
+      console.log(`💰 [FX] Comisión: ${feeInOriginCurrency} ${originCurrency} (tipo: ${feeType})`);
+
+      // 3. Convertir a Destino usando tasa Vita (CLP → Destino)
+      const grossDestAmount = clpAmount * clpToDestRate;
+
+      // 4. Descontar costo fijo de payout (en destino)
+      const payoutFixedCost = Number(priceData.fixedCost || 0);
+      const finalAmount = grossDestAmount - payoutFixedCost;
+
+      console.log(`📤 [FX] Resultado: ${inputAmount} ${originCurrency} → ${clpAmount} CLP → ${finalAmount.toFixed(2)} ${priceData.code}`);
+
+      return res.json({
+        ok: true,
+        data: {
+          origin: originCurrency,
+          originCurrency,
+          originCountry: safeOriginCountry,
+          destCurrency: priceData.code,
+          currency: priceData.code,
+
+          // Montos
+          amount: inputAmount, // Monto original ingresado por el usuario
+          clpAmount: Number(clpAmount.toFixed(2)), // Equivalente en CLP (para enviar a Vita)
+
+          // Comisiones
+          fee: Number(feeInOriginCurrency.toFixed(2)),
+          feePercent: feeType === 'percent' ? feeAmount : 0,
+          feeOriginAmount: Number(feeInOriginCurrency.toFixed(2)),
+
+          // Tasas
+          manualExchangeRate: manualRate, // BOB -> CLP
+          rate: clpToDestRate, // CLP -> Destino
+
+          // Costos
+          payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+
+          // Resultado final
+          amountToReceive: Number(Math.max(0, finalAmount).toFixed(2)),
+          receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)),
+
+          // Metadata
+          provider: 'internal_manual',
+          isManual: true
+        }
+      });
+    }
+
+    // Si llegamos aquí, hay un error de lógica
+    return res.status(400).json({
+      ok: false,
+      error: 'Moneda de origen no soportada o no configurada correctamente.'
+    });
 
   } catch (error) {
     console.error('❌ [FX] Error crítico calculando:', error);
