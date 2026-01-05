@@ -168,37 +168,53 @@ router.get('/quote', async (req, res) => {
         });
       }
 
-      // 1. Convertir monto origen a CLP (pivot)
-      const clpAmount = inputAmount * manualRate;
-      console.log(`💱 [FX] Conversión: ${inputAmount} ${originCurrency} × ${manualRate} = ${clpAmount} CLP`);
-
-      // 2. Calcular comisión (sobre el monto origen)
+      // 🔧 NUEVO MODELO: Comisión incluida en la tasa
+      // En lugar de cobrar fee separado, ajustamos la tasa para incluir nuestro margen
       const feeType = originConfig.feeType || 'percent';
       const feeAmount = Number(originConfig.feeAmount || 0);
 
-      let feeInOriginCurrency = 0;
-      if (feeType === 'percent') {
-        feeInOriginCurrency = inputAmount * (feeAmount / 100);
-      } else if (feeType === 'fixed') {
-        feeInOriginCurrency = feeAmount;
+      let adjustedRate = manualRate;
+
+      if (feeType === 'percent' && feeAmount > 0) {
+        // Si la tasa base es 140 CLP/BOB y queremos 3% de margen:
+        // El usuario recibe MENOS CLP por su BOB
+        // Tasa ajustada = 140 × (1 - 0.03) = 135.8 CLP/BOB
+        adjustedRate = manualRate * (1 - feeAmount / 100);
+      } else if (feeType === 'fixed' && feeAmount > 0) {
+        // Para fee fijo, lo restamos del resultado CLP
+        // (Se manejará después de la conversión)
       }
 
-      const totalOriginAmount = inputAmount + feeInOriginCurrency;
-      console.log(`💰 [FX] Comisión: ${feeInOriginCurrency} ${originCurrency} (tipo: ${feeType})`);
+      // 1. Convertir monto origen a CLP (pivot) usando tasa ajustada
+      const clpAmount = inputAmount * adjustedRate;
+      console.log(`💱 [FX] Conversión: ${inputAmount} ${originCurrency} × ${adjustedRate.toFixed(4)} (con margen) = ${clpAmount.toFixed(2)} CLP`);
+      console.log(`📊 [FX] Tasa base: ${manualRate}, Margen: ${feeAmount}%, Tasa final: ${adjustedRate.toFixed(4)}`);
 
-      // 3. Convertir a Destino usando tasa Vita (CLP → Destino)
-      const grossDestAmount = clpAmount * clpToDestRate;
+      // 2. NO cobramos fee adicional - el usuario paga exactamente lo que ingresó
+      const totalOriginAmount = inputAmount;
 
-      // 4. Descontar costo fijo de payout (en destino)
+      // Para efectos internos, calculamos cuánto es nuestro margen (en CLP)
+      const ourMarginCLP = (manualRate - adjustedRate) * inputAmount;
+      console.log(`💰 [FX] Margen Alyto: ${ourMarginCLP.toFixed(2)} CLP (oculto en la tasa)`);
+
+      // 3. Si hay fee fijo, lo descontamos del CLP
+      let finalCLP = clpAmount;
+      if (feeType === 'fixed' && feeAmount > 0) {
+        finalCLP = clpAmount - feeAmount;
+        console.log(`💸 [FX] Fee fijo descontado: ${feeAmount} CLP`);
+      }
+
+      // 4. Convertir a Destino usando tasa Vita (CLP → Destino)
+      const grossDestAmount = finalCLP * clpToDestRate;
+
+      // 5. Descontar costo fijo de payout (en destino)
       const payoutFixedCost = Number(priceData.fixedCost || 0);
       const finalAmount = grossDestAmount - payoutFixedCost;
 
-      console.log(`📤 [FX] Resultado: ${inputAmount} ${originCurrency} → ${clpAmount} CLP → ${finalAmount.toFixed(2)} ${priceData.code}`);
+      console.log(`📤 [FX] Resultado: ${inputAmount} ${originCurrency} → ${finalCLP.toFixed(2)} CLP → ${finalAmount.toFixed(2)} ${priceData.code}`);
 
-      // Calcular tasa efectiva BOB->Destino para mostrar al usuario
-      const effectiveRate = payoutFixedCost > 0
-        ? (finalAmount / inputAmount)  // Si hay fee fijo, calculamos la tasa real final
-        : manualRate * clpToDestRate;   // Si no, es el producto de ambas tasas
+      // Calcular tasa efectiva BOB→Destino para mostrar al usuario
+      const effectiveRate = finalAmount / inputAmount;
 
       return res.json({
         ok: true,
@@ -211,29 +227,30 @@ router.get('/quote', async (req, res) => {
 
           // Montos principales
           amount: inputAmount,                 // 1,000 BOB (lo que ingresó el usuario)
-          amountIn: totalOriginAmount,         // 1,030 BOB (con comisión)
+          amountIn: totalOriginAmount,         // 1,000 BOB (SIN fee adicional visible)
           amountOut: Number(Math.max(0, finalAmount).toFixed(2)), // Monto final en COP
           receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Alias
 
           // Equivalente CLP (para backend/Vita)
-          clpAmount: Number(clpAmount.toFixed(2)),
+          clpAmount: Number(finalCLP.toFixed(2)),
 
           // Tasas
-          manualExchangeRate: manualRate,      // 140 (BOB->CLP)
-          rate: clpToDestRate,                 // 4.343 (CLP->COP)
-          rateWithMarkup: Number(effectiveRate.toFixed(4)), // Tasa efectiva BOB->COP para mostrar
+          manualExchangeRate: adjustedRate,    // Tasa ajustada (con margen incluido)
+          rate: clpToDestRate,                 // 4.343 (CLP→COP)
+          rateWithMarkup: Number(effectiveRate.toFixed(4)), // Tasa efectiva BOB→COP
 
-          // Comisiones
-          fee: Number(feeInOriginCurrency.toFixed(2)),
-          feePercent: feeType === 'percent' ? feeAmount : 0,
-          feeOriginAmount: Number(feeInOriginCurrency.toFixed(2)),
+          // Comisiones (ocultas, para internal tracking)
+          fee: 0,  // NO mostramos fee separado
+          feePercent: 0,  // NO mostramos porcentaje
+          feeOriginAmount: 0,
 
           // Costos
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
 
           // Metadata
           provider: 'internal_manual',
-          isManual: true
+          isManual: true,
+          feeIncludedInRate: true  // Flag para que el frontend sepa que el fee está incluido
         }
       });
     }
