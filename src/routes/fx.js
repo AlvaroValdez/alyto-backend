@@ -195,34 +195,41 @@ router.get('/quote', async (req, res) => {
 
       console.log(`📤 [FX] Resultado: ${inputAmount} ${originCurrency} → ${clpAmount} CLP → ${finalAmount.toFixed(2)} ${priceData.code}`);
 
+      // Calcular tasa efectiva BOB->Destino para mostrar al usuario
+      const effectiveRate = payoutFixedCost > 0
+        ? (finalAmount / inputAmount)  // Si hay fee fijo, calculamos la tasa real final
+        : manualRate * clpToDestRate;   // Si no, es el producto de ambas tasas
+
       return res.json({
         ok: true,
         data: {
-          origin: originCurrency,
-          originCurrency,
-          originCountry: safeOriginCountry,
-          destCurrency: priceData.code,
-          currency: priceData.code,
+          // === CAMPOS ESPERADOS POR EL FRONTEND ===
+          origin: originCurrency,              // BOB
+          originCurrency: originCurrency,       // BOB
+          destCurrency: priceData.code,        // COP
+          currency: priceData.code,            // COP (legacy)
 
-          // Montos
-          amount: inputAmount, // Monto original ingresado por el usuario
-          clpAmount: Number(clpAmount.toFixed(2)), // Equivalente en CLP (para enviar a Vita)
+          // Montos principales
+          amount: inputAmount,                 // 1,000 BOB (lo que ingresó el usuario)
+          amountIn: totalOriginAmount,         // 1,030 BOB (con comisión)
+          amountOut: Number(Math.max(0, finalAmount).toFixed(2)), // Monto final en COP
+          receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Alias
+
+          // Equivalente CLP (para backend/Vita)
+          clpAmount: Number(clpAmount.toFixed(2)),
+
+          // Tasas
+          manualExchangeRate: manualRate,      // 140 (BOB->CLP)
+          rate: clpToDestRate,                 // 4.343 (CLP->COP)
+          rateWithMarkup: Number(effectiveRate.toFixed(4)), // Tasa efectiva BOB->COP para mostrar
 
           // Comisiones
           fee: Number(feeInOriginCurrency.toFixed(2)),
           feePercent: feeType === 'percent' ? feeAmount : 0,
           feeOriginAmount: Number(feeInOriginCurrency.toFixed(2)),
 
-          // Tasas
-          manualExchangeRate: manualRate, // BOB -> CLP
-          rate: clpToDestRate, // CLP -> Destino
-
           // Costos
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
-
-          // Resultado final
-          amountToReceive: Number(Math.max(0, finalAmount).toFixed(2)),
-          receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)),
 
           // Metadata
           provider: 'internal_manual',
