@@ -10,7 +10,7 @@ const router = Router();
 // Caso Bolivia:     ?amount=100&destCountry=CO&origin=BOB&originCountry=BO
 router.get('/quote', async (req, res) => {
   try {
-    const { amount, destCountry, origin, originCountry } = req.query;
+    const { amount, destCountry, origin, originCountry, mode = 'send' } = req.query;
 
     const originCurrency = (origin || 'CLP').toUpperCase();
 
@@ -118,13 +118,44 @@ router.get('/quote', async (req, res) => {
       // Si no existe par específico, usar default
       const defaultMarkup = await Markup.findOne({ isDefault: true });
       const feePercent = markupPair?.percent || defaultMarkup?.percent || 0;
-
-      const feeCLP = inputAmount * (feePercent / 100);
-      const clpAmountWithFee = inputAmount + feeCLP;
-
-      // 🆕 Incluir fixed_cost de Vita en el cálculo del payout
       const payoutFixedCost = Number(priceData.fixedCost || 0);
-      const finalAmount = (inputAmount * clpToDestRate) - payoutFixedCost;
+
+      // --- CALCULADORA BIDIRECCIONAL ---
+      let principal = 0;        // Monto base en CLP (sin comisión)
+      let receiveAmount = 0;    // Monto final que recibe el destinatario
+      let feeCLP = 0;           // Comisión en CLP
+      let totalToPay = 0;       // Total que paga el usuario
+
+      if (mode === 'receive') {
+        // MODO INVERSO: Usuario dice cuánto quiere que reciban
+        receiveAmount = inputAmount;
+
+        // Calcular principal necesario desde el monto a recibir
+        // receiveAmount = (principal * rate) - fixedCost
+        // => principal = (receiveAmount + fixedCost) / rate
+        principal = (receiveAmount + payoutFixedCost) / clpToDestRate;
+
+        // Calcular comisión sobre el principal
+        feeCLP = principal * (feePercent / 100);
+
+        // Total a pagar = principal + comisión
+        totalToPay = principal + feeCLP;
+
+      } else {
+        // MODO NORMAL: Usuario dice cuánto envía (principal)
+        principal = inputAmount;
+
+        // Calcular comisión
+        feeCLP = principal * (feePercent / 100);
+
+        // Total a pagar
+        totalToPay = principal + feeCLP;
+
+        // Calcular cuánto recibe el destinatario
+        // receiveAmount = (principal * rate) - fixedCost
+        const grossDestAmount = principal * clpToDestRate;
+        receiveAmount = grossDestAmount - payoutFixedCost;
+      }
 
       return res.json({
         ok: true,
@@ -133,16 +164,17 @@ router.get('/quote', async (req, res) => {
           originCountry: safeOriginCountry,
           destCurrency: priceData.code,
           rate: clpToDestRate,
-          amount: inputAmount,
+
+          amount: Number(principal.toFixed(2)),                    // Principal (sin comisión)
+          clpAmountWithFee: Number(totalToPay.toFixed(2)),        // Total con comisión
+
           fee: Number(feeCLP.toFixed(2)),
           feePercent: Number(feePercent.toFixed(2)),
           feeOriginAmount: Number(feeCLP.toFixed(2)),
-          clpAmountWithFee: Number(clpAmountWithFee.toFixed(2)),
 
-          // 🆕 Costos de payout (Vita withdrawal fee)
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
 
-          receiveAmount: Number(finalAmount.toFixed(2)),
+          receiveAmount: Number(Math.max(0, receiveAmount).toFixed(2)),
           currency: priceData.code
         }
       });
