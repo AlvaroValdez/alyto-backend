@@ -46,7 +46,20 @@ const transactionConfigSchema = new mongoose.Schema({
   // 💰 Comisiones (para flujos manuales como BOB)
   feeType: { type: String, enum: ['percentage', 'fixed', 'none'], default: 'percentage' },
   feeAmount: { type: Number, default: 0 }, // % o CLP fijo
-  feeCurrency: { type: String, default: 'CLP' }
+  feeCurrency: { type: String, default: 'CLP' },
+
+  // 💳 Payment Methods Configuration
+  paymentMethods: {
+    direct: {
+      enabled: { type: Boolean, default: true },
+      // Filter specific providers (if empty, show all available)
+      // e.g., ['webpay', 'fintoc', 'khipu']
+      allowedProviders: [{ type: String }]
+    },
+    redirect: {
+      enabled: { type: Boolean, default: true }
+    }
+  }
 
 }, { timestamps: true });
 

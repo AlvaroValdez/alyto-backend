@@ -77,7 +77,12 @@ router.put('/', protect, isAdmin, async (req, res) => {
       manualExchangeRate: safeNumber(body.manualExchangeRate, 0),
       feeType: body.feeType || 'percentage',
       feeAmount: safeNumber(body.feeAmount, 0),
-      destinations: body.destinations || [] // Permitir guardar array de destinos
+      destinations: body.destinations || [], // Permitir guardar array de destinos
+      // Payment methods configuration
+      paymentMethods: body.paymentMethods || {
+        direct: { enabled: true, allowedProviders: [] },
+        redirect: { enabled: true }
+      }
     };
 
     const rule = await TransactionConfig.findOneAndUpdate(
