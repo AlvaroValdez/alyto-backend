@@ -106,6 +106,11 @@ const normalizePricesFromVita = (responseData) => {
       // Evitar duplicados y códigos especiales inválidos
       if (countryCode === 'COCOP' || countryCode.length > 2) return;
 
+      // LOG: Ver valores reales de Vita para debugging
+      if (countryCode === 'CO') {
+        console.log(`🔍 [Vita] CLP→CO rate from Vita: ${rate} (means 1 CLP = ${rate} COP)`);
+      }
+
       result.push({
         code: countryCode,
         rate: Number(rate),
