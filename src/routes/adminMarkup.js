@@ -1,63 +1,115 @@
 import { Router } from 'express';
-// Importa el modelo Markup directamente (ya debe estar usando ES Modules)
-import Markup from '../models/Markup.js'; 
-// Importa las funciones del servicio (ya deben estar usando ES Modules)
-import { getOrInit, upsertDefault, upsertPair } from '../services/markupService.js';
+import Markup from '../models/Markup.js';
 
 const router = Router();
 
-// GET /api/admin/markup - Obtiene el markup por defecto
+// GET /api/admin/markup - Obtiene todos los markups
 router.get('/markup', async (req, res) => {
   try {
-    // getOrInit asegura que el documento exista antes de intentar leerlo
-    const settings = await getOrInit(); 
-    res.json({ ok: true, markup: settings.defaultPercent });
+    const markups = await Markup.find().sort({ isDefault: -1, originCountry: 1, destCountry: 1 });
+    res.json({ ok: true, markups });
+  } catch (err) {
+    console.error('[adminMarkup] Error al obtener markups:', err);
+    res.status(500).json({ ok: false, error: 'Error al obtener markups' });
+  }
+});
+
+// GET /api/admin/markup/default - Obtiene el markup por defecto global
+router.get('/markup/default', async (req, res) => {
+  try {
+    const defaultMarkup = await Markup.findOne({ isDefault: true });
+    res.json({
+      ok: true,
+      markup: defaultMarkup || null,
+      percent: defaultMarkup?.percent || 2.0
+    });
   } catch (err) {
     console.error('[adminMarkup] Error al obtener markup por defecto:', err);
     res.status(500).json({ ok: false, error: 'Error al obtener markup por defecto' });
   }
 });
 
-// PUT /api/admin/markup - Actualiza el markup por defecto
-router.put('/markup', async (req, res) => {
+// PUT /api/admin/markup/default - Actualiza el markup por defecto global
+router.put('/markup/default', async (req, res) => {
   try {
-    const { markup } = req.body;
-    if (markup === undefined || typeof markup !== 'number') {
-      return res.status(400).json({ ok: false, error: 'Markup inválido, debe ser numérico' });
+    const { percent } = req.body;
+    if (percent === undefined || typeof percent !== 'number') {
+      return res.status(400).json({ ok: false, error: 'Percent inválido, debe ser numérico' });
     }
-    // upsertDefault maneja la lógica de creación/actualización
-    const settings = await upsertDefault(markup); 
-    res.json({ ok: true, markup: settings.defaultPercent });
+
+    const defaultMarkup = await Markup.findOneAndUpdate(
+      { isDefault: true },
+      {
+        percent,
+        isDefault: true,
+        description: 'Spread global por defecto'
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ ok: true, markup: defaultMarkup });
   } catch (err) {
     console.error('[adminMarkup] Error al actualizar markup por defecto:', err);
     res.status(500).json({ ok: false, error: 'Error al actualizar markup por defecto' });
   }
 });
 
-// GET /api/admin/markup/pairs - Devuelve la lista de pares configurados
-router.get('/markup/pairs', async (req, res) => {
+// POST /api/admin/markup - Crea o actualiza un markup específico
+router.post('/markup', async (req, res) => {
   try {
-    const settings = await getOrInit();
-    res.json({ ok: true, pairs: settings.pairs });
+    const { originCountry, destCountry, percent, description } = req.body;
+
+    if (!originCountry || percent === undefined || typeof percent !== 'number') {
+      return res.status(400).json({
+        ok: false,
+        error: 'originCountry y percent son requeridos'
+      });
+    }
+
+    const filter = { originCountry };
+    if (destCountry) {
+      filter.destCountry = destCountry;
+    } else {
+      filter.destCountry = { $exists: false };
+    }
+
+    const markup = await Markup.findOneAndUpdate(
+      filter,
+      {
+        originCountry,
+        destCountry: destCountry || undefined,
+        percent,
+        description: description || `${originCountry}${destCountry ? ` → ${destCountry}` : ' (default)'}`
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ ok: true, markup });
   } catch (err) {
-    console.error('[adminMarkup] Error al obtener pares de markup:', err);
-    res.status(500).json({ ok: false, error: 'Error al obtener pares de markup' });
+    console.error('[adminMarkup] Error al guardar markup:', err);
+    res.status(500).json({ ok: false, error: 'Error al guardar markup' });
   }
 });
 
-// PUT /api/admin/markup/pairs - Añade o actualiza un par específico
-router.put('/markup/pairs', async (req, res) => {
+// DELETE /api/admin/markup/:id - Elimina un markup específico
+router.delete('/markup/:id', async (req, res) => {
   try {
-    const { originCurrency, destCountry, percent } = req.body;
-    if (!originCurrency || !destCountry || percent === undefined || typeof percent !== 'number') {
-      return res.status(400).json({ ok: false, error: 'Datos de par inválidos (originCurrency, destCountry, percent requeridos)' });
+    const { id } = req.params;
+
+    const markup = await Markup.findById(id);
+    if (!markup) {
+      return res.status(404).json({ ok: false, error: 'Markup no encontrado' });
     }
-    // upsertPair maneja la lógica de añadir/actualizar y devuelve el documento completo
-    const updatedSettings = await upsertPair(originCurrency, destCountry, percent); 
-    res.json({ ok: true, pairs: updatedSettings.pairs });
+
+    if (markup.isDefault) {
+      return res.status(400).json({ ok: false, error: 'No se puede eliminar el markup por defecto' });
+    }
+
+    await Markup.findByIdAndDelete(id);
+    res.json({ ok: true, message: 'Markup eliminado' });
   } catch (err) {
-    console.error('[adminMarkup] Error al actualizar par de markup:', err);
-    res.status(500).json({ ok: false, error: 'Error al actualizar par de markup' });
+    console.error('[adminMarkup] Error al eliminar markup:', err);
+    res.status(500).json({ ok: false, error: 'Error al eliminar markup' });
   }
 });
 
