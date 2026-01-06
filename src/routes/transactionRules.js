@@ -47,7 +47,11 @@ router.get('/', async (req, res) => {
           isEnabled: false,
           alertMessage: '',
           provider: 'vita_wallet',
-          manualExchangeRate: 0
+          manualExchangeRate: 0,
+          paymentMethods: {
+            direct: { enabled: true, allowedProviders: [] },
+            redirect: { enabled: true }
+          }
         }]
       });
     }
