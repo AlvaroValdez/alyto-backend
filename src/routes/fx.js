@@ -104,60 +104,82 @@ router.get('/quote', async (req, res) => {
 
     const clpToDestRate = Number(priceData.rate);
 
-    // --- Caso 1: Origen CLP (flujo actual, intacto) ---
+    // --- Caso 1: Origen CLP (flujo spread) ---
     if (originCurrency === 'CLP') {
-      // 💰 Obtener comisión desde Markup
+      // 💰 Obtener spread desde Markup (con lógica priorizada)
       const Markup = (await import('../models/Markup.js')).default;
 
-      // Buscar markup específico para CLP→destCountry
-      const markupPair = await Markup.findOne({
-        originCurrency: 'CLP',
+      // 1. Buscar markup específico origen→destino
+      let markup = await Markup.findOne({
+        originCountry: safeOriginCountry,
         destCountry: targetCode
       });
 
-      // Si no existe par específico, usar default
-      const defaultMarkup = await Markup.findOne({ isDefault: true });
-      const feePercent = markupPair?.percent || defaultMarkup?.percent || 0;
+      // 2. Buscar default para país origen
+      if (!markup) {
+        markup = await Markup.findOne({
+          originCountry: safeOriginCountry,
+          destCountry: { $exists: false }
+        });
+      }
+
+      // 3. Global default
+      if (!markup) {
+        markup = await Markup.findOne({ isDefault: true });
+      }
+
+      const spreadPercent = markup?.percent || 2.0;
+      const markupSource = markup ? (markup.destCountry ? 'country-specific' : 'default') : 'default';
+      const markupId = markup?._id;
+
+      // Tasa real de Vita
+      const vitaRate = clpToDestRate;
+
+      // Aplicar spread: Alyto rate = Vita rate * (1 - spread%)
+      const alytoRate = vitaRate * (1 - spreadPercent / 100);
+
       const payoutFixedCost = Number(priceData.fixedCost || 0);
 
-      // --- CALCULADORA BIDIRECCIONAL ---
-      let principal = 0;        // Monto base en CLP (sin comisión)
-      let receiveAmount = 0;    // Monto final que recibe el destinatario
-      let feeCLP = 0;           // Comisión en CLP
-      let totalToPay = 0;       // Total que paga el usuario
+      console.log(`🔧 [FX-SPREAD] Vita: ${vitaRate.toFixed(4)}, Spread: ${spreadPercent}%, Alyto: ${alytoRate.toFixed(4)}`);
+
+      //--- CALCULADORA BIDIRECCIONAL CON SPREAD ---
+      let principal = 0;           // Monto en CLP
+      let destReceiveAmount = 0;   // Monto que recibe el cliente
+      let destGrossAmount = 0;     // Monto bruto (antes de costo Vita)
+      let profitCOP = 0;           // Ganancia en COP
 
       if (mode === 'receive') {
         // MODO INVERSO: Usuario dice cuánto quiere que reciban
-        receiveAmount = inputAmount;
+        destReceiveAmount = inputAmount;
 
-        // Calcular principal necesario desde el monto a recibir
-        // receiveAmount = (principal * rate) - fixedCost
-        // => principal = (receiveAmount + fixedCost) / rate
-        principal = (receiveAmount + payoutFixedCost) / clpToDestRate;
+        // Calcular cantidad bruta necesaria (antes de fixed cost)
+        // destReceiveAmount = destGrossAmount - fixedCost
+        destGrossAmount = destReceiveAmount + payoutFixedCost;
 
-        // Calcular comisión sobre el principal
-        feeCLP = principal * (feePercent / 100);
+        // Calcular principal usando tasa Alyto (con spread)
+        // destGrossAmount = principal * alytoRate
+        principal = destGrossAmount / alytoRate;
 
-        // Total a pagar = principal + comisión
-        totalToPay = principal + feeCLP;
+        // Calcular lo que enviaríamos con tasa real Vita
+        const vitaGrossAmount = principal * vitaRate;
+        profitCOP = vitaGrossAmount - destGrossAmount;
 
       } else {
-        // MODO NORMAL: Usuario dice cuánto envía (principal)
+        // MODO NORMAL: Usuario dice cuánto envía
         principal = inputAmount;
 
-        // Calcular comisión
-        feeCLP = principal * (feePercent / 100);
+        // Con tasa Alyto (cliente ve)
+        destGrossAmount = principal * alytoRate;
+        destReceiveAmount = destGrossAmount - payoutFixedCost;
 
-        // Total a pagar
-        totalToPay = principal + feeCLP;
-
-        // Calcular cuánto recibe el destinatario
-        // receiveAmount = (principal * rate) - fixedCost
-        const grossDestAmount = principal * clpToDestRate;
-        receiveAmount = grossDestAmount - payoutFixedCost;
+        // Con tasa Vita (real)
+        const vitaGrossAmount = principal * vitaRate;
+        profitCOP = vitaGrossAmount - destGrossAmount;
       }
 
-      console.log(`💰 [FX-RESULT] Principal: ${principal.toFixed(2)}, Fee: ${feeCLP.toFixed(2)}, Total: ${totalToPay.toFixed(2)}, Receive: ${receiveAmount.toFixed(2)}`);
+      const profitCLP = profitCOP / vitaRate; // Aproximado
+
+      console.log(`💰 [FX-SPREAD-RESULT] Principal: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP, Profit: ${profitCOP.toFixed(2)} COP`);
 
       return res.json({
         ok: true,
@@ -165,19 +187,51 @@ router.get('/quote', async (req, res) => {
           originCurrency,
           originCountry: safeOriginCountry,
           destCurrency: priceData.code,
-          rate: clpToDestRate,
 
-          amount: Number(principal.toFixed(2)),                    // Principal (sin comisión)
-          clpAmountWithFee: Number(totalToPay.toFixed(2)),        // Total con comisión
+          // Tasa que ve el cliente (con spread)
+          rate: Number(alytoRate.toFixed(4)),
 
-          fee: Number(feeCLP.toFixed(2)),
-          feePercent: Number(feePercent.toFixed(2)),
-          feeOriginAmount: Number(feeCLP.toFixed(2)),
+          // Montos cliente
+          amount: Number(principal.toFixed(2)),           // Principal
+          clpAmountWithFee: Number(principal.toFixed(2)), // Total = Principal (sin fee visible)
+          receiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
+
+          // Fee = 0 (spread model)
+          fee: 0,
+          feePercent: 0,
+          feeOriginAmount: 0,
 
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
+          currency: priceData.code,
 
-          receiveAmount: Number(Math.max(0, receiveAmount).toFixed(2)),
-          currency: priceData.code
+          // Tracking data (para guardar en Transaction)
+          rateTracking: {
+            vitaRate: Number(vitaRate.toFixed(4)),
+            alytoRate: Number(alytoRate.toFixed(4)),
+            spreadPercent: Number(spreadPercent.toFixed(2)),
+            profitDestCurrency: Number(profitCOP.toFixed(2))
+          },
+
+          amountsTracking: {
+            originCurrency,
+            originPrincipal: Number(principal.toFixed(2)),
+            originFee: 0,
+            originTotal: Number(principal.toFixed(2)),
+
+            destCurrency: priceData.code,
+            destGrossAmount: Number(destGrossAmount.toFixed(2)),
+            destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),
+            destReceiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
+
+            profitOriginCurrency: Number(profitCLP.toFixed(2)),
+            profitDestCurrency: Number(profitCOP.toFixed(2))
+          },
+
+          feeAudit: {
+            markupSource,
+            markupId,
+            appliedAt: new Date()
+          }
         }
       });
     }

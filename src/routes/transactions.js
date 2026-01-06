@@ -26,8 +26,8 @@ router.get('/', async (req, res) => {
     // Campos a seleccionar. Por defecto, los básicos.
     let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status';
     if (isAdmin) {
-      projection += ' order country vitaResponse createdBy fee feePercent feeOriginAmount'; // ✅ Agregados campos fee
-      // --- CORRECCIÓN: Populamos los datos del usuario creador ---
+      projection += ' order country vitaResponse createdBy fee feePercent feeOriginAmount rateTracking amountsTracking feeAudit';
+      // --- Populamos los datos del usuario creador ---
       query = query.populate('createdBy', 'name email');
     }
 

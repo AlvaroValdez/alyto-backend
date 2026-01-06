@@ -93,4 +93,34 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/prices/summary - For admin marquee
+router.get('/summary', async (req, res) => {
+  try {
+    const allRates = await getListPrices();
+
+    // Filtrar solo CLP rates para display
+    const clpRates = allRates
+      .filter(r => r.sourceCurrency === 'CLP')
+      .map(r => ({
+        from: 'CLP',
+        to: r.code,
+        currency: r.code,
+        rate: Number(r.rate).toFixed(4),
+        fixedCost: Number(r.fixedCost || 0)
+      }))
+      .sort((a, b) => a.to.localeCompare(b.to));
+
+    return res.json({
+      ok: true,
+      data: {
+        lastUpdate: new Date().toISOString(),
+        rates: clpRates
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Prices/Summary] Error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;

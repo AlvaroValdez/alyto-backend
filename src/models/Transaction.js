@@ -49,6 +49,40 @@ const transactionSchema = new mongoose.Schema({
   proofOfPayment: { type: String },
   manualRate: { type: Number },
 
+  // 💰 Financial Tracking (Spread Model)
+  rateTracking: {
+    vitaRate: { type: Number },           // Tasa real de Vita
+    alytoRate: { type: Number },          // Tasa mostrada al cliente (con spread)
+    spreadPercent: { type: Number },      // % de spread aplicado
+    profitDestCurrency: { type: Number }  // Ganancia en moneda destino
+  },
+
+  // 📊 Amounts Tracking (Real amounts per currency)
+  amountsTracking: {
+    // Origen
+    originCurrency: { type: String },
+    originPrincipal: { type: Number },     // Monto base (sin fee)
+    originFee: { type: Number },           // 0 en spread model
+    originTotal: { type: Number },         // Total cobrado
+
+    // Destino
+    destCurrency: { type: String },
+    destGrossAmount: { type: Number },     // Antes de costos Vita
+    destVitaFixedCost: { type: Number },   // Costo fijo Vita
+    destReceiveAmount: { type: Number },   // Lo que recibe cliente
+
+    // Profit
+    profitOriginCurrency: { type: Number },
+    profitDestCurrency: { type: Number }
+  },
+
+  // 🔍 Fee Audit
+  feeAudit: {
+    markupSource: { type: String, enum: ['default', 'country-specific', 'manual'] },
+    markupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Markup' },
+    appliedAt: { type: Date }
+  },
+
   // 💰 Comisiones
   fee: { type: Number, default: 0 }, // Comisión en CLP
   feePercent: { type: Number, default: 0 }, // Porcentaje aplicado

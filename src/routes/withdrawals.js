@@ -197,10 +197,15 @@ router.post('/', async (req, res) => {
       createdBy: userId,
       proofOfPayment: proofOfPayment || null,
 
-      // 💰 Comisiones (del body o 0 por defecto)
+      // 💰 Comisiones legacy (del body o 0 por defecto)
       fee: Number(req.body.fee || 0),
       feePercent: Number(req.body.feePercent || 0),
-      feeOriginAmount: Number(req.body.feeOriginAmount || 0)
+      feeOriginAmount: Number(req.body.feeOriginAmount || 0),
+
+      // 📊 Spread Model Tracking (from quote)
+      rateTracking: req.body.rateTracking || null,
+      amountsTracking: req.body.amountsTracking || null,
+      feeAudit: req.body.feeAudit || null
     });
 
     console.log('✅ [withdrawals] TX guardada con:', {
