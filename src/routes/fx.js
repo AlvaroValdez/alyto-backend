@@ -157,6 +157,8 @@ router.get('/quote', async (req, res) => {
         receiveAmount = grossDestAmount - payoutFixedCost;
       }
 
+      console.log(`💰 [FX-RESULT] Principal: ${principal.toFixed(2)}, Fee: ${feeCLP.toFixed(2)}, Total: ${totalToPay.toFixed(2)}, Receive: ${receiveAmount.toFixed(2)}`);
+
       return res.json({
         ok: true,
         data: {
