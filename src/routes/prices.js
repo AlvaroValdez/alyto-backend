@@ -93,7 +93,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/prices/summary - For admin marquee
+// GET /api/prices/summary - For admin marquee (Vita rates)
 router.get('/summary', async (req, res) => {
   try {
     const allRates = await getListPrices();
@@ -119,6 +119,56 @@ router.get('/summary', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [Prices/Summary] Error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// GET /api/prices/alyto-summary - Alyto rates (with spread applied)
+router.get('/alyto-summary', async (req, res) => {
+  try {
+    const Markup = (await import('../models/Markup.js')).default;
+    const allRates = await getListPrices();
+
+    // Filtrar solo CLP rates
+    const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP');
+
+    // Aplicar spread a cada tasa
+    const alytoRates = await Promise.all(clpRates.map(async (r) => {
+      const destCountry = r.code;
+
+      // Buscar markup (lógica priorizada)
+      let markup = await Markup.findOne({ originCountry: 'CL', destCountry });
+      if (!markup) {
+        markup = await Markup.findOne({ originCountry: 'CL', destCountry: { $exists: false } });
+      }
+      if (!markup) {
+        markup = await Markup.findOne({ isDefault: true });
+      }
+
+      const spreadPercent = markup?.percent || 2.0;
+      const vitaRate = Number(r.rate);
+      const alytoRate = vitaRate * (1 - spreadPercent / 100);
+
+      return {
+        from: 'CLP',
+        to: r.code,
+        currency: r.code,
+        vitaRate: vitaRate.toFixed(4),
+        alytoRate: alytoRate.toFixed(4),
+        spreadPercent: spreadPercent.toFixed(2),
+        fixedCost: Number(r.fixedCost || 0)
+      };
+    }));
+
+    return res.json({
+      ok: true,
+      data: {
+        lastUpdate: new Date().toISOString(),
+        rates: alytoRates.sort((a, b) => a.to.localeCompare(b.to))
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Prices/AlytoSummary] Error:', error.message);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
