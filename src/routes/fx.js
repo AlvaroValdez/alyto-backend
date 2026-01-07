@@ -64,18 +64,27 @@ router.get('/quote', async (req, res) => {
         marginPercent = (destOverride.feeAmount || 0) / 100;
       }
 
-      // 2. Tasa Cliente
+      // 2. Tasa Cliente (con margen incluido)
       const clientRate = manualExchangeRate * (1 - marginPercent);
 
-      // 3. Monto Recibir Bruto
+      // 3. Monto Recibir Bruto (lo que se envía al beneficiario antes de fees)
       const grossReceiveAmount = inputCLP * clientRate;
 
       // 4. Payout Fixed Fee
       const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
       const finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
 
+      // 5. Calcular Ganancia (Profit)
+      // La ganancia es la diferencia entre la tasa base y la tasa con margen
+      const profitPerUnit = manualExchangeRate - clientRate;
+      const totalProfitInDestCurrency = profitPerUnit * inputCLP;
+
       // Mock currency for manual destinations if not known
-      const destCurrency = targetCode === 'BO' ? 'BOB' : 'USD';
+      const destCurrency = targetCode === 'BO' ? 'BOB' :
+        targetCode === 'CO' ? 'COP' :
+          targetCode === 'PE' ? 'PEN' : 'USD';
+
+      console.log(`💰 [FX-MANUAL-DEST] Profit: ${totalProfitInDestCurrency.toFixed(2)} ${destCurrency} (${(marginPercent * 100).toFixed(2)}% margin)`);
 
       return res.json({
         ok: true,
@@ -92,7 +101,38 @@ router.get('/quote', async (req, res) => {
           feePercent: Number((marginPercent * 100).toFixed(2)),
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
           receiveAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
-          isManual: true
+          isManual: true,
+
+          // 📊 Tracking Data (para guardar en Transaction)
+          rateTracking: {
+            vitaRate: Number(manualExchangeRate.toFixed(4)),     // Tasa base manual
+            alytoRate: Number(clientRate.toFixed(4)),            // Tasa con margen
+            destAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
+            destCurrency: destCurrency,
+            spreadPercent: Number((marginPercent * 100).toFixed(2)),
+            profitDestCurrency: Number(totalProfitInDestCurrency.toFixed(2))
+          },
+
+          amountsTracking: {
+            originCurrency: originCurrency,
+            originPrincipal: Number(inputCLP.toFixed(2)),
+            originFee: 0,
+            originTotal: Number(inputCLP.toFixed(2)),
+
+            destCurrency: destCurrency,
+            destGrossAmount: Number(grossReceiveAmount.toFixed(2)),
+            destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),
+            destReceiveAmount: Number(Math.max(0, finalReceiveAmount).toFixed(2)),
+
+            profitOriginCurrency: 0,  // Not applicable for this flow
+            profitDestCurrency: Number(totalProfitInDestCurrency.toFixed(2))
+          },
+
+          feeAudit: {
+            markupSource: 'manual_destination',
+            markupId: destOverride._id || originConfig?._id,
+            appliedAt: new Date()
+          }
         }
       });
     }

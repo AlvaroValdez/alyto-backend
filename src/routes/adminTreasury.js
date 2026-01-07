@@ -297,5 +297,28 @@ router.put('/:id/reject', async (req, res) => {
     }
 });
 
-export default router;
+// DELETE /api/admin/treasury/clear-all
+// PELIGROSO: Elimina TODAS las transacciones de la base de datos
+router.delete('/clear-all', async (req, res) => {
+    try {
+        console.log('⚠️ [ADMIN] Clearing ALL transactions from database...');
 
+        const result = await Transaction.deleteMany({});
+
+        console.log(`🗑️ [ADMIN] Deleted ${result.deletedCount} transactions`);
+
+        res.json({
+            ok: true,
+            message: `Successfully deleted ${result.deletedCount} transactions`,
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        console.error('❌ [ADMIN] Error clearing transactions:', error);
+        res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+});
+
+export default router;
