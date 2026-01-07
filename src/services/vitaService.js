@@ -272,13 +272,24 @@ export const getPaymentMethods = async (country) => {
         type: 'select',
         label: 'Banco',
         required: true,
+        placeholder: 'Selecciona tu banco',
         options: [
+          // Bancos principales (mayor cuota de mercado)
           { value: 'cl_banco_de_chile', label: 'Banco de Chile' },
           { value: 'cl_banco_estado', label: 'Banco Estado' },
           { value: 'cl_banco_santander', label: 'Banco Santander' },
           { value: 'cl_banco_bci', label: 'Banco BCI' },
-          { value: 'cl_banco_scotiabank', label: 'Scotiabank' },
-          { value: 'cl_banco_itau', label: 'Banco Itaú' }
+          { value: 'cl_banco_scotiabank', label: 'Scotiabank Chile' },
+          { value: 'cl_banco_itau', label: 'Banco Itaú' },
+          { value: 'cl_banco_security', label: 'Banco Security' },
+          { value: 'cl_banco_falabella', label: 'Banco Falabella' },
+          { value: 'cl_banco_ripley', label: 'Banco Ripley' },
+          // Bancos adicionales
+          { value: 'cl_banco_consorcio', label: 'Banco Consorcio' },
+          { value: 'cl_banco_bice', label: 'Banco BICE' },
+          { value: 'cl_banco_internacional', label: 'Banco Internacional' },
+          { value: 'cl_coopeuch', label: 'Coopeuch' },
+          { value: 'cl_banco_corpbanca', label: 'Itaú CorpBanca' }
         ]
       },
       {
