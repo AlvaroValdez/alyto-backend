@@ -95,6 +95,30 @@ app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
 // ✅ AQUÍ SE ACTIVA LA CALCULADORA (Sin duplicados)
 app.use('/api/fx', fxRoutes);
 
+// ⚠️ TEMPORAL: Endpoint público para limpiar transacciones (SIN AUTH)
+app.delete('/api/clear-transactions', async (req, res) => {
+  try {
+    const Transaction = (await import('./models/Transaction.js')).default;
+    console.log('⚠️ [PUBLIC] Clearing ALL transactions from database...');
+
+    const result = await Transaction.deleteMany({});
+
+    console.log(`🗑️ [PUBLIC] Deleted ${result.deletedCount} transactions`);
+
+    res.json({
+      ok: true,
+      message: `Successfully deleted ${result.deletedCount} transactions`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('❌ [PUBLIC] Error clearing transactions:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
 // --- Rutas Protegidas ---
 app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
