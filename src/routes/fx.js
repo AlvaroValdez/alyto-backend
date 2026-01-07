@@ -338,7 +338,36 @@ router.get('/quote', async (req, res) => {
           // Metadata
           provider: 'internal_manual',
           isManual: true,
-          feeIncludedInRate: true  // Flag para que el frontend sepa que el fee está incluido
+          feeIncludedInRate: true,  // Flag para que el frontend sepa que el fee está incluido
+
+          // 📊 Tracking Data (para guardar en Transaction)
+          rateTracking: {
+            vitaRate: Number(clpToDestRate.toFixed(4)),              // CLP→COP rate from Vita
+            alytoRate: Number(effectiveRate.toFixed(4)),            // BOB→COP effective rate
+            spreadPercent: Number(feeAmount.toFixed(2)),            // Our margin %
+            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)) // Profit in dest currency
+          },
+
+          amountsTracking: {
+            originCurrency: originCurrency,                          // BOB
+            originPrincipal: Number(inputAmount.toFixed(2)),         // 1,000 BOB
+            originFee: 0,                                            // No visible fee
+            originTotal: Number(totalOriginAmount.toFixed(2)),       // 1,000 BOB
+
+            destCurrency: priceData.code,                            // COP
+            destGrossAmount: Number(grossDestAmount.toFixed(2)),     // Before payout cost
+            destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),   // Vita's fixed cost
+            destReceiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Final amount
+
+            profitOriginCurrency: Number(ourMarginCLP.toFixed(2)),   // Profit in CLP
+            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)) // Profit in COP
+          },
+
+          feeAudit: {
+            markupSource: 'manual',
+            markupId: originConfig._id || null,
+            appliedAt: new Date()
+          }
         }
       });
     }
