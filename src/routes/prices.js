@@ -126,11 +126,19 @@ router.get('/summary', async (req, res) => {
 // GET /api/prices/alyto-summary - Alyto rates (with spread applied)
 router.get('/alyto-summary', async (req, res) => {
   try {
+    console.log('\n🔍 [AlytoSummary] Iniciando cálculo de tasas Alyto...');
     const Markup = (await import('../models/Markup.js')).default;
     const allRates = await getListPrices();
 
     // Filtrar solo CLP rates
     const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP');
+    console.log(`📊 [AlytoSummary] Total CLP rates: ${clpRates.length}`);
+
+    // Verificar markups disponibles
+    const allMarkups = await Markup.find();
+    console.log(`💰 [AlytoSummary] Markups en BD: ${allMarkups.length}`);
+    console.log(`   - Global default: ${allMarkups.find(m => m.isDefault)?._id || 'NO EXISTE'}`);
+    console.log(`   - CL default: ${allMarkups.find(m => m.originCountry === 'CL' && !m.destCountry)?._id || 'NO EXISTE'}`);
 
     // Aplicar spread a cada tasa
     const alytoRates = await Promise.all(clpRates.map(async (r) => {
@@ -149,6 +157,11 @@ router.get('/alyto-summary', async (req, res) => {
       const vitaRate = Number(r.rate);
       const alytoRate = vitaRate * (1 - spreadPercent / 100);
 
+      // Log para  primeros 3 países
+      if (['CO', 'PE', 'AR'].includes(destCountry)) {
+        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Spread: ${spreadPercent}% | Alyto: ${alytoRate.toFixed(4)}`);
+      }
+
       return {
         from: 'CLP',
         to: r.code,
@@ -159,6 +172,8 @@ router.get('/alyto-summary', async (req, res) => {
         fixedCost: Number(r.fixedCost || 0)
       };
     }));
+
+    console.log(`✅ [AlytoSummary] Tasas calculadas: ${alytoRates.length}\n`);
 
     return res.json({
       ok: true,
