@@ -112,6 +112,74 @@ router.put('/:id/approve-deposit', async (req, res) => {
             });
         }
 
+        // 🔄 CRÍTICO: Refrescar quote para obtener precios actuales de Vita
+        // Esto soluciona el error "Los precios caducaron"
+        try {
+            const axios = (await import('axios')).default;
+            const API_URL = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+            const destCountry = tx.withdrawalPayload.destination_country;
+            const amountForQuote = finalPayload.amount; // CLP amount (with fee if BOB)
+
+            console.log(`[treasury] 🔄 Refrescando quote: ${amountForQuote} CLP → ${destCountry}`);
+
+            const quoteResponse = await axios.get(`${API_URL}/api/fx/quote`, {
+                params: {
+                    amount: amountForQuote,
+                    from: 'CL',
+                    to: destCountry
+                }
+            });
+
+            if (quoteResponse.data.ok) {
+                const freshQuote = quoteResponse.data.data;
+
+                console.log('[treasury] ✅ Quote refrescado:', {
+                    rate: freshQuote.rate,
+                    estimated: freshQuote.amountOut,
+                    payoutCost: freshQuote.payoutFixedCost
+                });
+
+                // Actualizar transacción con tracking data fresco
+                tx.rateTracking = {
+                    vitaRate: freshQuote.rate || 0,
+                    alytoRate: freshQuote.rateWithMarkup || freshQuote.rate || 0,
+                    spreadPercent: freshQuote.spread || 0,
+                    profitDestCurrency: 0 // Se calculará si aplica
+                };
+
+                tx.amountsTracking = {
+                    originCurrency: tx.currency,
+                    originPrincipal: tx.amount,
+                    originFee: tx.fee || 0,
+                    originTotal: tx.amount + (tx.fee || 0),
+                    destCurrency: freshQuote.destCurrency,
+                    destGrossAmount: freshQuote.amountOut + (freshQuote.payoutFixedCost || 0),
+                    destVitaFixedCost: freshQuote.payoutFixedCost || 0,
+                    destReceiveAmount: freshQuote.amountOut
+                };
+
+                await tx.save();
+
+                // Usar valores frescos en payload final para Vita
+                finalPayload = {
+                    ...finalPayload,
+                    rate: freshQuote.rate,
+                    estimated_amount: freshQuote.amountOut,
+                    fee: freshQuote.payoutFixedCost || 0
+                    // NO incluir expires_at - Vita lo genera automáticamente
+                };
+
+                console.log('[treasury] 📦 Payload actualizado con quote fresco');
+            } else {
+                console.warn('[treasury] ⚠️ Error en respuesta de quote, usando valores guardados');
+            }
+        } catch (quoteError) {
+            console.warn('[treasury] ⚠️ Error refrescando quote:', quoteError.message);
+            console.warn('[treasury] Continuando con valores guardados del payload original');
+            // No bloqueamos la aprobación si falla el refresh
+        }
+
         // Ejecutar envío real en Vita
         tx.status = 'processing';
         await tx.save();
@@ -186,6 +254,46 @@ router.put('/:id/complete-payout', async (req, res) => {
     } catch (error) {
         console.error('[treasury] Error completando payout:', error);
         res.status(500).json({ ok: false, error: 'Error al completar pago.' });
+    }
+});
+
+// PUT /api/admin/treasury/:id/reject
+// Admin rechaza la transacción por comprobante inválido o error
+router.put('/:id/reject', async (req, res) => {
+    try {
+        const tx = await Transaction.findById(req.params.id);
+        if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
+
+        if (tx.status !== 'pending_verification') {
+            return res.status(409).json({
+                ok: false,
+                error: `Estado inválido para rechazar: ${tx.status}`
+            });
+        }
+
+        const { reason } = req.body;
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ ok: false, error: 'Se requiere una razón de rechazo' });
+        }
+
+        tx.status = 'rejected';
+        tx.rejectionReason = reason;
+        tx.rejectedBy = req.user?._id;
+        tx.rejectedAt = new Date();
+        await tx.save();
+
+        // TODO: Enviar notificación al usuario (email/push notification)
+        console.log(`[treasury] ❌ Transacción ${tx._id} rechazada por:`, req.user?.email || 'admin');
+        console.log(`[treasury] Razón: ${reason}`);
+
+        res.json({
+            ok: true,
+            message: 'Transacción rechazada exitosamente',
+            transaction: tx
+        });
+    } catch (error) {
+        console.error('[treasury] Error rechazando transacción:', error);
+        res.status(500).json({ ok: false, error: 'Error al rechazar transacción' });
     }
 });
 

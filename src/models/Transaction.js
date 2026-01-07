@@ -22,7 +22,8 @@ const transactionSchema = new mongoose.Schema({
       'pending_manual_payout',
       'processing',
       'succeeded',
-      'failed'
+      'failed',
+      'rejected'
     ],
     default: 'pending'
   },
@@ -48,6 +49,18 @@ const transactionSchema = new mongoose.Schema({
 
   proofOfPayment: { type: String },
   manualRate: { type: Number },
+
+  // ❌ Rejection tracking
+  rejectionReason: { type: String },
+  rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejectedAt: { type: Date },
+
+  // 💳 Payment method tracking
+  paymentMethod: {
+    type: String,
+    enum: ['direct_pay', 'webpay', 'manual_anchor', 'other'],
+    default: 'other'
+  },
 
   // 💰 Financial Tracking (Spread Model)
   rateTracking: {
