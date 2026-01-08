@@ -18,17 +18,29 @@ router.get('/', async (req, res) => {
     if (req.query.order) filters.order = req.query.order;
 
     // --- LÓGICA DE ROLES ---
+    // Permitir acceso público SOLO cuando se consulta por 'order'
+    // Esto permite que la página de éxito muestre los datos sin requerir login
+    const isPublicOrderQuery = req.query.order && !req.user;
     const isAdmin = req.user && req.user.role === 'admin';
+
+    // Si hay usuario autenticado pero NO es admin, solo mostrar SUS transacciones
+    if (req.user && !isAdmin) {
+      filters.createdBy = req.user._id;
+    }
 
     // Construimos la consulta base
     let query = Transaction.find(filters);
 
-    // Campos a seleccionar. Por defecto, los básicos.
-    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status';
+    // Campos a seleccionar según el tipo de acceso
+    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry';
+
     if (isAdmin) {
-      projection += ' order country vitaResponse createdBy fee feePercent feeOriginAmount rateTracking amountsTracking feeAudit';
+      projection += ' vitaResponse createdBy fee feePercent feeOriginAmount feeAudit';
       // --- Populamos los datos del usuario creador ---
       query = query.populate('createdBy', 'name email');
+    } else if (isPublicOrderQuery) {
+      // Para consultas públicas por order, mostrar solo datos básicos (sin info financiera sensible del negocio)
+      projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry';
     }
 
     // 3. Consulta a la Base de Datos: Realiza dos consultas eficientes

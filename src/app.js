@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import connectMongo from './config/mongo.js';
 import { protect, isAdmin } from './middleware/authMiddleware.js';
+import { optionalAuth } from './middleware/optionalAuth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -98,7 +99,7 @@ app.use('/api/fx', fxRoutes);
 // --- Rutas Protegidas ---
 app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
-app.use('/api/transactions', protect, transactionsRoutes);
+app.use('/api/transactions', optionalAuth, transactionsRoutes);
 app.use('/api/payment-orders', protect, paymentOrdersRoutes);
 app.use('/api/beneficiaries', protect, beneficiariesRoutes);
 app.use('/api/upload', protect, uploadRoutes);
