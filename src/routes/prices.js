@@ -128,11 +128,12 @@ router.get('/alyto-summary', async (req, res) => {
   try {
     console.log('\n🔍 [AlytoSummary] Iniciando cálculo de tasas Alyto...');
     const Markup = (await import('../models/Markup.js')).default;
+    const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
     const allRates = await getListPrices();
 
-    // Filtrar solo CLP rates
-    const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP');
-    console.log(`📊 [AlytoSummary] Total CLP rates: ${clpRates.length}`);
+    // Filtrar CLP rates EXCLUYENDO Bolivia (BO) - usaremos la tasa manual
+    const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP' && r.code !== 'BO');
+    console.log(`📊 [AlytoSummary] Total CLP rates (sin BO): ${clpRates.length}`);
 
     // Verificar markups disponibles
     const allMarkups = await Markup.find();
@@ -172,6 +173,40 @@ router.get('/alyto-summary', async (req, res) => {
         fixedCost: Number(r.fixedCost || 0)
       };
     }));
+
+    // 🆕 Inyectar tasa manual de Bolivia (BO) desde TransactionConfig
+    try {
+      const boliviaConfig = await TransactionConfig.findOne({ originCountry: 'CL' });
+      if (boliviaConfig) {
+        const boliviaDest = boliviaConfig.destinations?.find(d => d.countryCode === 'BO' && d.isEnabled);
+        if (boliviaDest && boliviaDest.manualExchangeRate > 0) {
+          const manualRate = Number(boliviaDest.manualExchangeRate);
+
+          // Aplicar spread (si hay fee configurado)
+          let spreadPercent = 0;
+          if (boliviaDest.feeType === 'percentage' && boliviaDest.feeAmount) {
+            spreadPercent = Number(boliviaDest.feeAmount);
+          }
+
+          const alytoBoliviaRate = manualRate * (1 - spreadPercent / 100);
+
+          console.log(`   [BO-MANUAL] Tasa base: ${manualRate.toFixed(4)} | Spread: ${spreadPercent}% | Tasa cliente: ${alytoBoliviaRate.toFixed(4)}`);
+
+          alytoRates.push({
+            from: 'CLP',
+            to: 'BO',
+            currency: 'BOB',
+            vitaRate: manualRate.toFixed(4),
+            alytoRate: alytoBoliviaRate.toFixed(4),
+            spreadPercent: spreadPercent.toFixed(2),
+            fixedCost: Number(boliviaDest.payoutFixedFee || 0),
+            isManual: true
+          });
+        }
+      }
+    } catch (boErr) {
+      console.warn('⚠️ [AlytoSummary] Error inyectando tasa manual de Bolivia:', boErr.message);
+    }
 
     console.log(`✅ [AlytoSummary] Tasas calculadas: ${alytoRates.length}\n`);
 
