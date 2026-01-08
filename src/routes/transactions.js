@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
     let query = Transaction.find(filters);
 
     // Campos a seleccionar según el tipo de acceso
-    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry';
+    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry metadata beneficiary_cc account_type concept purpose';
 
     if (isAdmin) {
       projection += ' vitaResponse createdBy fee feePercent feeOriginAmount feeAudit';
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
       query = query.populate('createdBy', 'name email');
     } else if (isPublicOrderQuery) {
       // Para consultas públicas por order, mostrar solo datos básicos (sin info financiera sensible del negocio)
-      projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry';
+      projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry metadata beneficiary_cc account_type concept purpose';
     }
 
     // 3. Consulta a la Base de Datos: Realiza dos consultas eficientes
