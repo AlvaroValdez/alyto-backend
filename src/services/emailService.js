@@ -1,13 +1,18 @@
 import nodemailer from 'nodemailer';
 
 // Configurar transporter de Nodemailer con GoDaddy SMTP
+// Usando puerto 587 con STARTTLS (mejor compatibilidad con Render)
 const transporter = nodemailer.createTransport({
   host: 'smtpout.secureserver.net',
-  port: 465,
-  secure: true, // true para puerto 465, false para otros puertos
+  port: 587,
+  secure: false, // true para 465, false para otros puertos
   auth: {
     user: process.env.EMAIL_FROM, // noreply@alyto.app
     pass: process.env.EMAIL_PASSWORD // Contraseña del email en GoDaddy
+  },
+  tls: {
+    ciphers: 'SSLv3',
+    rejectUnauthorized: false
   }
 });
 
