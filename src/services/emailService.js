@@ -54,8 +54,7 @@ export const getVerificationEmailTemplate = (verificationUrl, userName) => {
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #233E58 0%, #20c997 100%); border-radius: 8px 8px 0 0;">
-              <img src="https://res.cloudinary.com/dq6fmcodk/image/upload/v1737406652/alyto-logo-white.png" alt="Alyto" style="height: 50px; margin-bottom: 15px;" />
-              <p style="margin: 10px 0 0; color: #ffffff; font-size: 14px; opacity: 0.9;">Remesas Internacionales</p>
+              <h1 style="margin: 0; color: #ffffff; font-size: 36px; font-weight: bold; letter-spacing: 2px;">alyto</h1>
             </td>
           </tr>
           
