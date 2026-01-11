@@ -30,6 +30,7 @@ import adminTreasuryRoutes from './routes/adminTreasury.js';
 import adminComplianceRoutes from './routes/adminCompliance.js';
 import directPayRoutes from './routes/directPay.js';
 import vitaWebhookRoutes from './routes/vitaWebhook.js';
+import './utils/envValidation.js';
 
 const app = express();
 

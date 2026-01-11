@@ -37,7 +37,7 @@ router.post('/register', async (req, res) => {
     const verificationToken = newUser.generateEmailVerificationToken();
     await newUser.save();
 
-    // 3. Enviar correo (Asíncrono - No bloqueante)
+    // 3. Enviar correo (Con validación de éxito)
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
     const message = `
       <p>¡Bienvenido a AVF Remesas!</p>
@@ -46,16 +46,39 @@ router.post('/register', async (req, res) => {
       <p>Este enlace expirará en 10 minutos.</p>
     `;
 
-    sendEmail({
-      to: newUser.email,
-      subject: 'Verificación de Correo Electrónico - AVF Remesas',
-      html: message,
-    }).catch(err => console.error('[auth/register] Error envío email:', err.message));
+    // Intentar enviar email y manejar fallos
+    let emailSent = true;
+    try {
+      const emailResult = await sendEmail({
+        to: newUser.email,
+        subject: 'Verificación de Correo Electrónico - AVF Remesas',
+        html: message,
+      });
 
-    res.status(201).json({
-      ok: true,
-      message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.'
-    });
+      if (!emailResult.success) {
+        emailSent = false;
+        console.error('[auth/register] ⚠️ Email no enviado, pero usuario creado');
+      }
+    } catch (err) {
+      emailSent = false;
+      console.error('[auth/register] ❌ Error enviando email:', err.message);
+    }
+
+    // Respuesta diferenciada según éxito de email
+    if (emailSent) {
+      res.status(201).json({
+        ok: true,
+        message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.',
+        emailSent: true
+      });
+    } else {
+      res.status(201).json({
+        ok: true,
+        message: 'Usuario registrado, pero hubo un problema enviando el email de verificación. Por favor, contacta a soporte para verificar tu cuenta.',
+        emailSent: false,
+        warning: 'Email no enviado'
+      });
+    }
 
   } catch (error) {
     console.error('[auth/register] Error:', error);
