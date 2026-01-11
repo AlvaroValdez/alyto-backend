@@ -93,4 +93,40 @@ router.put('/users/:userId', async (req, res) => {
   }
 });
 
+// DELETE /api/admin/users/:userId - Eliminar un usuario
+router.delete('/users/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    // Safety: Prevent admin from deleting themselves
+    if (req.user && req.user._id.toString() === userId) {
+      return res.status(403).json({
+        ok: false,
+        error: 'No puedes eliminar tu propia cuenta'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+    }
+
+    const userName = user.name;
+    await User.findByIdAndDelete(userId);
+
+    console.log(`✅ [Admin] Usuario eliminado: ${userName} (ID: ${userId})`);
+
+    res.json({
+      ok: true,
+      message: `Usuario ${userName} eliminado exitosamente`
+    });
+  } catch (error) {
+    console.error('[Admin] Error deleting user:', error);
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({ ok: false, error: 'ID de usuario inválido' });
+    }
+    res.status(500).json({ ok: false, error: 'Error al eliminar usuario' });
+  }
+});
+
 export default router;
