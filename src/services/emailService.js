@@ -31,9 +31,12 @@ export const sendEmail = async (options) => {
 };
 
 /**
- * Template para email de verificación
+ * Template para email de verificación con logo de Alyto
  */
 export const getVerificationEmailTemplate = (verificationUrl, userName) => {
+  // Debug log para verificar URL
+  console.log('🔗 [Email] Verification URL:', verificationUrl);
+
   return `
 <!DOCTYPE html>
 <html lang="es">
@@ -48,10 +51,10 @@ export const getVerificationEmailTemplate = (verificationUrl, userName) => {
       <td align="center" style="padding: 40px 20px;">
         <!-- Container -->
         <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <!-- Header -->
+          <!-- Header with Logo -->
           <tr>
-            <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg,  #233E58 0%, #20c997 100%); border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">Alyto</h1>
+            <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #233E58 0%, #20c997 100%); border-radius: 8px 8px 0 0;">
+              <img src="https://res.cloudinary.com/dq6fmcodk/image/upload/v1737406652/alyto-logo-white.png" alt="Alyto" style="height: 50px; margin-bottom: 15px;" />
               <p style="margin: 10px 0 0; color: #ffffff; font-size: 14px; opacity: 0.9;">Remesas Internacionales</p>
             </td>
           </tr>
@@ -105,7 +108,7 @@ export const getVerificationEmailTemplate = (verificationUrl, userName) => {
           <tr>
             <td style="padding: 30px 40px; background-color: #f8f8f8; border-radius: 0 0 8px 8px; text-align: center;">
               <p style="margin: 0 0 10px; color: #999999; font-size: 14px;">
-                © 2024 Alyto. Todos los derechos reservados.
+                © 2026 Alyto. Todos los derechos reservados.
               </p>
               <p style="margin: 0; color: #999999; font-size: 12px;">
                 Remesas internacionales seguras y confiables
