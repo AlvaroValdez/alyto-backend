@@ -1,10 +1,18 @@
-import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 
-// Configura la clave API de SendGrid al iniciar el servicio
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Configurar transporter de Nodemailer con GoDaddy SMTP
+const transporter = nodemailer.createTransport({
+  host: 'smtpout.secureserver.net',
+  port: 465,
+  secure: true, // true para puerto 465, false para otros puertos
+  auth: {
+    user: process.env.EMAIL_FROM, // noreply@alyto.app
+    pass: process.env.EMAIL_PASSWORD // Contraseña del email en GoDaddy
+  }
+});
 
 /**
- * Función genérica para enviar correos electrónicos usando SendGrid.
+ * Función genérica para enviar correos electrónicos usando Nodemailer + GoDaddy SMTP.
  * @param {object} options - Opciones del correo.
  * @param {string} options.to - El destinatario.
  * @param {string} options.subject - El asunto.
@@ -12,27 +20,39 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
  * @param {string} options.html - El contenido en HTML.
  */
 export const sendEmail = async (options) => {
-  const msg = {
+  const mailOptions = {
+    from: `"Alyto Remesas" <${process.env.EMAIL_FROM}>`, // Nombre + Email
     to: options.to,
-    from: process.env.EMAIL_FROM, // Debe ser el email verificado en SendGrid
     subject: options.subject,
     text: options.text,
     html: options.html,
   };
 
   try {
-    await sgMail.send(msg);
-    console.log(`✅ Email enviado a ${options.to} vía SendGrid.`);
-    return { success: true };
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email enviado exitosamente a ${options.to}`);
+    console.log(`   Message ID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`❌ Error enviando email a ${options.to} vía SendGrid:`, error);
-    
-    // SendGrid puede devolver errores detallados en la respuesta
-    if (error.response) {
-      console.error(error.response.body.errors);
+    console.error(`❌ Error enviando email a ${options.to}:`, error);
+
+    // Log más detallado del error
+    if (error.code) {
+      console.error(`   Error code: ${error.code}`);
     }
-    
-    // Devolvemos un fallo para que la lógica asíncrona en auth.js no se rompa
+    if (error.response) {
+      console.error(`   SMTP response: ${error.response}`);
+    }
+
     return { success: false, error: error.message };
   }
 };
+
+// Verificar conexión SMTP al iniciar (opcional, útil para debugging)
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ [Email Service] Error conectando a GoDaddy SMTP:', error);
+  } else {
+    console.log('✅ [Email Service] Conexión SMTP con GoDaddy lista');
+  }
+});

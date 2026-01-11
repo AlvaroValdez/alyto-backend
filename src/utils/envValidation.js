@@ -1,12 +1,12 @@
 // Environment Variable Validation Script
-// Add this at the top of backend/src/app.js or server.js
+// Updated for Nodemailer + GoDaddy SMTP
 
 console.log('\n🔧 [Env Validation] Checking critical environment variables...');
 
 const criticalEnvVars = {
     'FRONTEND_URL': process.env.FRONTEND_URL,
     'EMAIL_FROM': process.env.EMAIL_FROM,
-    'SENDGRID_API_KEY': process.env.SENDGRID_API_KEY ? '✅ SET (length: ' + process.env.SENDGRID_API_KEY.length + ')' : '❌ MISSING',
+    'EMAIL_PASSWORD': process.env.EMAIL_PASSWORD ? '✅ SET (length: ' + process.env.EMAIL_PASSWORD.length + ')' : '❌ MISSING',
     'JWT_SECRET': process.env.JWT_SECRET ? '✅ SET' : '❌ MISSING',
     'MONGODB_URI': process.env.MONGODB_URI ? '✅ SET' : '❌ MISSING',
 };
@@ -19,7 +19,7 @@ Object.entries(criticalEnvVars).forEach(([key, value]) => {
         hasError = true;
     } else {
         // Don't log full value for security, just status
-        if (key === 'SENDGRID_API_KEY') {
+        if (key === 'EMAIL_PASSWORD') {
             console.log(`  ✅ ${key}: ${value}`);
         } else if (key === 'JWT_SECRET' || key === 'MONGODB_URI') {
             console.log(`  ✅ ${key}: SET`);
