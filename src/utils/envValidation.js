@@ -8,7 +8,7 @@ const criticalEnvVars = {
     'EMAIL_FROM': process.env.EMAIL_FROM,
     'EMAIL_PASSWORD': process.env.EMAIL_PASSWORD ? '✅ SET (length: ' + process.env.EMAIL_PASSWORD.length + ')' : '❌ MISSING',
     'JWT_SECRET': process.env.JWT_SECRET ? '✅ SET' : '❌ MISSING',
-    'MONGODB_URI': process.env.MONGODB_URI ? '✅ SET' : '❌ MISSING',
+    'MONGO_URI': process.env.MONGO_URI ? '✅ SET' : '❌ MISSING',
 };
 
 let hasError = false;
@@ -21,7 +21,7 @@ Object.entries(criticalEnvVars).forEach(([key, value]) => {
         // Don't log full value for security, just status
         if (key === 'EMAIL_PASSWORD') {
             console.log(`  ✅ ${key}: ${value}`);
-        } else if (key === 'JWT_SECRET' || key === 'MONGODB_URI') {
+        } else if (key === 'JWT_SECRET' || key === 'MONGO_URI') {
             console.log(`  ✅ ${key}: SET`);
         } else {
             console.log(`  ✅ ${key}: ${value}`);
