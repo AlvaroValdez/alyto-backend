@@ -15,6 +15,7 @@
     "bcryptjs": "^3.0.2",
     "cloudinary": "^1.41.3",
     "cors": "^2.8.5",
+    "cross-env": "^10.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
