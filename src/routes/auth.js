@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
 import { jwtSecret, jwtExpiresIn } from '../config/env.js';
-import { sendEmail } from '../services/emailService.js';
+import { sendEmail, getVerificationEmailTemplate } from '../services/emailService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
 
@@ -39,20 +39,14 @@ router.post('/register', async (req, res) => {
 
     // 3. Enviar correo (Con validación de éxito)
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
-    const message = `
-      <p>¡Bienvenido a AVF Remesas!</p>
-      <p>Por favor, haz clic en el siguiente enlace para verificar tu cuenta:</p>
-      <p><a href="${verificationUrl}" target="_blank">Verificar mi correo</a></p>
-      <p>Este enlace expirará en 10 minutos.</p>
-    `;
-
+    const htmlMessage = getVerificationEmailTemplate(verificationUrl, newUser.name);
     // Intentar enviar email y manejar fallos
     let emailSent = true;
     try {
       const emailResult = await sendEmail({
         to: newUser.email,
-        subject: 'Verificación de Correo Electrónico - AVF Remesas',
-        html: message,
+        subject: '✅ Verifica tu cuenta en Alyto',
+        html: htmlMessage,
       });
 
       if (!emailResult.success) {
@@ -334,7 +328,7 @@ router.post('/forgotpassword', async (req, res) => {
     `;
 
     try {
-      await sendEmail({ to: user.email, subject: 'Restablecer Contraseña - AVF', html: message });
+      await sendEmail({ to: user.email, subject: 'Restablecer Contraseña - Alyto', html: message });
       res.json({ ok: true, message: 'Correo enviado.' });
     } catch (err) {
       user.resetPasswordToken = undefined;
