@@ -50,7 +50,16 @@ const userSchema = new mongoose.Schema({
   },
 
   // Bandera virtual para compatibilidad con lógica anterior
-  isProfileComplete: { type: Boolean, default: false }
+  isProfileComplete: { type: Boolean, default: false },
+
+  // --- CONTRATO DE MANDATO Y COMPLIANCE (UIF/ASFI) ---
+  contractAcceptance: {
+    accepted: { type: Boolean, default: false },
+    version: { type: String }, // e.g., "v1.0"
+    acceptedAt: { type: Date },
+    ipAddress: { type: String },
+    deviceFingerprint: { type: String }
+  }
 }, {
   timestamps: true
 });

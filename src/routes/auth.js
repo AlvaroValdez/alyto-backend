@@ -32,8 +32,33 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'El correo electrónico ya está registrado.' });
     }
 
+    // --- VALIDACIÓN DE CONTRATO (COMPLIANCE) ---
+    const { contractAccepted, contractVersion, deviceFingerprint } = req.body;
+
+    // Si no acepta el contrato, no puede registrarse (Bloqueo Legal)
+    if (contractAccepted !== true) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Debes aceptar el Contrato de Mandato y Declaración de Origen de Fondos para continuar.'
+      });
+    }
+
+    // Obtener IP del cliente
+    const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
     // 2. Crear usuario
-    const newUser = new User({ name, email, password });
+    const newUser = new User({
+      name,
+      email,
+      password,
+      contractAcceptance: {
+        accepted: true,
+        version: contractVersion || 'v1.0',
+        acceptedAt: new Date(),
+        ipAddress: ipAddress,
+        deviceFingerprint: deviceFingerprint || 'unknown'
+      }
+    });
     const verificationToken = newUser.generateEmailVerificationToken();
     await newUser.save();
 
