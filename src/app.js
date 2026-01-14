@@ -42,6 +42,7 @@ app.set('trust proxy', 1);
 // --- Configuración de CORS ---
 const allowedOrigins = [
   'http://localhost:5173', // Frontend dev
+  'http://localhost:5174', // Frontend dev (alternate port)
   'https://avf-vita-fe10.onrender.com' // Frontend producción
 ];
 
