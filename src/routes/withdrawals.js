@@ -71,7 +71,6 @@ router.post('/', async (req, res) => {
 
     const finalCustomerData = buildFinalCustomerData(req);
 
-    // Flujos manuales Bolivia
     const isManualOnRamp = currency?.toUpperCase() === 'BOB';
     const isManualOffRamp = country?.toUpperCase() === 'BO';
     const orderId = order || `ORD-${Date.now()}`;
@@ -83,13 +82,16 @@ router.post('/', async (req, res) => {
 
     console.log('[withdrawals] Purpose enviado:', purpose);
 
-    // 💰 Verificar Profit Retention Mode
+    // 💰 Lógica de Ganancia (Profit Retention)
+    // Cuando está activo (ProfitRetention=true), separamos en dos pasos:
+    // 1. Payin (Cliente paga monto completo)
+    // 2. Payout (Nosotros pagamos monto ajustado)
+    let adjustedWithdrawalAmount = Number(amount);
+
     const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
     const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
     console.log(`[withdrawals] Config for ${inferredOriginCountry}: ProfitRetention=${rule?.profitRetention}`);
 
-    // Calcular monto ajustado para withdrawal (si aplica)
-    let adjustedWithdrawalAmount = Number(amount);
     if (rule?.profitRetention && !isManualOffRamp) {
       if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
         const targetDest = Number(req.body.amountsTracking.destReceiveAmount);
@@ -100,7 +102,7 @@ router.post('/', async (req, res) => {
 
           if (calculatedSource <= (Number(amount) + 1)) {
             adjustedWithdrawalAmount = calculatedSource;
-            console.log(`[withdrawals] 💰 Adjusted amount: ${adjustedWithdrawalAmount} (client pays: ${amount}, profit: ${Number(amount) - adjustedWithdrawalAmount})`);
+            console.log(`[withdrawals] 💰 Profit Retention Active: Withdrawal diferido será de ${adjustedWithdrawalAmount} (client pays: ${amount}, profit: ${Number(amount) - adjustedWithdrawalAmount})`);
           } else {
             console.warn('[withdrawals] ⚠️ Calculated cost > Price. Using original.');
           }
@@ -108,12 +110,14 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 🏗️ Construir payloads base (SOLO campos que Vita acepta)
-    const baseVitaFields = {
+    // Payload completo para Withdrawal (con datos de banco, beneficiario, etc.)
+    const fullWithdrawalPayload = {
       url_notify: notifyUrl,
       currency: String(currency).toLowerCase(),
       country: String(country).toUpperCase(),
+      amount: adjustedWithdrawalAmount,
       order: orderId,
+      transactions_type: 'withdrawal',
       wallet: vita.walletUUID,
       beneficiary_type,
       beneficiary_first_name,
@@ -151,22 +155,16 @@ router.post('/', async (req, res) => {
     } else {
       // 🔄 FLUJO BIFURCADO: Two-Step vs Legacy
       if (rule?.profitRetention) {
-        // ✅ TWO-STEP: Payment Order + Deferred Withdrawal
-        console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order (client pays full amount)...');
+        // ✅ TWO-STEP: Payment Order (Payin) + Deferred Withdrawal (Payout)
+        console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order...');
 
         try {
-          // Payment Order payload (SOLO campos necesarios para Payin)
+          // Payload ESPECÍFICO para Payment Order (MINIMALISTA como en paymentOrders.js)
           const paymentOrderPayload = {
-            url_notify: notifyUrl,
-            currency: String(currency).toLowerCase(),
-            country: String(country).toUpperCase(),
-            amount: Number(amount), // Cliente paga monto COMPLETO
-            order: orderId,
-            wallet: vita.walletUUID,
-            purpose,
-            purpose_comentary: purpose_comentary || 'Pago servicios',
-            ...finalCustomerData // ✅ Restaurar datos del cliente (fc_*)
-            // ❌ NO enviar datos bancarios (account_*, bank_*, beneficiary_*)
+            amount: Math.round(Number(amount)),
+            country_iso_code: String(country).toUpperCase(),
+            issue: `Order ${orderId}`,
+            // url_notify: se usa la configurada en el Dashboard de Vita
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
@@ -174,64 +172,37 @@ router.post('/', async (req, res) => {
 
           vitaResponse = poData;
           vitaPaymentOrderId = poData?.id || poData?.uid || null;
-          checkoutUrl = poData?.checkout_url || poData?.data?.checkout_url || poData?.attributes?.checkout_url || null;
+          // Vita devuelve la URL en attributes.url o directament en url
+          checkoutUrl = poData?.attributes?.url || poData?.url || poData?.checkout_url || null;
 
-          // Preparar withdrawal diferido (se ejecutará en IPN post-pago)
-          deferredWithdrawalPayload = {
-            ...baseVitaFields,
-            amount: adjustedWithdrawalAmount, // ⭐ Monto ajustado (profit retenido)
-            transactions_type: 'withdrawal'
-          };
+          // Guardar el payload del withdrawal diferido (Step 2)
+          deferredWithdrawalPayload = fullWithdrawalPayload;
 
           payinStatus = 'pending';
           payoutStatus = 'pending';
           transactionStatus = 'pending';
 
-          console.log(`✅ [withdrawals] Payment Order created: ${vitaPaymentOrderId}. Withdrawal will execute post-IPN (amount: ${adjustedWithdrawalAmount}).`);
+          console.log(`✅ [withdrawals] Payment Order created: ${vitaPaymentOrderId}. Checkout URL: ${checkoutUrl}`);
 
         } catch (firstError) {
-          const errorData = firstError.response?.data?.error || {};
-          const msg = `${errorData?.message || ''}`.toLowerCase();
-          if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
-            console.warn('⚠️ [withdrawals] Prices expired. Refreshing...');
-            await forceRefreshPrices();
-
-            const paymentOrderPayload2 = {
-              url_notify: notifyUrl,
-              currency: String(currency).toLowerCase(),
-              country: String(country).toUpperCase(),
-              amount: Number(amount),
-              order: orderId,
-              wallet: vita.walletUUID,
-              purpose,
-              purpose_comentary: purpose_comentary || 'Pago servicios',
-              ...finalCustomerData
-            };
-
-            const poResp2 = await createPaymentOrder(paymentOrderPayload2);
-            const poData2 = poResp2?.data ?? poResp2;
-            vitaResponse = poData2;
-            vitaPaymentOrderId = poData2?.id || poData2?.uid || null;
-            checkoutUrl = poData2?.checkout_url || poData2?.data?.checkout_url || null;
-            deferredWithdrawalPayload = { ...baseVitaFields, amount: adjustedWithdrawalAmount, transactions_type: 'withdrawal' };
-            console.log('✅ [withdrawals] Retry successful.');
-          } else {
-            throw firstError;
-          }
+          console.error('❌ [withdrawals] Error creating Payment Order:', firstError.response?.data || firstError.message);
+          throw firstError;
         }
 
       } else {
-        // ❌ LEGACY: Direct Withdrawal (one-step, sin profit retention)
-        console.log('[withdrawals] 📦 Legacy Flow: Direct Withdrawal...');
+        // ❌ LEGACY: Direct Withdrawal (one-step)
+        // Usamos el payload completo pero con amount original (si no hay retencion, amount=adjusted)
+        // Nota: en legacy, amount y adjustedWithdrawalAmount son iguales porque if(rule.profitRetention) es false
 
-        const withdrawalPayload = {
-          ...baseVitaFields,
-          amount: Number(amount),
-          transactions_type: 'withdrawal'
+        const legacyPayload = {
+          ...fullWithdrawalPayload,
+          amount: Number(amount) // Asegurar que sale el monto completo si no hay ProfitRetention
         };
 
+        console.log('[withdrawals] 📦 Legacy Flow: Direct Withdrawal...');
+
         try {
-          const resp = await createWithdrawal(withdrawalPayload);
+          const resp = await createWithdrawal(legacyPayload);
           const raw = resp?.data ?? resp;
 
           vitaResponse = raw;
@@ -251,11 +222,12 @@ router.post('/', async (req, res) => {
         } catch (firstError) {
           const errorData = firstError.response?.data?.error || {};
           const msg = `${errorData?.message || ''}`.toLowerCase();
+          // Retry logic para precios expirados
           if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
             console.warn('⚠️ [withdrawals] Prices expired. Refreshing...');
             await forceRefreshPrices();
             await new Promise(r => setTimeout(r, 1500));
-            const resp2 = await createWithdrawal(withdrawalPayload);
+            const resp2 = await createWithdrawal(legacyPayload);
             const raw2 = resp2?.data ?? resp2;
             vitaResponse = raw2;
             vitaTxnId = raw2?.id || raw2?.data?.id || null;
@@ -275,12 +247,6 @@ router.post('/', async (req, res) => {
     }
 
     // Guardar transacción
-    console.log('🔍 [withdrawals] Fee values del body:', {
-      fee: req.body.fee,
-      feePercent: req.body.feePercent,
-      feeOriginAmount: req.body.feeOriginAmount
-    });
-
     const newTransaction = await Transaction.create({
       order: orderId,
       country,
@@ -295,7 +261,7 @@ router.post('/', async (req, res) => {
       beneficiary_document_number,
       status: transactionStatus,
       vitaResponse,
-      withdrawalPayload: deferredWithdrawalPayload || { ...baseVitaFields, amount: Number(amount), transactions_type: 'withdrawal' },
+      withdrawalPayload: deferredWithdrawalPayload || fullWithdrawalPayload,
       vitaPaymentOrderId,
       vitaWithdrawalId,
       payinStatus,
@@ -312,13 +278,7 @@ router.post('/', async (req, res) => {
       metadata: metadata || null
     });
 
-    console.log('✅ [withdrawals] TX saved:', {
-      id: newTransaction._id,
-      paymentOrderId: vitaPaymentOrderId,
-      withdrawalId: vitaWithdrawalId,
-      payinStatus,
-      payoutStatus
-    });
+    console.log('✅ [withdrawals] TX guardada:', newTransaction._id);
 
     return res.status(201).json({
       ok: true,
@@ -333,7 +293,6 @@ router.post('/', async (req, res) => {
 
   } catch (e) {
     console.error('❌ [withdrawals] Error Final:', e);
-    if (e.stack) console.error(e.stack);
 
     if (e.response) {
       return res.status(e.response.status).json({
