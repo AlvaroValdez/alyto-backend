@@ -338,6 +338,11 @@ export const createPaymentOrder = async (payload) => {
   return unwrap(res);
 };
 
+export const getPaymentOrder = async (id) => {
+  const res = await client.get(`/payment_orders/${id}`);
+  return unwrap(res);
+};
+
 // 7. EJECUTAR PAGO DIRECTO
 /**
  * Ejecuta el pago directo para CUALQUIER orden de pago. [cite: 12]

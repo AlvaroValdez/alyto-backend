@@ -249,4 +249,87 @@ router.post('/:vitaOrderId/execute', async (req, res, next) => {
   }
 });
 
+// POST /api/payment-orders/:orderId/check-status
+// Fallback: Verificar estado en Vita y ejecutar withdrawal si es necesario
+router.post('/:orderId/check-status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    console.log(`[check-status] Verificando orden: ${orderId}`);
+
+    const transaction = await Transaction.findOne({ order: orderId });
+    if (!transaction) {
+      return res.status(404).json({ ok: false, error: 'Transacción no encontrada' });
+    }
+
+    // Si ya está completada, retornar
+    if (transaction.payinStatus === 'completed' && transaction.payoutStatus !== 'pending') {
+      return res.json({ ok: true, status: 'completed', transaction });
+    }
+
+    // Consultar estado en Vita
+    // Nota: Necesitamos el ID de vita, no el nuestro.
+    const vitaId = transaction.vitaPaymentOrderId;
+    if (!vitaId) {
+      return res.status(400).json({ ok: false, error: 'No hay ID de Vita asociado' });
+    }
+
+    // Usar cliente de Vita para consultar la orden
+    // getPaymentOrderAttempt no sirve aquí porque queremos la orden general
+    // Improvisamos una llamada directa o usamos una función existente
+    // Reusamos createPaymentOrder/executeDirectPayment importados? No tienen get.
+    // Importamos el cliente axios directo o agregamos getPaymentOrder a vitaService.
+    const { getPaymentOrder } = await import('../services/vitaService.js');
+
+    let vitaStatus = 'pending';
+    try {
+      const vitaOrder = await getPaymentOrder(vitaId);
+      const attrs = vitaOrder?.data?.attributes || vitaOrder?.attributes || {};
+      vitaStatus = attrs.status;
+      console.log(`[check-status] Estado en Vita: ${vitaStatus}`);
+    } catch (err) {
+      console.error('[check-status] Error consultando Vita:', err.message);
+      // Si falla la consulta, no podemos avanzar
+      return res.status(502).json({ ok: false, error: 'Error consultando a Vita' });
+    }
+
+    if (vitaStatus === 'completed' || vitaStatus === 'successful' || vitaStatus === 'paid') {
+      // 🟢 PAGO CONFIRMADO
+      transaction.payinStatus = 'completed';
+
+      // Ejecutar withdrawal diferido si está pendiente
+      if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
+        console.log(`[check-status] ⭐ Ejecutando withdrawal diferido por validación manual`);
+
+        const { createWithdrawal } = await import('../services/vitaService.js');
+        try {
+          const withdrawalResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
+          const wData = withdrawalResp?.data ?? withdrawalResp;
+
+          transaction.vitaWithdrawalId = wData?.id || wData?.data?.id || null;
+          transaction.payoutStatus = 'processing';
+          transaction.status = 'processing';
+          console.log(`✅ [check-status] Withdrawal ejecutado: ${transaction.vitaWithdrawalId}`);
+        } catch (wError) {
+          console.error('[check-status] ❌ Error executing withdrawal:', wError);
+          transaction.payoutStatus = 'failed';
+          transaction.status = 'failed';
+        }
+      }
+
+      await transaction.save();
+    }
+
+    return res.json({
+      ok: true,
+      status: transaction.status,
+      payinStatus: transaction.payinStatus,
+      payoutStatus: transaction.payoutStatus
+    });
+
+  } catch (e) {
+    console.error('[check-status] Error:', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 export default router;
