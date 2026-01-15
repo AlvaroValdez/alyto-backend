@@ -57,6 +57,7 @@ router.post('/', [
       country_iso_code: safeCountry,
       issue: `Pago de remesa #${orderId}`,
       success_redirect_url: successRedirectUrl,
+      url_notify: vita.notifyUrl || 'https://google.com'
     };
 
     const response = await createPaymentOrder(payload);
