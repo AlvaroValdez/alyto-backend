@@ -155,17 +155,18 @@ router.post('/', async (req, res) => {
         console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order (client pays full amount)...');
 
         try {
-          // Payment Order payload (SOLO campos mínimos - NO incluir datos de cuenta bancaria)
+          // Payment Order payload (SOLO campos necesarios para Payin)
           const paymentOrderPayload = {
             url_notify: notifyUrl,
             currency: String(currency).toLowerCase(),
             country: String(country).toUpperCase(),
-            amount: Number(amount), // Cliente paga monto COMPLETO (con spread)
+            amount: Number(amount), // Cliente paga monto COMPLETO
             order: orderId,
             wallet: vita.walletUUID,
             purpose,
-            purpose_comentary: purpose_comentary || 'Pago servicios'
-            // ❌ NO enviar: beneficiary_*, account_*, bank_code (son para withdrawal)
+            purpose_comentary: purpose_comentary || 'Pago servicios',
+            ...finalCustomerData // ✅ Restaurar datos del cliente (fc_*)
+            // ❌ NO enviar datos bancarios (account_*, bank_*, beneficiary_*)
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
@@ -203,7 +204,8 @@ router.post('/', async (req, res) => {
               order: orderId,
               wallet: vita.walletUUID,
               purpose,
-              purpose_comentary: purpose_comentary || 'Pago servicios'
+              purpose_comentary: purpose_comentary || 'Pago servicios',
+              ...finalCustomerData
             };
 
             const poResp2 = await createPaymentOrder(paymentOrderPayload2);
