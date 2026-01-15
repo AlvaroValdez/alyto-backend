@@ -10,6 +10,7 @@ const transactionConfigSchema = new mongoose.Schema({
   minAmount: { type: Number, default: 5000 },
   fixedFee: { type: Number, default: 0 },
   isEnabled: { type: Boolean, default: true },
+  profitRetention: { type: Boolean, default: false }, // ✅ Si true, enviamos monto destino fijo para retener profit
   alertMessage: { type: String, default: '' },
 
   provider: {

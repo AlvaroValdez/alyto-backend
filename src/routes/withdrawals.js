@@ -87,11 +87,41 @@ router.post('/', async (req, res) => {
 
     console.log('[withdrawals] Purpose enviado:', purpose); // Debug log
 
+    // 💰 Lógica de Retención de Profit (Fixed Destination Amount)
+    let amountToSend = Number(amount);
+
+    // Obtener configuración para verificar si profitRetention está activo
+    // (Import dinámico para evitar ciclos si fuera necesario, o uso directo)
+    const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
+    const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
+
+    if (rule?.profitRetention && !isManualOffRamp) { // Solo para Vita automático
+      if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
+        const targetDest = Number(req.body.amountsTracking.destReceiveAmount);
+        const rate = Number(req.body.rateTracking.vitaRate);
+
+        if (targetDest > 0 && rate > 0) {
+          // Cálculo inverso: Cuánto CLP necesito para generar EXACTAMENTE targetDest COP al rate real
+          const calculatedSource = targetDest / rate;
+
+          // Safety Check: Nunca enviar MÁS de lo que pagó el cliente (margin call risk)
+          // Permitimos un margen de error de 1.0 (rounding)
+          if (calculatedSource <= (amountToSend + 1)) {
+            // Redondear a 2 decimales para evitar problemas de precisión
+            amountToSend = Number(calculatedSource.toFixed(2));
+            console.log(`[withdrawals] 💰 Profit Retention Active: Enviando coste real ${amountToSend} ${currency} (en lugar de ${amount}) para entregar ${targetDest} destino.`);
+          } else {
+            console.warn('[withdrawals] ⚠️ Profit Retention Safety: Coste calculado > Precio venta. Enviando monto original.', { calculatedSource, amountToSend });
+          }
+        }
+      }
+    }
+
     const withdrawalPayload = {
       url_notify: notifyUrl,
       currency: String(currency).toLowerCase(),
       country: String(country).toUpperCase(),
-      amount: Number(amount),
+      amount: amountToSend, // ✅ Usamos el monto ajustado (o el original)
       order: orderId,
       transactions_type: 'withdrawal',
       wallet: vita.walletUUID,

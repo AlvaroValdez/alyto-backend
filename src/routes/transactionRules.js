@@ -74,6 +74,7 @@ router.put('/', protect, isAdmin, async (req, res) => {
       minAmount: safeNumber(body.minAmount, 5000),
       fixedFee: safeNumber(body.fixedFee, 0),
       isEnabled: body.isEnabled,
+      profitRetention: body.profitRetention,
       alertMessage: body.alertMessage,
       provider: body.provider,
       localBankDetails: body.localBankDetails,
