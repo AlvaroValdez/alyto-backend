@@ -82,58 +82,12 @@ router.post('/', async (req, res) => {
 
     console.log('[withdrawals] Purpose enviado:', purpose);
 
-    // 💰 Lógica de Ganancia (Profit Retention)
-    // Cuando está activo (ProfitRetention=true), separamos en dos pasos:
-    // 1. Payin (Cliente paga monto completo)
-    // 2. Payout (Nosotros pagamos monto ajustado)
-    let adjustedWithdrawalAmount = Number(amount);
-
+    // 💰 Verificar configuración de Profit Retention
     const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
     const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
     console.log(`[withdrawals] Config for ${inferredOriginCountry}: ProfitRetention=${rule?.profitRetention}`);
 
-    if (rule?.profitRetention && !isManualOffRamp) {
-      if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
-        const targetDest = Number(req.body.amountsTracking.destReceiveAmount);
-        const rate = Number(req.body.rateTracking.vitaRate);
-
-        if (targetDest > 0 && rate > 0) {
-          const calculatedSource = Number((targetDest / rate).toFixed(2));
-
-          if (calculatedSource <= (Number(amount) + 1)) {
-            adjustedWithdrawalAmount = calculatedSource;
-            console.log(`[withdrawals] 💰 Profit Retention Active: Withdrawal diferido será de ${adjustedWithdrawalAmount} (client pays: ${amount}, profit: ${Number(amount) - adjustedWithdrawalAmount})`);
-          } else {
-            console.warn('[withdrawals] ⚠️ Calculated cost > Price. Using original.');
-          }
-        }
-      }
-    }
-
-    // Payload completo para Withdrawal (con datos de banco, beneficiario, etc.)
-    const fullWithdrawalPayload = {
-      url_notify: notifyUrl,
-      currency: String(currency).toLowerCase(),
-      country: String(country).toUpperCase(),
-      amount: adjustedWithdrawalAmount,
-      order: orderId,
-      transactions_type: 'withdrawal',
-      wallet: vita.walletUUID,
-      beneficiary_type,
-      beneficiary_first_name,
-      beneficiary_last_name,
-      beneficiary_email,
-      beneficiary_address,
-      beneficiary_document_type,
-      beneficiary_document_number,
-      account_type_bank,
-      account_bank,
-      bank_code: bank_code !== undefined ? Number(bank_code) : undefined,
-      purpose,
-      purpose_comentary: purpose_comentary || 'Pago servicios',
-      ...finalCustomerData
-    };
-
+    // Variables de control
     let vitaResponse = {};
     let transactionStatus = 'pending';
     let checkoutUrl = null;
@@ -156,15 +110,36 @@ router.post('/', async (req, res) => {
       // 🔄 FLUJO BIFURCADO: Two-Step vs Legacy
       if (rule?.profitRetention) {
         // ✅ TWO-STEP: Payment Order (Payin) + Deferred Withdrawal (Payout)
-        console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order...');
+        console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order for profit retention...');
+
+        // Calcular monto ajustado para withdrawal (usando tasa Vita real)
+        let adjustedWithdrawalAmount = Number(amount);
+
+        if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
+          const targetDest = Number(req.body.amountsTracking.destReceiveAmount);
+          const vitaRate = Number(req.body.rateTracking.vitaRate);
+
+          if (targetDest > 0 && vitaRate > 0) {
+            // Cálculo inverso: CLP necesarios = destino_prometido / tasa_vita_real
+            const calculatedSource = Number((targetDest / vitaRate).toFixed(2));
+
+            // Safety check
+            if (calculatedSource <= (Number(amount) + 1)) {
+              adjustedWithdrawalAmount = calculatedSource;
+              const profit = Number(amount) - adjustedWithdrawalAmount;
+              console.log(`[withdrawals] 💰 Profit calculation: Client pays ${amount}, we send ${adjustedWithdrawalAmount}, profit: ${profit} ${currency}`);
+            } else {
+              console.warn('[withdrawals] ⚠️ Calculated cost > client payment. Using original amount.');
+            }
+          }
+        }
 
         try {
-          // Payload ESPECÍFICO para Payment Order (MINIMALISTA como en paymentOrders.js)
+          // PASO 1: Crear Payment Order (cliente paga monto COMPLETO)
           const paymentOrderPayload = {
-            amount: Math.round(Number(amount)),
-            country_iso_code: String(country).toUpperCase(),
-            issue: `Order ${orderId}`,
-            // url_notify: se usa la configurada en el Dashboard de Vita
+            amount: Math.round(Number(amount)), // Cliente paga el monto completo
+            country_iso_code: String(inferredOriginCountry).toUpperCase(),
+            issue: `Order ${orderId}`
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
@@ -172,37 +147,72 @@ router.post('/', async (req, res) => {
 
           vitaResponse = poData;
           vitaPaymentOrderId = poData?.id || poData?.uid || null;
-          // Vita devuelve la URL en attributes.url o directament en url
           checkoutUrl = poData?.attributes?.url || poData?.url || poData?.checkout_url || null;
 
-          // Guardar el payload del withdrawal diferido (Step 2)
-          deferredWithdrawalPayload = fullWithdrawalPayload;
+          // PASO 2: Preparar Withdrawal diferido (se ejecutará vía IPN)
+          deferredWithdrawalPayload = {
+            url_notify: notifyUrl,
+            currency: String(currency).toLowerCase(),
+            country: String(country).toUpperCase(),
+            amount: adjustedWithdrawalAmount, // ⭐ MONTO AJUSTADO (profit retenido)
+            order: orderId,
+            transactions_type: 'withdrawal',
+            wallet: vita.walletUUID,
+            beneficiary_type,
+            beneficiary_first_name,
+            beneficiary_last_name,
+            beneficiary_email,
+            beneficiary_address,
+            beneficiary_document_type,
+            beneficiary_document_number,
+            account_type_bank,
+            account_bank,
+            bank_code: bank_code !== undefined ? Number(bank_code) : undefined,
+            purpose,
+            purpose_comentary: purpose_comentary || 'Pago servicios',
+            ...finalCustomerData
+          };
 
           payinStatus = 'pending';
           payoutStatus = 'pending';
           transactionStatus = 'pending';
 
-          console.log(`✅ [withdrawals] Payment Order created: ${vitaPaymentOrderId}. Checkout URL: ${checkoutUrl}`);
+          console.log(`✅ [withdrawals] Payment Order created: ${vitaPaymentOrderId}. Withdrawal deferred (adjusted amount: ${adjustedWithdrawalAmount}).`);
 
-        } catch (firstError) {
-          console.error('❌ [withdrawals] Error creating Payment Order:', firstError.response?.data || firstError.message);
-          throw firstError;
+        } catch (error) {
+          console.error('❌ [withdrawals] Error creating Payment Order:', error.response?.data || error.message);
+          throw error;
         }
 
       } else {
-        // ❌ LEGACY: Direct Withdrawal (one-step)
-        // Usamos el payload completo pero con amount original (si no hay retencion, amount=adjusted)
-        // Nota: en legacy, amount y adjustedWithdrawalAmount son iguales porque if(rule.profitRetention) es false
+        // ❌ LEGACY: Direct Withdrawal (one-step, sin profit retention)
+        console.log('[withdrawals] 📦 Legacy Flow: Direct Withdrawal (no profit retention)...');
 
-        const legacyPayload = {
-          ...fullWithdrawalPayload,
-          amount: Number(amount) // Asegurar que sale el monto completo si no hay ProfitRetention
+        const withdrawalPayload = {
+          url_notify: notifyUrl,
+          currency: String(currency).toLowerCase(),
+          country: String(country).toUpperCase(),
+          amount: Number(amount),
+          order: orderId,
+          transactions_type: 'withdrawal',
+          wallet: vita.walletUUID,
+          beneficiary_type,
+          beneficiary_first_name,
+          beneficiary_last_name,
+          beneficiary_email,
+          beneficiary_address,
+          beneficiary_document_type,
+          beneficiary_document_number,
+          account_type_bank,
+          account_bank,
+          bank_code: bank_code !== undefined ? Number(bank_code) : undefined,
+          purpose,
+          purpose_comentary: purpose_comentary || 'Pago servicios',
+          ...finalCustomerData
         };
 
-        console.log('[withdrawals] 📦 Legacy Flow: Direct Withdrawal...');
-
         try {
-          const resp = await createWithdrawal(legacyPayload);
+          const resp = await createWithdrawal(withdrawalPayload);
           const raw = resp?.data ?? resp;
 
           vitaResponse = raw;
@@ -222,12 +232,11 @@ router.post('/', async (req, res) => {
         } catch (firstError) {
           const errorData = firstError.response?.data?.error || {};
           const msg = `${errorData?.message || ''}`.toLowerCase();
-          // Retry logic para precios expirados
           if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
             console.warn('⚠️ [withdrawals] Prices expired. Refreshing...');
             await forceRefreshPrices();
             await new Promise(r => setTimeout(r, 1500));
-            const resp2 = await createWithdrawal(legacyPayload);
+            const resp2 = await createWithdrawal(withdrawalPayload);
             const raw2 = resp2?.data ?? resp2;
             vitaResponse = raw2;
             vitaTxnId = raw2?.id || raw2?.data?.id || null;
@@ -261,7 +270,7 @@ router.post('/', async (req, res) => {
       beneficiary_document_number,
       status: transactionStatus,
       vitaResponse,
-      withdrawalPayload: deferredWithdrawalPayload || fullWithdrawalPayload,
+      withdrawalPayload: deferredWithdrawalPayload || { amount: Number(amount) },
       vitaPaymentOrderId,
       vitaWithdrawalId,
       payinStatus,
@@ -278,7 +287,7 @@ router.post('/', async (req, res) => {
       metadata: metadata || null
     });
 
-    console.log('✅ [withdrawals] TX guardada:', newTransaction._id);
+    console.log('✅ [withdrawals] Transaction saved:', newTransaction._id);
 
     return res.status(201).json({
       ok: true,
