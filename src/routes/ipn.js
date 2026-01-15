@@ -27,10 +27,45 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
 
     // Actualizar el estado de la transacción correspondiente
     if (event?.type === 'payment.succeeded') {
-      await Transaction.findOneAndUpdate(
-        { order: event?.object?.order },
-        { status: 'succeeded', $push: { ipnEvents: vitaEvent._id } }
-      );
+      const transaction = await Transaction.findOne({ order: event?.object?.order });
+
+      if (!transaction) {
+        console.warn(`[IPN] Transaction not found for order: ${event?.object?.order}`);
+        return res.json({ ok: true, id: vitaEvent._id });
+      }
+
+      // Actualizar payin status
+      transaction.payinStatus = 'completed';
+      transaction.ipnEvents.push(vitaEvent._id);
+
+      // 🔄 Si tiene withdrawal diferido pendiente, ejecutarlo ahora
+      if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
+        console.log(`[IPN] ⭐ Executing deferred withdrawal for order: ${transaction.order}`);
+
+        try {
+          const { createWithdrawal } = await import('../services/vitaService.js');
+          const withdrawalResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
+          const wData = withdrawalResp?.data ?? withdrawalResp;
+
+          transaction.vitaWithdrawalId = wData?.id || wData?.data?.id || null;
+          transaction.payoutStatus = 'processing';
+          transaction.status = 'processing';
+
+          console.log(`✅ [IPN] Withdrawal executed: ${transaction.vitaWithdrawalId} (amount: ${transaction.deferredWithdrawalPayload.amount})`);
+
+        } catch (withdrawalError) {
+          console.error('[IPN] ❌ Error executing withdrawal:', withdrawalError);
+          transaction.payoutStatus = 'failed';
+          transaction.status = 'failed';
+          transaction.errorMessage = withdrawalError.message;
+        }
+      } else {
+        // Legacy flow (withdrawal ya estaba creado directamente)
+        transaction.status = 'succeeded';
+      }
+
+      await transaction.save();
+
     } else if (event?.type === 'payment.failed') {
       // Usar findOne para poder popular y notificar
       const transaction = await Transaction.findOne({ order: event?.object?.order }).populate('createdBy');
