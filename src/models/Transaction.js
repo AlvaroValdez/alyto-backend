@@ -120,6 +120,9 @@ const transactionSchema = new mongoose.Schema({
   // 📦 Metadata del Payment Order (datos del beneficiario, etc.)
   metadata: { type: Object },
 
+  // ✅ NUEVO: Payload del Withdrawal diferido (para ejecutar post-IPN en flujo 2-step)
+  deferredWithdrawalPayload: { type: Object },
+
   // ❌ Mensaje de error si algo falla
   errorMessage: { type: String },
 
