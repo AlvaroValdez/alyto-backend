@@ -155,9 +155,17 @@ router.post('/', async (req, res) => {
         console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order (client pays full amount)...');
 
         try {
+          // Payment Order payload (SOLO campos mínimos - NO incluir datos de cuenta bancaria)
           const paymentOrderPayload = {
-            ...baseVitaFields,
-            amount: Number(amount) // Cliente paga monto COMPLETO (con spread)
+            url_notify: notifyUrl,
+            currency: String(currency).toLowerCase(),
+            country: String(country).toUpperCase(),
+            amount: Number(amount), // Cliente paga monto COMPLETO (con spread)
+            order: orderId,
+            wallet: vita.walletUUID,
+            purpose,
+            purpose_comentary: purpose_comentary || 'Pago servicios'
+            // ❌ NO enviar: beneficiary_*, account_*, bank_code (son para withdrawal)
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
@@ -186,9 +194,19 @@ router.post('/', async (req, res) => {
           if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
             console.warn('⚠️ [withdrawals] Prices expired. Refreshing...');
             await forceRefreshPrices();
-            await new Promise(r => setTimeout(r, 1500));
 
-            const poResp2 = await createPaymentOrder({ ...baseVitaFields, amount: Number(amount) });
+            const paymentOrderPayload2 = {
+              url_notify: notifyUrl,
+              currency: String(currency).toLowerCase(),
+              country: String(country).toUpperCase(),
+              amount: Number(amount),
+              order: orderId,
+              wallet: vita.walletUUID,
+              purpose,
+              purpose_comentary: purpose_comentary || 'Pago servicios'
+            };
+
+            const poResp2 = await createPaymentOrder(paymentOrderPayload2);
             const poData2 = poResp2?.data ?? poResp2;
             vitaResponse = poData2;
             vitaPaymentOrderId = poData2?.id || poData2?.uid || null;
