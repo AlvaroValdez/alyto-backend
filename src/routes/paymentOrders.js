@@ -4,6 +4,7 @@ import { vita } from '../config/env.js';
 import { notifyOrderCreated } from '../services/notificationService.js';
 import { body } from 'express-validator';
 import { validateResult } from '../middleware/validate.js';
+import Transaction from '../models/Transaction.js';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.post('/', [
   validateResult
 ], async (req, res, next) => {
   try {
-    const { amount, country, orderId } = req.body || {};
+    const { amount, country, orderId, metadata } = req.body || {};
     if (amount === undefined || amount === null || !country || !orderId) {
       return res.status(400).json({ ok: false, error: 'Faltan datos requeridos.' });
     }
@@ -70,12 +71,98 @@ router.post('/', [
     // ⭐ USAR LA URL QUE VITA DEVUELVE (attributes.url)
     // Vita devuelve una URL corta tipo: https://stage.vitawallet.io/s/XXXXX
     const checkoutUrl = raw?.attributes?.url || raw?.url || null;
+    const vitaPaymentOrderId = raw?.id || raw?.data?.id || null;
 
     if (checkoutUrl) {
       console.log('[payment-orders] ✅ Checkout URL de Vita:', checkoutUrl);
     } else {
       console.error('[payment-orders] ❌ Vita no devolvió URL de checkout');
       console.error('[payment-orders] Response:', raw);
+    }
+
+    // 💰 PROFIT RETENTION LOGIC
+    // Actualizar la transacción existente con deferredWithdrawalPayload si profit retention está activo
+    try {
+      const transaction = await Transaction.findOne({ order: orderId });
+
+      if (transaction && metadata?.beneficiary && metadata?.destination) {
+        console.log('[payment-orders] 🔍 Transacción encontrada. Evaluando profit retention...');
+
+        // Verificar configuración de profit retention
+        const { SUPPORTED_ORIGINS } = await import('../data/supportedOrigins.js');
+        const inferredOriginCountry = SUPPORTED_ORIGINS.find(o => o.code === String(safeCountry).toUpperCase())?.code || 'CL';
+
+        const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
+        const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
+
+        if (rule?.profitRetention) {
+          console.log('[payment-orders] 💰 Profit Retention enabled. Preparing deferred withdrawal...');
+
+          // Calcular monto ajustado (usando tracking data guardado en transacción)
+          let adjustedAmount = transaction.amount;
+
+          if (transaction.amountsTracking?.destReceiveAmount && transaction.rateTracking?.vitaRate) {
+            const targetDest = Number(transaction.amountsTracking.destReceiveAmount);
+            const vitaRate = Number(transaction.rateTracking.vitaRate);
+
+            if (targetDest > 0 && vitaRate > 0) {
+              const calculatedSource = Number((targetDest / vitaRate).toFixed(2));
+
+              if (calculatedSource <= (Number(transaction.amount) + 1)) {
+                adjustedAmount = calculatedSource;
+                const profit = Number(transaction.amount) - adjustedAmount;
+                console.log(`[payment-orders] 💰 Calculated profit: Client pays ${transaction.amount}, we send ${adjustedAmount}, profit: ${profit}`);
+              }
+            }
+          }
+
+          // Preparar payload completo para withdrawal diferido
+          const deferredWithdrawalPayload = {
+            url_notify: vita.notifyUrl || 'https://google.com',
+            currency: String(transaction.currency).toLowerCase(),
+            country: String(metadata.destination.country).toUpperCase(),
+            amount: adjustedAmount, // ⭐ MONTO AJUSTADO (con profit)
+            order: orderId,
+            transactions_type: 'withdrawal',
+            wallet: vita.walletUUID,
+
+            // Datos del beneficiario desde metadata
+            beneficiary_type: metadata.beneficiary.type,
+            beneficiary_first_name: metadata.beneficiary.first_name,
+            beneficiary_last_name: metadata.beneficiary.last_name,
+            beneficiary_email: metadata.beneficiary.email,
+            beneficiary_address: metadata.beneficiary.address || '',
+            beneficiary_document_type: metadata.beneficiary.document_type,
+            beneficiary_document_number: metadata.beneficiary.document_number,
+            account_type_bank: metadata.beneficiary.account_type_bank,
+            account_bank: metadata.beneficiary.account_bank,
+            bank_code: metadata.beneficiary.bank_code ? Number(metadata.beneficiary.bank_code) : undefined,
+
+            purpose: transaction.purpose || 'EPFAMT',
+            purpose_comentary: transaction.purpose_comentary || 'Pago servicios'
+          };
+
+          // Actualizar transacción con withdrawal diferido
+          transaction.vitaPaymentOrderId = vitaPaymentOrderId;
+          transaction.deferredWithdrawalPayload = deferredWithdrawalPayload;
+          transaction.payinStatus = 'pending';
+          transaction.payoutStatus = 'pending';
+
+          await transaction.save();
+
+          console.log(`✅ [payment-orders] Transacción actualizada con withdrawal diferido (adjusted amount: ${adjustedAmount})`);
+        } else {
+          // Sin profit retention, solo guardar el vitaPaymentOrderId
+          transaction.vitaPaymentOrderId = vitaPaymentOrderId;
+          await transaction.save();
+          console.log('[payment-orders] ✅ Transacción actualizada (sin profit retention)');
+        }
+      } else {
+        console.warn('[payment-orders] ⚠️ No se encontró transacción o faltan datos de metadata');
+      }
+    } catch (dbError) {
+      console.error('[payment-orders] ❌ Error actualizando transacción:', dbError);
+      // No fallar la request, solo logear el error
     }
 
     // Notificar creación de orden
