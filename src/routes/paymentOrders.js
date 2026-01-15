@@ -56,14 +56,34 @@ router.post('/', [
       amount: Math.round(Number(amount)),
       country_iso_code: safeCountry,
       issue: `Pago de remesa #${orderId}`,
-      success_redirect_url: successRedirectUrl,
-      url_notify: vita.notifyUrl || 'https://google.com'
+      success_redirect_url: successRedirectUrl
+      // url_notify eliminado para evitar error 422 "Invalid Signature"
     };
 
-    const response = await createPaymentOrder(payload);
+    // 🔍 IDEMPOTENCIA: Verificar si ya existe una Payment Order para esta transacción
+    // Esto evita doble creación (withdrawals.js crea una, y frontend intenta crear otra)
+    let raw;
+    const existingTx = await Transaction.findOne({ order: orderId });
 
-    // Normaliza por si vitaService devuelve data o axios response
-    const raw = response?.data ?? response;
+    if (existingTx && existingTx.vitaPaymentOrderId) {
+      console.log(`[payment-orders] ♻️ Reutilizando Payment Order existente: ${existingTx.vitaPaymentOrderId}`);
+      // Reconstruir respuesta desde lo guardado en BD
+      raw = existingTx.vitaResponse || {};
+
+      // Asegurar que el ID y URL estén presentes
+      if (!raw.id) raw.id = existingTx.vitaPaymentOrderId;
+
+      // Si falta la URL en vitaResponse, intentar recuperarla o advertir
+      // (Nota: withdrawals.js guarda la respuesta completa de Vita, debería tener la URL)
+      if (!raw.attributes?.url && !raw.url && !raw.checkout_url) {
+        console.warn('[payment-orders] ⚠️ Payment Order existente no tiene URL guardada. Intentando recuperar...');
+        // Opcional: Podríamos consultar a Vita status aquí si fuera crítico
+      }
+    } else {
+      // Si no existe, crear nueva en Vita
+      const response = await createPaymentOrder(payload);
+      raw = response?.data ?? response;
+    }
 
     // Log útil (sin secretos)
     console.log('[payment-orders] Vita response keys:', Object.keys(raw || {}));
