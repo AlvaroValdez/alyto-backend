@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
       beneficiary_type, beneficiary_first_name, beneficiary_last_name,
       beneficiary_email, beneficiary_address, beneficiary_document_type,
       beneficiary_document_number, account_type_bank, account_bank, bank_code,
-      proofOfPayment
+      proofOfPayment, metadata
     } = req.body || {};
 
     if (!country || !currency || !amount) {
@@ -205,7 +205,10 @@ router.post('/', async (req, res) => {
       // 📊 Spread Model Tracking (from quote)
       rateTracking: req.body.rateTracking || null,
       amountsTracking: req.body.amountsTracking || null,
-      feeAudit: req.body.feeAudit || null
+      feeAudit: req.body.feeAudit || null,
+
+      // ✅ Metadata (QR, etc)
+      metadata: metadata || null
     });
 
     console.log('✅ [withdrawals] TX guardada con:', {
@@ -226,7 +229,9 @@ router.post('/', async (req, res) => {
     });
 
   } catch (e) {
-    console.error('❌ [withdrawals] Error Final:', e.message);
+    console.error('❌ [withdrawals] Error Final:', e);
+    if (e.stack) console.error(e.stack);
+
     if (e.response) {
       return res.status(e.response.status).json({
         ok: false,
@@ -234,6 +239,11 @@ router.post('/', async (req, res) => {
         details: e.response.data
       });
     }
+    // Mongoose validation error?
+    if (e.name === 'ValidationError') {
+      return res.status(400).json({ ok: false, error: 'Error de validación', details: e.message });
+    }
+
     res.status(500).json({ ok: false, error: 'Error interno del servidor.', details: e.message });
   }
 });
