@@ -91,7 +91,7 @@ const transactionSchema = new mongoose.Schema({
 
   // 🔍 Fee Audit
   feeAudit: {
-    markupSource: { type: String, enum: ['default', 'country-specific', 'manual'] },
+    markupSource: { type: String, enum: ['default', 'country-specific', 'manual', 'manual_destination'] },
     markupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Markup' },
     appliedAt: { type: Date }
   },
