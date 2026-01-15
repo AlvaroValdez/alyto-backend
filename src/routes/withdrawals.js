@@ -94,6 +94,7 @@ router.post('/', async (req, res) => {
     // (Import dinámico para evitar ciclos si fuera necesario, o uso directo)
     const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
     const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
+    console.log(`[withdrawals] Config loading for ${inferredOriginCountry}: ProfitRetention=${rule?.profitRetention}`);
 
     if (rule?.profitRetention && !isManualOffRamp) { // Solo para Vita automático
       if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
