@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guía de Implementación: Retención de Profit</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eaeaea;
+            padding-bottom: 10px;
+        }
+        h1 { font-size: 2.5em; border-bottom: none; margin-bottom: 10px; }
+        h2 { margin-top: 40px; }
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: Monaco, Consolas, "Courier New", monospace;
+            color: #e83e8c;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid #eaeaea;
+        }
+        .mermaid {
+            text-align: center;
+            margin: 30px 0;
+            background: white;
+            padding: 20px;
+        }
+        .section-box {
+            background: #fdfdfd;
+            border-left: 5px solid #007bff;
+            padding: 15px 20px;
+            margin: 20px 0;
+        }
+        @media print {
+            body { max-width: 100%; padding: 0; }
+            h1 { font-size: 24pt; }
+            h2 { font-size: 18pt; margin-top: 20px; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Guía de Implementación: Retención de Profit</h1>
+    <p><strong>Fecha:</strong> 16 de Enero, 2026</p>
+
+    <div class="section-box">
+        <h3>Resumen Ejecutivo</h3>
+        <p>Implementamos con éxito un <strong>Flujo de Pago en Dos Pasos</strong> para habilitar la retención de ganancia. Esto reemplaza el flujo anterior de un solo paso.</p>
+        <ul>
+            <li><strong>Problema Anterior:</strong> Cliente paga X = Beneficiario recibe X. Ganancia = 0.</li>
+            <li><strong>Solución:</strong> Cliente paga X (Precio Venta) → Beneficiario recibe Y (Precio Costo). Ganancia = X - Y (se queda en Wallet).</li>
+        </ul>
+    </div>
+
+    <h2>Arquitectura del Sistema</h2>
+    <div class="mermaid">
+    sequenceDiagram
+        participant Usuario
+        participant Frontend
+        participant Backend
+        participant VitaAPI
+    
+        Usuario->>Frontend: Inicia Transacción (5000 CLP)
+        Frontend->>Backend: POST /withdrawals (Crea TX en BD y calcula Profit)
+        Backend-->>Frontend: Retorna ID de TX
+        
+        Frontend->>Backend: POST /payment-orders (Crea Orden Vita)
+        Backend->>Backend: Reutiliza Orden si existe (Idempotencia)
+        Backend->>VitaAPI: POST /payment_orders (Monto: 5000)
+        VitaAPI-->>Backend: Retorna Enlace de Pago
+        Backend->>Backend: Guarda "Payload de Retiro Diferido" (Monto: 4151.65)
+        
+        Frontend->>Usuario: Redirige a Fintoc/Vita Checkout
+        Usuario->>VitaAPI: Completa Pago
+        
+        par Opción A: IPN (Webhook)
+            VitaAPI->>Backend: IPN payment.succeeded
+            Backend->>VitaAPI: POST /transactions (Retiro Costo)
+        and Opción B: Verificación Proactiva (Respaldo)
+            Usuario->>Frontend: Redirigido a Página de Éxito
+            Frontend->>Backend: POST /check-status
+            Backend->>VitaAPI: GET /payment_orders/:id
+            Backend->>Backend: Valida Pago -> Ejecuta Retiro
+            Backend->>VitaAPI: POST /transactions (Retiro Costo)
+        end
+        
+        Backend->>Usuario: Transacción Completada
+    </div>
+
+    <h2>Componentes Clave Implementados</h2>
+
+    <h3>1. <code>withdrawals.js</code> (Paso 1)</h3>
+    <ul>
+        <li>Calcula <code>adjustedAmount</code> (Precio Costo) basado en tasas de Vita y Alyto.</li>
+        <li>Crea <code>Transaction</code> en BD con <code>deferredWithdrawalPayload</code>.</li>
+        <li>No ejecuta el retiro inmediatamente.</li>
+    </ul>
+
+    <h3>2. <code>paymentOrders.js</code> (Paso 2)</h3>
+    <ul>
+        <li>Crea Orden de Pago por el monto total (Precio Venta).</li>
+        <li><strong>Idempotencia:</strong> Reutiliza orden existente si hay reintentos.</li>
+        <li>Maneja la limitación de que este endpoint no soporta <code>url_notify</code>.</li>
+    </ul>
+
+    <h3>3. Mecanismo de Respaldo (<code>check-status</code>)</h3>
+    <div class="section-box" style="border-left-color: #28a745;">
+        <p><strong>Solución Robusta:</strong> Implementamos un backup crítico.</p>
+        <p>Dado que Vita no siempre envía IPN para órdenes de pago (si falta config global), agregamos el endpoint <code>/check-status</code>.</p>
+        <p>El Frontend llama a este endpoint automáticamente en la pantalla de éxito, forzando la ejecución del retiro si el dinero ya ingresó.</p>
+    </div>
+
+    <h2>Archivos Modificados</h2>
+    <ul>
+        <li><code>src/routes/withdrawals.js</code>: Lógica de cálculo y creación diferida.</li>
+        <li><code>src/routes/paymentOrders.js</code>: Orquestación de pago y fallback.</li>
+        <li><code>src/routes/ipn.js</code>: Manejo de notificaciones asíncronas.</li>
+        <li><code>src/pages/PaymentSuccess.jsx</code>: Activación proactiva del retiro.</li>
+    </ul>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    </script>
+</body>
+</html>

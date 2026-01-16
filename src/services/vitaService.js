@@ -195,9 +195,12 @@ export const getListPrices = async () => {
       console.error('❌ [vitaService] Error obteniendo precios:', error?.message || error);
       pricesPromise = null;
 
-      // En desarrollo, usar fallback como último recurso
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('⚠️ [vitaService] API failed, using FALLBACK_RATES (development only)');
+      // Recuperarse ante errores de servidor (5xx) o si estamos en desarrollo
+      const isServerError = error?.response?.status >= 500;
+      const isDev = process.env.NODE_ENV === 'development';
+
+      if (isServerError || isDev) {
+        console.warn(`⚠️ [vitaService] API failed (${error?.response?.status || 'Network Error'}), using FALLBACK_RATES`);
         return FALLBACK_RATES;
       }
 
