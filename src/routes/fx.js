@@ -219,7 +219,8 @@ router.get('/quote', async (req, res) => {
 
       const profitCLP = profitCOP / vitaRate; // Aproximado
 
-      console.log(`💰 [FX-SPREAD-RESULT] Principal: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP, Profit: ${profitCOP.toFixed(2)} COP`);
+      console.log(`💰 [FX-SPREAD-RESULT] Principal: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP`);
+      console.log(`💰 [FX-SPREAD-PROFIT] Profit: ${profitCOP.toFixed(2)} COP (~${profitCLP.toFixed(2)} CLP retained)`);
 
       return res.json({
         ok: true,
