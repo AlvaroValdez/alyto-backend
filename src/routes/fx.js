@@ -5,6 +5,89 @@ import { SUPPORTED_ORIGINS } from '../data/supportedOrigins.js';
 
 const router = Router();
 
+/**
+ * Helper: Calcula el monto neto que llegará al wallet después de fees de pasarela
+ * @param {string} country - Código del país (ej: 'CL')
+ * @param {number} amount - Monto bruto que el usuario paga
+ * @returns {Promise<object>} Desglose de fees
+ */
+async function getPayinFeeBreakdown(country, amount) {
+  try {
+    const { client } = await import('../services/vitaClient.js');
+    const vitaResponse = await client.get('/prices');
+    const data = vitaResponse?.data || vitaResponse;
+
+    const payinCountry = String(country).toLowerCase();
+    const payinInfo = data?.payins?.[payinCountry];
+
+    if (!payinInfo) {
+      // Si no hay info de payin, asumimos que no hay fees (para países sin pasarela)
+      return {
+        available: false,
+        grossAmount: amount,
+        netAmount: amount,
+        totalFee: 0,
+        feePercent: 0,
+        sellPrice: 1,
+        fixedCost: 0,
+        paymentMethod: 'N/A'
+      };
+    }
+
+    // Buscar método Webpay o Fintoc
+    const method = payinInfo.payment_methods?.find(m =>
+      m.payment_method === 'Webpay' || m.payment_method === 'Fintoc'
+    );
+
+    if (!method) {
+      return {
+        available: false,
+        grossAmount: amount,
+        netAmount: amount,
+        totalFee: 0,
+        feePercent: 0,
+        sellPrice: 1,
+        fixedCost: 0,
+        paymentMethod: 'N/A'
+      };
+    }
+
+    const inputAmount = Number(amount);
+    const sellPrice = Number(method.sell_price);
+    const fixedCost = Number(method.fixed_cost);
+
+    // Cálculo real de lo que recibirás en tu wallet
+    const netAmount = (inputAmount * sellPrice) - fixedCost;
+    const totalFee = inputAmount - netAmount;
+    const feePercent = inputAmount > 0 ? (totalFee / inputAmount) * 100 : 0;
+
+    return {
+      available: true,
+      paymentMethod: method.payment_method,
+      grossAmount: inputAmount,
+      sellPrice,
+      fixedCost,
+      netAmount: Number(netAmount.toFixed(2)),
+      totalFee: Number(totalFee.toFixed(2)),
+      feePercent: Number(feePercent.toFixed(2))
+    };
+  } catch (error) {
+    console.error('[FX] Error calculating payin fees:', error.message);
+    // En caso de error, asumimos sin fees para no bloquear la cotización
+    return {
+      available: false,
+      grossAmount: amount,
+      netAmount: amount,
+      totalFee: 0,
+      feePercent: 0,
+      sellPrice: 1,
+      fixedCost: 0,
+      paymentMethod: 'N/A',
+      error: error.message
+    };
+  }
+}
+
 // GET /api/fx/quote
 // Ejemplo clásico: ?amount=25000&destCountry=CO&origin=CLP
 // Caso Bolivia:     ?amount=100&destCountry=CO&origin=BOB&originCountry=BO
@@ -146,6 +229,10 @@ router.get('/quote', async (req, res) => {
 
     // --- Caso 1: Origen CLP (flujo spread) ---
     if (originCurrency === 'CLP') {
+      // 🔍 NUEVO: Calcular fees de pasarela (Payin)
+      const payinFee = await getPayinFeeBreakdown(safeOriginCountry, inputAmount);
+      console.log(`💳 [FX-PAYIN] Gross: ${payinFee.grossAmount}, Fee: ${payinFee.totalFee} (${payinFee.feePercent}%), Net: ${payinFee.netAmount}`);
+
       // 💰 Obtener spread desde Markup (con lógica priorizada)
       const Markup = (await import('../models/Markup.js')).default;
 
@@ -182,8 +269,8 @@ router.get('/quote', async (req, res) => {
 
       console.log(`🔧 [FX-SPREAD] Vita: ${vitaRate.toFixed(4)}, Spread: ${spreadPercent}%, Alyto: ${alytoRate.toFixed(4)}`);
 
-      //--- CALCULADORA BIDIRECCIONAL CON SPREAD ---
-      let principal = 0;           // Monto en CLP
+      //--- CALCULADORA BIDIRECCIONAL CON SPREAD (AHORA SOBRE MONTO NETO) ---
+      let principal = 0;           // Monto en CLP (NETO después de payin fees)
       let destReceiveAmount = 0;   // Monto que recibe el cliente
       let destGrossAmount = 0;     // Monto bruto (antes de costo Vita)
       let profitCOP = 0;           // Ganancia en COP
@@ -193,11 +280,9 @@ router.get('/quote', async (req, res) => {
         destReceiveAmount = inputAmount;
 
         // Calcular cantidad bruta necesaria (antes de fixed cost)
-        // destReceiveAmount = destGrossAmount - fixedCost
         destGrossAmount = destReceiveAmount + payoutFixedCost;
 
-        // Calcular principal usando tasa Alyto (con spread)
-        // destGrossAmount = principal * alytoRate
+        // Calcular principal NETO usando tasa Alyto (con spread)
         principal = destGrossAmount / alytoRate;
 
         // Calcular lo que enviaríamos con tasa real Vita
@@ -205,8 +290,9 @@ router.get('/quote', async (req, res) => {
         profitCOP = vitaGrossAmount - destGrossAmount;
 
       } else {
-        // MODO NORMAL: Usuario dice cuánto envía
-        principal = inputAmount;
+        // MODO NORMAL: Usuario dice cuánto envía (BRUTO)
+        // CRÍTICO: Usar monto NETO (después de payin fees) para cálculos
+        principal = payinFee.netAmount;
 
         // Con tasa Alyto (cliente ve)
         destGrossAmount = principal * alytoRate;
@@ -219,7 +305,7 @@ router.get('/quote', async (req, res) => {
 
       const profitCLP = profitCOP / vitaRate; // Aproximado
 
-      console.log(`💰 [FX-SPREAD-RESULT] Principal: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP`);
+      console.log(`💰 [FX-SPREAD-RESULT] Gross: ${inputAmount} CLP, Net: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP`);
       console.log(`💰 [FX-SPREAD-PROFIT] Profit: ${profitCOP.toFixed(2)} COP (~${profitCLP.toFixed(2)} CLP retained)`);
 
       return res.json({
@@ -232,15 +318,27 @@ router.get('/quote', async (req, res) => {
           // Tasa que ve el cliente (con spread)
           rate: Number(alytoRate.toFixed(4)),
 
-          // Montos cliente
-          amount: Number(principal.toFixed(2)),           // Principal
-          clpAmountWithFee: Number(principal.toFixed(2)), // Total = Principal (sin fee visible)
+          // Montos cliente (BRUTO)
+          amount: Number(inputAmount.toFixed(2)),           // Monto que paga el usuario
+          clpAmountWithFee: Number(inputAmount.toFixed(2)), // Total que paga
           receiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
 
-          // Fee = 0 (spread model)
-          fee: 0,
-          feePercent: 0,
-          feeOriginAmount: 0,
+          // 🆕 DESGLOSE DE FEES DE PASARELA (Payin)
+          payinFeeBreakdown: {
+            available: payinFee.available,
+            paymentMethod: payinFee.paymentMethod,
+            grossAmount: payinFee.grossAmount,
+            totalFee: payinFee.totalFee,
+            feePercent: payinFee.feePercent,
+            netAmount: payinFee.netAmount,
+            sellPrice: payinFee.sellPrice,
+            fixedCost: payinFee.fixedCost
+          },
+
+          // Legacy fields (para compatibilidad)
+          fee: payinFee.totalFee,
+          feePercent: payinFee.feePercent,
+          feeOriginAmount: payinFee.totalFee,
 
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
           currency: priceData.code,
@@ -255,9 +353,9 @@ router.get('/quote', async (req, res) => {
 
           amountsTracking: {
             originCurrency,
-            originPrincipal: Number(principal.toFixed(2)),
-            originFee: 0,
-            originTotal: Number(principal.toFixed(2)),
+            originPrincipal: Number(principal.toFixed(2)),      // Neto después de payin
+            originFee: payinFee.totalFee,                       // Fee de pasarela
+            originTotal: Number(inputAmount.toFixed(2)),        // Bruto que paga
 
             destCurrency: priceData.code,
             destGrossAmount: Number(destGrossAmount.toFixed(2)),
@@ -271,7 +369,8 @@ router.get('/quote', async (req, res) => {
           feeAudit: {
             markupSource,
             markupId,
-            appliedAt: new Date()
+            appliedAt: new Date(),
+            payinFeeDetected: payinFee.available
           }
         }
       });
