@@ -79,7 +79,10 @@ function hmacSha256Hex(secret, msg) {
 const client = axios.create({
   baseURL: vita.baseURL,
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'User-Agent': 'RemesasAVF/1.0 (Node.js)'
+  },
 });
 
 client.interceptors.request.use((config) => {
