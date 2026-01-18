@@ -150,6 +150,9 @@ router.post('/', async (req, res) => {
           checkoutUrl = poData?.attributes?.url || poData?.url || poData?.checkout_url || null;
 
           // PASO 2: Preparar Withdrawal diferido (se ejecutará vía IPN)
+          // 🔧 FIX: Asegurar que beneficiary_address NO esté vacío
+          const safeAddress = beneficiary_address || req.body.beneficiary?.address || 'N/A';
+
           deferredWithdrawalPayload = {
             url_notify: notifyUrl,
             currency: String(currency).toLowerCase(),
@@ -162,7 +165,7 @@ router.post('/', async (req, res) => {
             beneficiary_first_name,
             beneficiary_last_name,
             beneficiary_email,
-            beneficiary_address,
+            beneficiary_address: safeAddress, // 🔧 Usar fallback si está vacío
             beneficiary_document_type,
             beneficiary_document_number,
             account_type_bank,

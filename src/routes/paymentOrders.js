@@ -300,7 +300,7 @@ router.post('/:orderId/check-status', async (req, res) => {
       if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
         console.log(`[check-status] ⭐ Ejecutando withdrawal diferido por validación manual`);
 
-        const { createWithdrawal } = await import('../services/vitaService.js');
+        const { createWithdrawal, forceRefreshPrices } = await import('../services/vitaService.js');
         try {
           const withdrawalResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
           const wData = withdrawalResp?.data ?? withdrawalResp;
@@ -310,9 +310,33 @@ router.post('/:orderId/check-status', async (req, res) => {
           transaction.status = 'processing';
           console.log(`✅ [check-status] Withdrawal ejecutado: ${transaction.vitaWithdrawalId}`);
         } catch (wError) {
-          console.error('[check-status] ❌ Error executing withdrawal:', wError);
-          transaction.payoutStatus = 'failed';
-          transaction.status = 'failed';
+          // 🔄 RETRY: Si falló por precios expirados, refrescar y reintentar
+          const errorData = wError.response?.data?.error || {};
+          const msg = `${errorData?.message || ''} ${errorData?.details?.message || ''}`.toLowerCase();
+
+          if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
+            console.log('[check-status] ⚠️ Precios expirados. Refrescando y reintentando...');
+            await forceRefreshPrices();
+            await new Promise(r => setTimeout(r, 1500));
+
+            try {
+              const retryResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
+              const retryData = retryResp?.data ?? retryResp;
+
+              transaction.vitaWithdrawalId = retryData?.id || retryData?.data?.id || null;
+              transaction.payoutStatus = 'processing';
+              transaction.status = 'processing';
+              console.log(`✅ [check-status] Withdrawal ejecutado (retry): ${transaction.vitaWithdrawalId}`);
+            } catch (retryError) {
+              console.error('[check-status] ❌ Error en retry:', retryError.message);
+              transaction.payoutStatus = 'failed';
+              transaction.status = 'failed';
+            }
+          } else {
+            console.error('[check-status] ❌ Error executing withdrawal:', wError.message);
+            transaction.payoutStatus = 'failed';
+            transaction.status = 'failed';
+          }
         }
       }
 
