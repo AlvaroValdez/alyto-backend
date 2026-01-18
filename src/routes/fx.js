@@ -308,6 +308,12 @@ router.get('/quote', async (req, res) => {
       console.log(`💰 [FX-SPREAD-RESULT] Gross: ${inputAmount} CLP, Net: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP`);
       console.log(`💰 [FX-SPREAD-PROFIT] Profit: ${profitCOP.toFixed(2)} COP (~${profitCLP.toFixed(2)} CLP retained)`);
 
+      // 🎯 TASA EFECTIVA TODO INCLUIDO (absorbe fees de pasarela)
+      // Esta es la tasa que el cliente ve: Cuánto CLP cuesta enviar 1 unidad de destino
+      // Incluye: Fees de pasarela + Spread de Alyto + Costos Vita
+      const effectiveAllInclusiveRate = inputAmount / destReceiveAmount; // CLP por cada 1 COP
+      console.log(`📊 [FX-EFFECTIVE-RATE] All-inclusive: ${effectiveAllInclusiveRate.toFixed(4)} ${originCurrency}/${priceData.code} (absorbe todos los costos)`);
+
       return res.json({
         ok: true,
         data: {
@@ -315,8 +321,8 @@ router.get('/quote', async (req, res) => {
           originCountry: safeOriginCountry,
           destCurrency: priceData.code,
 
-          // Tasa que ve el cliente (con spread)
-          rate: Number(alytoRate.toFixed(4)),
+          // 🎯 Tasa TODO INCLUIDO que ve el cliente (absorbe fees de pasarela + spread + costos)
+          rate: Number(effectiveAllInclusiveRate.toFixed(4)),
 
           // Montos cliente (BRUTO)
           amount: Number(inputAmount.toFixed(2)),           // Monto que paga el usuario
