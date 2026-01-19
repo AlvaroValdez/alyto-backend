@@ -139,33 +139,13 @@ router.post('/', async (req, res) => {
           const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
           const successRedirectUrl = `${frontendUrl}/#/payment-success/${orderId}`;
 
-          // Construir metadata solo con campos definidos
-          const beneficiaryMetadata = {};
-          if (beneficiary_type) beneficiaryMetadata.type = beneficiary_type;
-          if (beneficiary_first_name) beneficiaryMetadata.first_name = beneficiary_first_name;
-          if (beneficiary_last_name) beneficiaryMetadata.last_name = beneficiary_last_name;
-          if (beneficiary_email) beneficiaryMetadata.email = beneficiary_email;
-          if (beneficiary_document_type) beneficiaryMetadata.document_type = beneficiary_document_type;
-          if (beneficiary_document_number) beneficiaryMetadata.document_number = beneficiary_document_number;
-          if (account_type_bank) beneficiaryMetadata.account_type_bank = account_type_bank;
-          if (account_bank) beneficiaryMetadata.account_bank = account_bank;
-          if (bank_code !== undefined && bank_code !== null) {
-            beneficiaryMetadata.bank_code = typeof bank_code === 'number' ? bank_code : Number(bank_code);
-          }
-
           const paymentOrderPayload = {
             amount: Math.round(Number(amount)), // Cliente paga el monto completo
             country_iso_code: String(inferredOriginCountry).toUpperCase(),
             issue: `Order ${orderId}`,
-            success_redirect_url: successRedirectUrl,
-            metadata: {
-              beneficiary: beneficiaryMetadata,
-              destination: {
-                country: String(country).toUpperCase(),
-                currency: String(currency).toLowerCase(),
-                amount: adjustedWithdrawalAmount  // ⭐ MONTO AJUSTADO (profit retenido)
-              }
-            }
+            success_redirect_url: successRedirectUrl
+            // ❌ metadata NO ES SOPORTADO por Vita API (según BusinessAPI.txt)
+            // IPN usará deferredWithdrawalPayload guardado en Transaction
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
