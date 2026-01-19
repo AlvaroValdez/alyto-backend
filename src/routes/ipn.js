@@ -110,8 +110,31 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       transaction.payinStatus = 'completed';
       transaction.ipnEvents.push(vitaEvent._id);
 
-      // Extraer metadata del evento IPN
-      const metadata = event?.metadata || transaction.metadata;
+      // Extraer metadata del evento IPN o construirlo desde deferredWithdrawalPayload
+      let metadata = event?.metadata || transaction.metadata;
+
+      // Fallback: Si no hay metadata en el evento, construirlo desde deferredWithdrawalPayload
+      if (!metadata && transaction.deferredWithdrawalPayload) {
+        console.log('[IPN] Metadata no en evento. Construyendo desde deferredWithdrawalPayload...');
+        metadata = {
+          destination: {
+            country: transaction.deferredWithdrawalPayload.country,
+            currency: transaction.deferredWithdrawalPayload.currency,
+            amount: transaction.deferredWithdrawalPayload.amount
+          },
+          beneficiary: {
+            type: transaction.deferredWithdrawalPayload.beneficiary_type,
+            first_name: transaction.deferredWithdrawalPayload.beneficiary_first_name,
+            last_name: transaction.deferredWithdrawalPayload.beneficiary_last_name,
+            email: transaction.deferredWithdrawalPayload.beneficiary_email,
+            document_type: transaction.deferredWithdrawalPayload.beneficiary_document_type,
+            document_number: transaction.deferredWithdrawalPayload.beneficiary_document_number,
+            account_type_bank: transaction.deferredWithdrawalPayload.account_type_bank,
+            account_bank: transaction.deferredWithdrawalPayload.account_bank,
+            bank_code: transaction.deferredWithdrawalPayload.bank_code
+          }
+        };
+      }
 
       if (!metadata?.beneficiary || !metadata?.destination) {
         console.error('[IPN] Metadata incompleto en Payment Order:', metadata);

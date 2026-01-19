@@ -136,10 +136,32 @@ router.post('/', async (req, res) => {
 
         try {
           // PASO 1: Crear Payment Order (cliente paga monto COMPLETO)
+          const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
+          const successRedirectUrl = `${frontendUrl}/#/payment-success/${orderId}`;
+
           const paymentOrderPayload = {
             amount: Math.round(Number(amount)), // Cliente paga el monto completo
             country_iso_code: String(inferredOriginCountry).toUpperCase(),
-            issue: `Order ${orderId}`
+            issue: `Order ${orderId}`,
+            success_redirect_url: successRedirectUrl,
+            metadata: {
+              beneficiary: {
+                type: beneficiary_type || 'person',
+                first_name: beneficiary_first_name,
+                last_name: beneficiary_last_name,
+                email: beneficiary_email,
+                document_type: beneficiary_document_type,
+                document_number: beneficiary_document_number,
+                account_type_bank,
+                account_bank,
+                bank_code
+              },
+              destination: {
+                country: String(country).toUpperCase(),
+                currency: String(currency).toLowerCase(),
+                amount: adjustedWithdrawalAmount  // ⭐ MONTO AJUSTADO (profit retenido)
+              }
+            }
           };
 
           const poResp = await createPaymentOrder(paymentOrderPayload);
