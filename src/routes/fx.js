@@ -7,82 +7,59 @@ const router = Router();
 
 /**
  * Helper: Calcula el monto neto que llegará al wallet después de fees de pasarela
+ * NUEVO: Usa fees de Fintoc Directo en lugar de Vita Payment Orders
  * @param {string} country - Código del país (ej: 'CL')
  * @param {number} amount - Monto bruto que el usuario paga
  * @returns {Promise<object>} Desglose de fees
  */
 async function getPayinFeeBreakdown(country, amount) {
   try {
-    const { client } = await import('../services/vitaClient.js');
-    const vitaResponse = await client.get('/prices');
-    const data = vitaResponse?.data || vitaResponse;
+    // 💰 MODELO HÍBRIDO: Usar fees de Fintoc Directo
+    // Ya no obtenemos fees desde Vita /prices porque usamos nuestro propio Fintoc
+    const { getFintocFees } = await import('../services/fintocService.js');
 
-    const payinCountry = String(country).toLowerCase();
-    const payinInfo = data?.payins?.[payinCountry];
-
-    if (!payinInfo) {
-      // Si no hay info de payin, asumimos que no hay fees (para países sin pasarela)
-      return {
-        available: false,
-        grossAmount: amount,
-        netAmount: amount,
-        totalFee: 0,
-        feePercent: 0,
-        sellPrice: 1,
-        fixedCost: 0,
-        paymentMethod: 'N/A'
-      };
-    }
-
-    // Buscar método Webpay o Fintoc
-    const method = payinInfo.payment_methods?.find(m =>
-      m.payment_method === 'Webpay' || m.payment_method === 'Fintoc'
-    );
-
-    if (!method) {
-      return {
-        available: false,
-        grossAmount: amount,
-        netAmount: amount,
-        totalFee: 0,
-        feePercent: 0,
-        sellPrice: 1,
-        fixedCost: 0,
-        paymentMethod: 'N/A'
-      };
-    }
-
+    const fintocFees = getFintocFees();
     const inputAmount = Number(amount);
-    const sellPrice = Number(method.sell_price);
-    const fixedCost = Number(method.fixed_cost);
 
-    // Cálculo real de lo que recibirás en tu wallet
-    const netAmount = (inputAmount * sellPrice) - fixedCost;
-    const totalFee = inputAmount - netAmount;
-    const feePercent = inputAmount > 0 ? (totalFee / inputAmount) * 100 : 0;
+    // Fees de Fintoc (más bajos que Vita)
+    const feePercent = fintocFees.percent; // ~1.49% (vs ~3-4% de Vita)
+    const fixedCost = fintocFees.fixed;    // ~$150 CLP (vs ~$300 de Vita)
+
+    // Cálculo: Fee total = (amount * percent/100) + fixed
+    const percentFee = (inputAmount * feePercent) / 100;
+    const totalFee = percentFee + fixedCost;
+    const netAmount = inputAmount - totalFee;
+
+    console.log(`💳 [FX-Fintoc] Payin fees: ${feePercent}% + $${fixedCost} = $${totalFee.toFixed(2)} (Net: $${netAmount.toFixed(2)})`);
 
     return {
       available: true,
-      paymentMethod: method.payment_method,
+      paymentMethod: 'Fintoc Direct',
       grossAmount: inputAmount,
-      sellPrice,
+      sellPrice: 1, // Fintoc no usa sell_price, es directo
       fixedCost,
       netAmount: Number(netAmount.toFixed(2)),
       totalFee: Number(totalFee.toFixed(2)),
       feePercent: Number(feePercent.toFixed(2))
     };
+
   } catch (error) {
-    console.error('[FX] Error calculating payin fees:', error.message);
-    // En caso de error, asumimos sin fees para no bloquear la cotización
+    console.error('[FX] Error calculating Fintoc fees:', error.message);
+    // En caso de error, usar valores conservadores (fees de Vita como fallback)
+    const inputAmount = Number(amount);
+    const fallbackFeePercent = 3.0; // Fallback conservador
+    const fallbackFixed = 300;
+    const fallbackTotalFee = (inputAmount * fallbackFeePercent / 100) + fallbackFixed;
+
     return {
       available: false,
-      grossAmount: amount,
-      netAmount: amount,
-      totalFee: 0,
-      feePercent: 0,
+      grossAmount: inputAmount,
+      netAmount: inputAmount - fallbackTotalFee,
+      totalFee: fallbackTotalFee,
+      feePercent: fallbackFeePercent,
       sellPrice: 1,
-      fixedCost: 0,
-      paymentMethod: 'N/A',
+      fixedCost: fallbackFixed,
+      paymentMethod: 'Fallback',
       error: error.message
     };
   }

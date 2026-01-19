@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { createWithdrawal, createPaymentOrder, forceRefreshPrices } from '../services/vitaService.js';
+import { createWithdrawal, forceRefreshPrices, getWalletBalance } from '../services/vitaService.js';
+import { createWidgetLink } from '../services/fintocService.js';
 import { vita } from '../config/env.js';
 import Transaction from '../models/Transaction.js';
 
@@ -107,10 +108,10 @@ router.post('/', async (req, res) => {
       vitaResponse = { manual: true, id: `MANUAL-OFF-${Date.now()}` };
 
     } else {
-      // 🔄 FLUJO BIFURCADO: Two-Step vs Legacy
+      // 🔄 FLUJO HÍBRIDO: Fintoc Pay-in + Vita Pre-fondeado Payout
       if (rule?.profitRetention) {
-        // ✅ TWO-STEP: Payment Order (Payin) + Deferred Withdrawal (Payout)
-        console.log('[withdrawals] 💰 Two-Step Flow: Creating Payment Order for profit retention...');
+        // ✅ HYBRID FLOW: Fintoc Direct Payment (Payin) + Deferred Withdrawal (Payout)
+        console.log('[withdrawals] 💰 Hybrid Flow: Creating Fintoc Widget Link for profit retention...');
 
         // Calcular monto ajustado para withdrawal (usando tasa Vita real)
         let adjustedWithdrawalAmount = Number(amount);
@@ -134,26 +135,90 @@ router.post('/', async (req, res) => {
           }
         }
 
+        // 💰 PASO 0: VALIDACIÓN DE TESORERÍA
+        // Verificar que haya saldo suficiente en Vita Wallet antes de aceptar el pago
+        console.log('[withdrawals] 💰 Verificando saldo en Vita Wallet...');
+        const walletBalances = await getWalletBalance();
+        const clpBalance = walletBalances.find(b => b.currency === 'CLP');
+        const availableBalance = clpBalance?.available || 0;
+        const requiredAmount = adjustedWithdrawalAmount || amount;
+
+        console.log(`[withdrawals] 💰 Saldo disponible: ${availableBalance} CLP, Requerido: ${requiredAmount} CLP`);
+
+        if (availableBalance < requiredAmount) {
+          console.warn(`⚠️ [withdrawals] SALDO INSUFICIENTE: ${availableBalance} < ${requiredAmount}`);
+
+          // Crear transacción en estado "Treasury Hold"
+          const newTransaction = await Transaction.create({
+            order: orderId,
+            country,
+            currency,
+            amount,
+            beneficiary_type,
+            beneficiary_first_name,
+            beneficiary_last_name,
+            beneficiary_email,
+            beneficiary_address,
+            beneficiary_document_type,
+            beneficiary_document_number,
+            status: 'pending_treasury_hold',
+            payinStatus: 'not_started',
+            payoutStatus: 'blocked_insufficient_funds',
+            treasuryHold: {
+              reason: 'insufficient_vita_balance',
+              requiredAmount,
+              availableBalance,
+              blockedAt: new Date()
+            },
+            deferredWithdrawalPayload: null,
+            createdBy: userId,
+            proofOfPayment: proofOfPayment || null,
+            fee: Number(req.body.fee || 0),
+            feePercent: Number(req.body.feePercent || 0),
+            feeOriginAmount: Number(req.body.feeOriginAmount || 0),
+            rateTracking: req.body.rateTracking || null,
+            amountsTracking: req.body.amountsTracking || null,
+            feeAudit: req.body.feeAudit || null,
+            metadata: metadata || null
+          });
+
+          return res.status(402).json({
+            ok: false,
+            error: 'Fondos insuficientes en tesorería para procesar el payout',
+            code: 'INSUFFICIENT_TREASURY_FUNDS',
+            details: {
+              required: requiredAmount,
+              available: availableBalance,
+              deficit: requiredAmount - availableBalance,
+              txId: newTransaction._id,
+              message: 'La transacción quedó en espera. Será procesada cuando se recargue el saldo.'
+            }
+          });
+        }
+
         try {
-          // PASO 1: Crear Payment Order (cliente paga monto COMPLETO)
+          // PASO 1: Crear Fintoc Widget Link (cliente paga monto COMPLETO)
           const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
           const successRedirectUrl = `${frontendUrl}/#/payment-success/${orderId}`;
 
-          const paymentOrderPayload = {
+          const fintocWidgetPayload = {
             amount: Math.round(Number(amount)), // Cliente paga el monto completo
-            country_iso_code: String(inferredOriginCountry).toUpperCase(),
-            issue: `Order ${orderId}`,
-            success_redirect_url: successRedirectUrl
-            // ❌ metadata NO ES SOPORTADO por Vita API (según BusinessAPI.txt)
-            // IPN usará deferredWithdrawalPayload guardado en Transaction
+            currency: 'CLP',
+            metadata: {
+              orderId,
+              userId: userId.toString(),
+              beneficiaryName: `${beneficiary_first_name} ${beneficiary_last_name}`,
+              country,
+              destCurrency: currency
+            },
+            success_url: successRedirectUrl
           };
 
-          const poResp = await createPaymentOrder(paymentOrderPayload);
-          const poData = poResp?.data ?? poResp;
+          const fintocResp = await createWidgetLink(fintocWidgetPayload);
 
-          vitaResponse = poData;
-          vitaPaymentOrderId = poData?.id || poData?.uid || null;
-          checkoutUrl = poData?.attributes?.url || poData?.url || poData?.checkout_url || null;
+          vitaResponse = { fintoc: true, ...fintocResp };
+          const fintocPaymentIntentId = fintocResp?.id || null;
+          checkoutUrl = fintocResp?.widget_url || null;
 
           // PASO 2: Preparar Withdrawal diferido (se ejecutará vía IPN)
           // 🔧 FIX: Asegurar que beneficiary_address NO esté vacío
@@ -186,10 +251,18 @@ router.post('/', async (req, res) => {
           payoutStatus = 'pending';
           transactionStatus = 'pending';
 
-          console.log(`✅ [withdrawals] Payment Order created: ${vitaPaymentOrderId}. Withdrawal deferred (adjusted amount: ${adjustedWithdrawalAmount}).`);
+          console.log(`✅ [withdrawals] Fintoc Widget Link created: ${fintocPaymentIntentId}. Withdrawal deferred (adjusted amount: ${adjustedWithdrawalAmount}).`);
+          console.log(`✅ [withdrawals] Widget URL: ${checkoutUrl}`);
+
+          // Guardar ID de Fintoc en lugar de Payment Order
+          vitaPaymentOrderId = null; // Ya no usamos Payment Orders de Vita
+          vitaTxnId = fintocPaymentIntentId; // Usamos el ID de Fintoc
 
         } catch (error) {
-          console.error('❌ [withdrawals] Error creating Payment Order:', error.response?.data || error.message);
+          console.error('❌ [withdrawals] Error creating Fintoc Widget Link:', error.message);
+          if (error.response) {
+            console.error('[withdrawals] Fintoc Error Response:', error.response.data);
+          }
           throw error;
         }
 
@@ -280,7 +353,8 @@ router.post('/', async (req, res) => {
       status: transactionStatus,
       vitaResponse,
       withdrawalPayload: deferredWithdrawalPayload || { amount: Number(amount) },
-      vitaPaymentOrderId,
+      vitaPaymentOrderId: null, // Ya no usamos Payment Orders de Vita
+      fintocPaymentIntentId: vitaTxnId, // NUEVO: ID de Fintoc
       vitaWithdrawalId,
       payinStatus,
       payoutStatus,
@@ -303,8 +377,8 @@ router.post('/', async (req, res) => {
       data: {
         order: orderId,
         txId: newTransaction._id,
-        vitaTxnId: vitaPaymentOrderId || vitaTxnId,
-        checkoutUrl
+        fintocPaymentIntentId: vitaTxnId, // ID de Fintoc
+        checkoutUrl // URL del widget de Fintoc
       },
       raw: vitaResponse
     });

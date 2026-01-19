@@ -20,6 +20,7 @@ const transactionSchema = new mongoose.Schema({
       'pending',
       'pending_verification',
       'pending_manual_payout',
+      'pending_treasury_hold', // NUEVO: Bloqueado por saldo insuficiente
       'processing',
       'succeeded',
       'failed',
@@ -102,18 +103,37 @@ const transactionSchema = new mongoose.Schema({
   feeOriginAmount: { type: Number, default: 0 }, // Comisión en moneda origen
 
   // 🔄 IDs de Vita para flujo Payin → Payout
-  vitaPaymentOrderId: { type: String }, // ID del Payment Order (Payin)
+  vitaPaymentOrderId: { type: String }, // ID del Payment Order (Payin) - DEPRECATED en Hybrid Flow
   vitaWithdrawalId: { type: String },   // ID del Withdrawal (Payout)
+
+  // 💳 NUEVO: Fintoc Pay-in (Modelo Híbrido)
+  fintocPaymentIntentId: { type: String }, // ID del widget link de Fintoc
+  fintocWidgetUrl: { type: String },       // URL del widget para pago
+  fintocWebhookEvents: [{                  // Eventos de webhook recibidos
+    type: { type: String },
+    receivedAt: { type: Date },
+    payload: { type: Object }
+  }],
+
+  // 💰 Treasury Hold (Control de Tesorería)
+  treasuryHold: {
+    reason: { type: String },              // 'insufficient_vita_balance'
+    requiredAmount: { type: Number },      // Monto requerido en Vita
+    availableBalance: { type: Number },    // Saldo disponible al momento del bloqueo
+    blockedAt: { type: Date },             // Cuándo se bloqueó
+    resolvedAt: { type: Date },            // Cuándo se liberó (opcional)
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } // Admin que liberó
+  },
 
   // 📊 Estados separados para Payin y Payout
   payinStatus: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'expired'],
+    enum: ['not_started', 'pending', 'completed', 'failed', 'expired'],
     default: 'pending'
   },
   payoutStatus: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'blocked_insufficient_funds'], // NUEVO estado
     default: 'pending'
   },
 
@@ -139,7 +159,9 @@ transactionSchema.index({ createdBy: 1, createdAt: -1 });
 transactionSchema.index({ status: 1, createdAt: -1 });
 transactionSchema.index({ vitaPaymentOrderId: 1 });
 transactionSchema.index({ vitaWithdrawalId: 1 });
+transactionSchema.index({ fintocPaymentIntentId: 1 }); // NUEVO: Para búsqueda por Fintoc
 transactionSchema.index({ payinStatus: 1, payoutStatus: 1 });
+transactionSchema.index({ 'treasuryHold.blockedAt': 1 }); // NUEVO: Para admin treasury
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 

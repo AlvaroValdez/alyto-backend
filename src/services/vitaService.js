@@ -388,3 +388,47 @@ export const getPaymentOrderAttempt = async (paymentOrderId, attemptAltId) => {
 
   return unwrap(res);
 };
+
+/**
+ * 💰 Obtiene el saldo disponible en Vita Wallet
+ * Usado para validación de tesorería antes de ejecutar payouts
+ * 
+ * @returns {Promise<Array>} Array de balances por moneda
+ * Ejemplo: [{ currency: 'CLP', available: 5000000, total: 5000000 }]
+ */
+export const getWalletBalance = async () => {
+  try {
+    const walletUuid = process.env.VITA_BUSINESS_WALLET_UUID;
+
+    if (!walletUuid) {
+      throw new Error('VITA_BUSINESS_WALLET_UUID no configurado en .env');
+    }
+
+    // Endpoint de Vita para consultar saldo
+    const res = await client.get(`/wallets/${walletUuid}/balance`);
+    const data = unwrap(res);
+
+    // Normalizar respuesta de Vita
+    // Estructura esperada: { balances: [{ currency, available, total }] }
+    const balances = data?.balances || [];
+
+    console.log('💰 [vitaService] Saldos en Vita Wallet:', balances);
+
+    return balances.map(b => ({
+      currency: String(b.currency || '').toUpperCase(),
+      available: Number(b.available || 0),
+      total: Number(b.total || 0),
+      reserved: Number(b.reserved || 0)
+    }));
+
+  } catch (error) {
+    console.error('❌ [vitaService] Error obteniendo saldo de wallet:', error.message);
+    if (error.response) {
+      console.error('[vitaService] Vita Error Response:', error.response.data);
+    }
+
+    // En caso de error, retornar array vacío para no bloquear
+    // pero logear claramente el problema
+    return [];
+  }
+};

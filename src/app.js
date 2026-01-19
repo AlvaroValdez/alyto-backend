@@ -14,6 +14,7 @@ import rateLimit from 'express-rate-limit';
 import pricesRoutes from './routes/prices.js';
 import withdrawalsRoutes from './routes/withdrawals.js';
 import ipnRoutes from './routes/ipn.js';
+import ipnFintocRoutes from './routes/ipnFintoc.js'; // NUEVO: IPN de Fintoc
 import ipnEventsRoutes from './routes/ipnEvents.js';
 import fxRoutes from './routes/fx.js';
 import transactionsRoutes from './routes/transactions.js';
@@ -61,7 +62,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(morgan('dev'));
 // 2. La ruta IPN ANTES de express.json()
-app.use('/api/ipn', ipnRoutes);
+app.use('/api/ipn/vita', ipnRoutes);
+app.use('/api/ipn/fintoc', ipnFintocRoutes); // NUEVO: Webhook de Fintoc
 // 3. express.json() DESPUÉS de IPN pero ANTES de otras rutas API
 // 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
 app.use(express.json());
