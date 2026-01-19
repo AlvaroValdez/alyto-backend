@@ -56,8 +56,8 @@ router.post('/', [
       amount: Math.round(Number(amount)),
       country_iso_code: safeCountry,
       issue: `Pago de remesa #${orderId}`,
-      success_redirect_url: successRedirectUrl
-      // url_notify eliminado para evitar error 422 "Invalid Signature"
+      success_redirect_url: successRedirectUrl,
+      metadata: metadata  // ✅ Pasar metadata al Payment Order para que el webhook pueda ejecutar el withdrawal
     };
 
     // 🔍 IDEMPOTENCIA: Verificar si ya existe una Payment Order para esta transacción
@@ -101,90 +101,6 @@ router.post('/', [
       console.error('[payment-orders] Response:', raw);
     }
 
-    // 💰 PROFIT RETENTION LOGIC
-    // Actualizar la transacción existente con deferredWithdrawalPayload si profit retention está activo
-    try {
-      const transaction = await Transaction.findOne({ order: orderId });
-
-      if (transaction && metadata?.beneficiary && metadata?.destination) {
-        console.log('[payment-orders] 🔍 Transacción encontrada. Evaluando profit retention...');
-
-        // Verificar configuración de profit retention
-        const { SUPPORTED_ORIGINS } = await import('../data/supportedOrigins.js');
-        const inferredOriginCountry = SUPPORTED_ORIGINS.find(o => o.code === String(safeCountry).toUpperCase())?.code || 'CL';
-
-        const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
-        const rule = await TransactionConfig.findOne({ originCountry: inferredOriginCountry });
-
-        if (rule?.profitRetention) {
-          console.log('[payment-orders] 💰 Profit Retention enabled. Preparing deferred withdrawal...');
-
-          // Calcular monto ajustado (usando tracking data guardado en transacción)
-          let adjustedAmount = transaction.amount;
-
-          if (transaction.amountsTracking?.destReceiveAmount && transaction.rateTracking?.vitaRate) {
-            const targetDest = Number(transaction.amountsTracking.destReceiveAmount);
-            const vitaRate = Number(transaction.rateTracking.vitaRate);
-
-            if (targetDest > 0 && vitaRate > 0) {
-              const calculatedSource = Number((targetDest / vitaRate).toFixed(2));
-
-              if (calculatedSource <= (Number(transaction.amount) + 1)) {
-                adjustedAmount = calculatedSource;
-                const profit = Number(transaction.amount) - adjustedAmount;
-                console.log(`[payment-orders] 💰 Calculated profit: Client pays ${transaction.amount}, we send ${adjustedAmount}, profit: ${profit}`);
-              }
-            }
-          }
-
-          // Preparar payload completo para withdrawal diferido
-          const deferredWithdrawalPayload = {
-            url_notify: vita.notifyUrl || 'https://google.com',
-            currency: String(transaction.currency).toLowerCase(),
-            country: String(metadata.destination.country).toUpperCase(),
-            amount: adjustedAmount, // ⭐ MONTO AJUSTADO (con profit)
-            order: orderId,
-            transactions_type: 'withdrawal',
-            wallet: vita.walletUUID,
-
-            // Datos del beneficiario desde metadata
-            beneficiary_type: metadata.beneficiary.type,
-            beneficiary_first_name: metadata.beneficiary.first_name,
-            beneficiary_last_name: metadata.beneficiary.last_name,
-            beneficiary_email: metadata.beneficiary.email,
-            beneficiary_address: metadata.beneficiary.address || '',
-            beneficiary_document_type: metadata.beneficiary.document_type,
-            beneficiary_document_number: metadata.beneficiary.document_number,
-            account_type_bank: metadata.beneficiary.account_type_bank,
-            account_bank: metadata.beneficiary.account_bank,
-            bank_code: metadata.beneficiary.bank_code ? Number(metadata.beneficiary.bank_code) : undefined,
-
-            purpose: transaction.purpose || 'EPFAMT',
-            purpose_comentary: transaction.purpose_comentary || 'Pago servicios'
-          };
-
-          // Actualizar transacción con withdrawal diferido
-          transaction.vitaPaymentOrderId = vitaPaymentOrderId;
-          transaction.deferredWithdrawalPayload = deferredWithdrawalPayload;
-          transaction.payinStatus = 'pending';
-          transaction.payoutStatus = 'pending';
-
-          await transaction.save();
-
-          console.log(`✅ [payment-orders] Transacción actualizada con withdrawal diferido (adjusted amount: ${adjustedAmount})`);
-        } else {
-          // Sin profit retention, solo guardar el vitaPaymentOrderId
-          transaction.vitaPaymentOrderId = vitaPaymentOrderId;
-          await transaction.save();
-          console.log('[payment-orders] ✅ Transacción actualizada (sin profit retention)');
-        }
-      } else {
-        console.warn('[payment-orders] ⚠️ No se encontró transacción o faltan datos de metadata');
-      }
-    } catch (dbError) {
-      console.error('[payment-orders] ❌ Error actualizando transacción:', dbError);
-      // No fallar la request, solo logear el error
-    }
 
     // Notificar creación de orden
     if (req.user?.email) {
@@ -249,111 +165,5 @@ router.post('/:vitaOrderId/execute', async (req, res, next) => {
   }
 });
 
-// POST /api/payment-orders/:orderId/check-status
-// Fallback: Verificar estado en Vita y ejecutar withdrawal si es necesario
-router.post('/:orderId/check-status', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    console.log(`[check-status] Verificando orden: ${orderId}`);
-
-    const transaction = await Transaction.findOne({ order: orderId });
-    if (!transaction) {
-      return res.status(404).json({ ok: false, error: 'Transacción no encontrada' });
-    }
-
-    // Si ya está completada, retornar
-    if (transaction.payinStatus === 'completed' && transaction.payoutStatus !== 'pending') {
-      return res.json({ ok: true, status: 'completed', transaction });
-    }
-
-    // Consultar estado en Vita
-    // Nota: Necesitamos el ID de vita, no el nuestro.
-    const vitaId = transaction.vitaPaymentOrderId;
-    if (!vitaId) {
-      return res.status(400).json({ ok: false, error: 'No hay ID de Vita asociado' });
-    }
-
-    // Usar cliente de Vita para consultar la orden
-    // getPaymentOrderAttempt no sirve aquí porque queremos la orden general
-    // Improvisamos una llamada directa o usamos una función existente
-    // Reusamos createPaymentOrder/executeDirectPayment importados? No tienen get.
-    // Importamos el cliente axios directo o agregamos getPaymentOrder a vitaService.
-    const { getPaymentOrder } = await import('../services/vitaService.js');
-
-    let vitaStatus = 'pending';
-    try {
-      const vitaOrder = await getPaymentOrder(vitaId);
-      const attrs = vitaOrder?.data?.attributes || vitaOrder?.attributes || {};
-      vitaStatus = attrs.status;
-      console.log(`[check-status] Estado en Vita: ${vitaStatus}`);
-    } catch (err) {
-      console.error('[check-status] Error consultando Vita:', err.message);
-      // Si falla la consulta, no podemos avanzar
-      return res.status(502).json({ ok: false, error: 'Error consultando a Vita' });
-    }
-
-    if (vitaStatus === 'completed' || vitaStatus === 'successful' || vitaStatus === 'paid') {
-      // 🟢 PAGO CONFIRMADO
-      transaction.payinStatus = 'completed';
-
-      // Ejecutar withdrawal diferido si está pendiente
-      if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
-        console.log(`[check-status] ⭐ Ejecutando withdrawal diferido por validación manual`);
-
-        const { createWithdrawal, forceRefreshPrices } = await import('../services/vitaService.js');
-        try {
-          const withdrawalResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
-          const wData = withdrawalResp?.data ?? withdrawalResp;
-
-          transaction.vitaWithdrawalId = wData?.id || wData?.data?.id || null;
-          transaction.payoutStatus = 'processing';
-          transaction.status = 'processing';
-          console.log(`✅ [check-status] Withdrawal ejecutado: ${transaction.vitaWithdrawalId}`);
-        } catch (wError) {
-          // 🔄 RETRY: Si falló por precios expirados, refrescar y reintentar
-          const errorData = wError.response?.data?.error || {};
-          const msg = `${errorData?.message || ''} ${errorData?.details?.message || ''}`.toLowerCase();
-
-          if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
-            console.log('[check-status] ⚠️ Precios expirados. Refrescando y reintentando...');
-            await forceRefreshPrices();
-            await new Promise(r => setTimeout(r, 1500));
-
-            try {
-              const retryResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
-              const retryData = retryResp?.data ?? retryResp;
-
-              transaction.vitaWithdrawalId = retryData?.id || retryData?.data?.id || null;
-              transaction.payoutStatus = 'processing';
-              transaction.status = 'processing';
-              console.log(`✅ [check-status] Withdrawal ejecutado (retry): ${transaction.vitaWithdrawalId}`);
-            } catch (retryError) {
-              console.error('[check-status] ❌ Error en retry:', retryError.message);
-              transaction.payoutStatus = 'failed';
-              transaction.status = 'failed';
-            }
-          } else {
-            console.error('[check-status] ❌ Error executing withdrawal:', wError.message);
-            transaction.payoutStatus = 'failed';
-            transaction.status = 'failed';
-          }
-        }
-      }
-
-      await transaction.save();
-    }
-
-    return res.json({
-      ok: true,
-      status: transaction.status,
-      payinStatus: transaction.payinStatus,
-      payoutStatus: transaction.payoutStatus
-    });
-
-  } catch (e) {
-    console.error('[check-status] Error:', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
 
 export default router;

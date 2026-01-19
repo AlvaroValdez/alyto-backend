@@ -42,8 +42,8 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
         console.log(`[IPN] ⭐ Executing deferred withdrawal for order: ${transaction.order}`);
 
+        const { createWithdrawal, forceRefreshPrices } = await import('../services/vitaService.js');
         try {
-          const { createWithdrawal } = await import('../services/vitaService.js');
           const withdrawalResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
           const wData = withdrawalResp?.data ?? withdrawalResp;
 
@@ -54,14 +54,142 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
           console.log(`✅ [IPN] Withdrawal executed: ${transaction.vitaWithdrawalId} (amount: ${transaction.deferredWithdrawalPayload.amount})`);
 
         } catch (withdrawalError) {
-          console.error('[IPN] ❌ Error executing withdrawal:', withdrawalError);
-          transaction.payoutStatus = 'failed';
-          transaction.status = 'failed';
-          transaction.errorMessage = withdrawalError.message;
+          // 🔄 RETRY: Si falló por precios expirados, refrescar y reintentar
+          const errorData = withdrawalError.response?.data?.error || {};
+          const msg = `${errorData?.message || ''} ${errorData?.details?.message || ''}`.toLowerCase();
+
+          if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
+            console.log('[IPN] ⚠️ Precios expirados. Refrescando y reintentando...');
+            await forceRefreshPrices();
+            await new Promise(r => setTimeout(r, 1500));
+
+            try {
+              const retryResp = await createWithdrawal(transaction.deferredWithdrawalPayload);
+              const retryData = retryResp?.data ?? retryResp;
+
+              transaction.vitaWithdrawalId = retryData?.id || retryData?.data?.id || null;
+              transaction.payoutStatus = 'processing';
+              transaction.status = 'processing';
+              console.log(`✅ [IPN] Withdrawal executed (retry): ${transaction.vitaWithdrawalId}`);
+            } catch (retryError) {
+              console.error('[IPN] ❌ Error en retry:', retryError.message);
+              transaction.payoutStatus = 'failed';
+              transaction.status = 'failed';
+              transaction.errorMessage = retryError.message;
+            }
+          } else {
+            console.error('[IPN] ❌ Error executing withdrawal:', withdrawalError.message);
+            transaction.payoutStatus = 'failed';
+            transaction.status = 'failed';
+            transaction.errorMessage = withdrawalError.message;
+          }
         }
       } else {
         // Legacy flow (withdrawal ya estaba creado directamente)
         transaction.status = 'succeeded';
+      }
+
+      await transaction.save();
+
+    } else if (event?.type === 'payment_order.completed') {
+      // Manejar Payment Orders completadas (documentado en BusinessAPI.txt)
+      const transaction = await Transaction.findOne({ order: event?.order });
+
+      if (!transaction) {
+        console.warn(`[IPN] Transaction not found for Payment Order: ${event?.order}`);
+        return res.json({ ok: true, id: vitaEvent._id });
+      }
+
+      // Verificar que no se haya procesado ya
+      if (transaction.payinStatus === 'completed' && transaction.vitaWithdrawalId) {
+        console.log('[IPN] Payment Order already processed');
+        return res.json({ ok: true, id: vitaEvent._id });
+      }
+
+      // Actualizar estado de Payin
+      transaction.payinStatus = 'completed';
+      transaction.ipnEvents.push(vitaEvent._id);
+
+      // Extraer metadata del evento IPN
+      const metadata = event?.metadata || transaction.metadata;
+
+      if (!metadata?.beneficiary || !metadata?.destination) {
+        console.error('[IPN] Metadata incompleto en Payment Order:', metadata);
+        transaction.payoutStatus = 'failed';
+        transaction.status = 'failed';
+        await transaction.save();
+        return res.json({ ok: true, id: vitaEvent._id });
+      }
+
+      // Crear withdrawal con metadata del IPN
+      console.log(`[IPN] ⭐ Executing withdrawal for Payment Order: ${event?.order}`);
+
+      const { createWithdrawal, forceRefreshPrices } = await import('../services/vitaService.js');
+      const { vita } = await import('../config/env.js');
+
+      try {
+        const withdrawalPayload = {
+          url_notify: vita.notifyUrl || 'https://google.com',
+          currency: String(metadata.destination.currency).toLowerCase(),
+          country: String(metadata.destination.country).toUpperCase(),
+          amount: Number(metadata.destination.amount),
+          order: event.order,
+          transactions_type: 'withdrawal',
+          wallet: vita.walletUUID,
+
+          beneficiary_type: metadata.beneficiary.type || 'person',
+          beneficiary_first_name: metadata.beneficiary.first_name,
+          beneficiary_last_name: metadata.beneficiary.last_name,
+          beneficiary_email: metadata.beneficiary.email,
+          beneficiary_document_type: metadata.beneficiary.document_type,
+          beneficiary_document_number: metadata.beneficiary.document_number,
+          account_type_bank: metadata.beneficiary.account_type_bank,
+          account_bank: metadata.beneficiary.account_bank,
+          bank_code: metadata.beneficiary.bank_code,
+
+          purpose: transaction.purpose || 'EPFAMT',
+          purpose_comentary: transaction.purpose_comentary || 'Remesa familiar'
+        };
+
+        const withdrawalResp = await createWithdrawal(withdrawalPayload);
+        const wData = withdrawalResp?.data ?? withdrawalResp;
+
+        transaction.vitaWithdrawalId = wData?.id || wData?.data?.id || null;
+        transaction.payoutStatus = 'processing';
+        transaction.status = 'processing';
+
+        console.log(`✅ [IPN] Withdrawal executed for Payment Order: ${transaction.vitaWithdrawalId}`);
+
+      } catch (withdrawalError) {
+        // Retry si precios expirados
+        const errorData = withdrawalError.response?.data?.error || {};
+        const msg = `${errorData?.message || ''} ${errorData?.details?.message || ''}`.toLowerCase();
+
+        if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
+          console.log('[IPN] ⚠️ Precios expirados. Refrescando...');
+          await forceRefreshPrices();
+          await new Promise(r => setTimeout(r, 1500));
+
+          try {
+            const retryResp = await createWithdrawal(withdrawalPayload);
+            const retryData = retryResp?.data ?? retryResp;
+
+            transaction.vitaWithdrawalId = retryData?.id || retryData?.data?.id || null;
+            transaction.payoutStatus = 'processing';
+            transaction.status = 'processing';
+            console.log(`✅ [IPN] Withdrawal executed (retry) for Payment Order: ${transaction.vitaWithdrawalId}`);
+          } catch (retryError) {
+            console.error('[IPN] ❌ Error en retry:', retryError.message);
+            transaction.payoutStatus = 'failed';
+            transaction.status = 'failed';
+            transaction.errorMessage = retryError.message;
+          }
+        } else {
+          console.error('[IPN] ❌ Error executing withdrawal:', withdrawalError.message);
+          transaction.payoutStatus = 'failed';
+          transaction.status = 'failed';
+          transaction.errorMessage = withdrawalError.message;
+        }
       }
 
       await transaction.save();

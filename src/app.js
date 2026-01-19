@@ -29,7 +29,6 @@ import uploadRoutes from './routes/upload.js';
 import adminTreasuryRoutes from './routes/adminTreasury.js';
 import adminComplianceRoutes from './routes/adminCompliance.js';
 import directPayRoutes from './routes/directPay.js';
-import vitaWebhookRoutes from './routes/vitaWebhook.js';
 //import './utils/envValidation.js';
 
 const app = express();
@@ -63,9 +62,7 @@ app.use(cors(corsOptions));
 app.use(morgan('dev'));
 // 2. La ruta IPN ANTES de express.json()
 app.use('/api/ipn', ipnRoutes);
-// 2.5 Webhook de Vita para Payment Orders (también antes de express.json())
-app.use('/api/webhooks/vita', vitaWebhookRoutes);
-// 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
+// 3. express.json() DESPUÉS de IPN pero ANTES de otras rutas API
 // 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
 app.use(express.json());
 
