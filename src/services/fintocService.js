@@ -57,6 +57,11 @@ export async function createWidgetLink(params) {
             metadata
         };
 
+        // Agregar success_url si fue provisto
+        if (success_url) {
+            payload.success_url = success_url;
+        }
+
         // Solo agregar recipient_account si se quiere Direct Payment
         // (requiere credenciales de cuenta bancaria específicas)
         if (process.env.FINTOC_RECIPIENT_HOLDER_ID &&
