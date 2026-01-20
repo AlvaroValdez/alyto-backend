@@ -15,9 +15,16 @@ const fintocClient = axios.create({
     baseURL: FINTOC_API_URL,
     timeout: 30000,
     headers: {
-        'Content-Type': 'application/json',
-        'Authorization': FINTOC_SECRET_KEY
+        'Content-Type': 'application/json'
     }
+});
+
+// Agregar el Authorization header a cada request
+fintocClient.interceptors.request.use((config) => {
+    if (FINTOC_SECRET_KEY) {
+        config.headers['Authorization'] = FINTOC_SECRET_KEY;
+    }
+    return config;
 });
 
 /**
@@ -47,18 +54,20 @@ export async function createWidgetLink(params) {
         const payload = {
             amount: Math.round(amount), // Fintoc requiere enteros
             currency: currency.toUpperCase(),
-            metadata,
-            success_url,
-            // Configuración adicional
-            country: 'cl', // Chile
-            recipient_account: {
-                // Aquí iría la configuración de tu cuenta bancaria receptora
-                // Esto puede venir de variables de entorno
+            metadata
+        };
+
+        // Solo agregar recipient_account si se quiere Direct Payment
+        // (requiere credenciales de cuenta bancaria específicas)
+        if (process.env.FINTOC_RECIPIENT_HOLDER_ID &&
+            process.env.FINTOC_RECIPIENT_ACCOUNT_NUMBER) {
+            console.log('[fintocService] Usando Direct Payment con cuenta bancaria');
+            payload.recipient_account = {
                 holder_id: process.env.FINTOC_RECIPIENT_HOLDER_ID,
                 number: process.env.FINTOC_RECIPIENT_ACCOUNT_NUMBER,
                 type: process.env.FINTOC_RECIPIENT_ACCOUNT_TYPE || 'checking_account'
-            }
-        };
+            };
+        }
 
         console.log('[fintocService] Creando Payment Link:', {
             amount: payload.amount,
