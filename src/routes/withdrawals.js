@@ -135,65 +135,77 @@ router.post('/', async (req, res) => {
           }
         }
 
-        // 💰 PASO 0: VALIDACIÓN DE TESORERÍA
-        // Verificar que haya saldo suficiente en Vita Wallet antes de aceptar el pago
-        console.log('[withdrawals] 💰 Verificando saldo en Vita Wallet...');
-        const walletBalances = await getWalletBalance();
-        const clpBalance = walletBalances.find(b => b.currency === 'CLP');
-        const availableBalance = clpBalance?.available || 0;
-        const requiredAmount = adjustedWithdrawalAmount || amount;
+        // 💰 PASO 0: VALIDACIÓN DE TESORERÍA (OPCIONAL)
+        // Solo validar si está habilitado en .env
+        const enableTreasuryValidation = (process.env.ENABLE_TREASURY_VALIDATION || 'false').toLowerCase() === 'true';
 
-        console.log(`[withdrawals] 💰 Saldo disponible: ${availableBalance} CLP, Requerido: ${requiredAmount} CLP`);
+        if (enableTreasuryValidation) {
+          console.log('[withdrawals] 💰 Verificando saldo en Vita Wallet...');
+          try {
+            const walletBalances = await getWalletBalance();
+            const clpBalance = walletBalances.find(b => b.currency === 'CLP');
+            const availableBalance = clpBalance?.available || 0;
+            const requiredAmount = adjustedWithdrawalAmount || amount;
 
-        if (availableBalance < requiredAmount) {
-          console.warn(`⚠️ [withdrawals] SALDO INSUFICIENTE: ${availableBalance} < ${requiredAmount}`);
+            console.log(`[withdrawals] 💰 Saldo disponible: ${availableBalance} CLP, Requerido: ${requiredAmount} CLP`);
 
-          // Crear transacción en estado "Treasury Hold"
-          const newTransaction = await Transaction.create({
-            order: orderId,
-            country,
-            currency,
-            amount,
-            beneficiary_type,
-            beneficiary_first_name,
-            beneficiary_last_name,
-            beneficiary_email,
-            beneficiary_address,
-            beneficiary_document_type,
-            beneficiary_document_number,
-            status: 'pending_treasury_hold',
-            payinStatus: 'not_started',
-            payoutStatus: 'blocked_insufficient_funds',
-            treasuryHold: {
-              reason: 'insufficient_vita_balance',
-              requiredAmount,
-              availableBalance,
-              blockedAt: new Date()
-            },
-            deferredWithdrawalPayload: null,
-            createdBy: userId,
-            proofOfPayment: proofOfPayment || null,
-            fee: Number(req.body.fee || 0),
-            feePercent: Number(req.body.feePercent || 0),
-            feeOriginAmount: Number(req.body.feeOriginAmount || 0),
-            rateTracking: req.body.rateTracking || null,
-            amountsTracking: req.body.amountsTracking || null,
-            feeAudit: req.body.feeAudit || null,
-            metadata: metadata || null
-          });
+            if (availableBalance < requiredAmount) {
+              console.warn(`⚠️ [withdrawals] SALDO INSUFICIENTE: ${availableBalance} < ${requiredAmount}`);
 
-          return res.status(402).json({
-            ok: false,
-            error: 'Fondos insuficientes en tesorería para procesar el payout',
-            code: 'INSUFFICIENT_TREASURY_FUNDS',
-            details: {
-              required: requiredAmount,
-              available: availableBalance,
-              deficit: requiredAmount - availableBalance,
-              txId: newTransaction._id,
-              message: 'La transacción quedó en espera. Será procesada cuando se recargue el saldo.'
+              // Crear transacción en estado "Treasury Hold"
+              const newTransaction = await Transaction.create({
+                order: orderId,
+                country,
+                currency,
+                amount,
+                beneficiary_type,
+                beneficiary_first_name,
+                beneficiary_last_name,
+                beneficiary_email,
+                beneficiary_address,
+                beneficiary_document_type,
+                beneficiary_document_number,
+                status: 'pending_treasury_hold',
+                payinStatus: 'not_started',
+                payoutStatus: 'blocked_insufficient_funds',
+                treasuryHold: {
+                  reason: 'insufficient_vita_balance',
+                  requiredAmount,
+                  availableBalance,
+                  blockedAt: new Date()
+                },
+                deferredWithdrawalPayload: null,
+                createdBy: userId,
+                proofOfPayment: proofOfPayment || null,
+                fee: Number(req.body.fee || 0),
+                feePercent: Number(req.body.feePercent || 0),
+                feeOriginAmount: Number(req.body.feeOriginAmount || 0),
+                rateTracking: req.body.rateTracking || null,
+                amountsTracking: req.body.amountsTracking || null,
+                feeAudit: req.body.feeAudit || null,
+                metadata: metadata || null
+              });
+
+              return res.status(402).json({
+                ok: false,
+                error: 'Fondos insuficientes en tesorería para procesar el payout',
+                code: 'INSUFFICIENT_TREASURY_FUNDS',
+                details: {
+                  required: requiredAmount,
+                  available: availableBalance,
+                  deficit: requiredAmount - availableBalance,
+                  txId: newTransaction._id,
+                  message: 'La transacción quedó en espera. Será procesada cuando se recargue el saldo.'
+                }
+              });
             }
-          });
+          } catch (balanceError) {
+            console.error('[withdrawals] ⚠️ Error consultando saldo, continuando sin validación:', balanceError.message);
+            // Continuar sin bloquear la transacción
+          }
+        } else {
+          console.log('[withdrawals] ⚠️ Treasury validation DISABLED. Proceeding without balance check.');
+          console.log('[withdrawals] 💡 Enable with ENABLE_TREASURY_VALIDATION=true in .env');
         }
 
         try {
