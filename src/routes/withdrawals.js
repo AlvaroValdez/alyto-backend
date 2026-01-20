@@ -230,7 +230,7 @@ router.post('/', async (req, res) => {
 
           vitaResponse = { fintoc: true, ...fintocResp };
           const fintocPaymentIntentId = fintocResp?.id || null;
-          checkoutUrl = fintocResp?.widget_url || null;
+          checkoutUrl = fintocResp?.url || null;  // Fintoc devuelve 'url', no 'widget_url'
 
           // PASO 2: Preparar Withdrawal diferido (se ejecutará vía IPN)
           // 🔧 FIX: Asegurar que beneficiary_address NO esté vacío

@@ -60,20 +60,20 @@ export async function createWidgetLink(params) {
             }
         };
 
-        console.log('[fintocService] Creando Widget Link:', {
+        console.log('[fintocService] Creando Payment Link:', {
             amount: payload.amount,
             currency: payload.currency,
             metadata: payload.metadata
         });
 
-        const response = await fintocClient.post('/widget_links', payload);
+        const response = await fintocClient.post('/payment_links', payload);
         const data = response.data;
 
-        console.log('✅ [fintocService] Widget Link creado:', data.id);
+        console.log('✅ [fintocService] Payment Link creado:', data.id);
 
         return {
             id: data.id,
-            widget_url: data.widget_url,
+            url: data.url,  // Fintoc devuelve 'url' no 'widget_url'
             status: data.status,
             amount: data.amount,
             currency: data.currency,
@@ -148,7 +148,7 @@ export function verifyFintocWebhook(payload, signature) {
  */
 export async function getWidgetLinkStatus(widgetLinkId) {
     try {
-        const response = await fintocClient.get(`/widget_links/${widgetLinkId}`);
+        const response = await fintocClient.get(`/payment_links/${widgetLinkId}`);
         const data = response.data;
 
         return {
