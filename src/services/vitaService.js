@@ -404,22 +404,57 @@ export const getWalletBalance = async () => {
       throw new Error('VITA_BUSINESS_WALLET_UUID no configurado en .env');
     }
 
-    // Endpoint de Vita para consultar saldo
-    const res = await client.get(`/wallets/${walletUuid}/balance`);
-    const data = unwrap(res);
+    // Endpoint de Vita para consultar saldo - intentar múltiples endpoints
+    let res;
+    let data;
 
-    // Normalizar respuesta de Vita
-    // Estructura esperada: { balances: [{ currency, available, total }] }
-    const balances = data?.balances || [];
+    try {
+      res = await client.get(`/wallets/${walletUuid}/balance`);
+      data = unwrap(res);
+    } catch (error1) {
+      console.warn('[vitaService] /wallets/{uuid}/balance failed, trying /wallets/{uuid}');
+      res = await client.get(`/wallets/${walletUuid}`);
+      data = unwrap(res);
+    }
 
-    console.log('💰 [vitaService] Saldos en Vita Wallet:', balances);
+    // Normalizar respuesta - manejar múltiples estructuras posibles
+    // Estructuras: { balance }, { data: {balance} }, { balances: [...] }
+    let balance;
+    let currency = 'CLP';
 
-    return balances.map(b => ({
-      currency: String(b.currency || '').toUpperCase(),
-      available: Number(b.available || 0),
-      total: Number(b.total || 0),
-      reserved: Number(b.reserved || 0)
-    }));
+    if (typeof data.balance !== 'undefined') {
+      balance = data.balance;
+      currency = data.currency || 'CLP';
+    } else if (data.data && typeof data.data.balance !== 'undefined') {
+      balance = data.data.balance;
+      currency = data.data.currency || 'CLP';
+    } else if (data.data && data.data.wallet) {
+      balance = data.data.wallet.balance;
+      currency = data.data.wallet.currency || 'CLP';
+    } else if (data.balances && Array.isArray(data.balances)) {
+      console.log('💰 [vitaService] Saldos:', data.balances);
+      return data.balances.map(b => ({
+        currency: String(b.currency || '').toUpperCase(),
+        available: Number(b.available || b.balance || 0),
+        total: Number(b.total || b.balance || 0),
+        reserved: Number(b.reserved || 0)
+      }));
+    }
+
+    // Si encontramos un balance simple, retornar como array
+    if (typeof balance !== 'undefined') {
+      console.log(`💰 [vitaService] Saldo: ${balance} ${currency}`);
+      return [{
+        currency: String(currency).toUpperCase(),
+        available: Number(balance),
+        total: Number(balance),
+        reserved: 0
+      }];
+    }
+
+    console.warn('⚠️ [vitaService] No balance encontrado en respuesta');
+    console.log('[vitaService] Respuesta:', JSON.stringify(data, null, 2));
+    return [];
 
   } catch (error) {
     console.error('❌ [vitaService] Error obteniendo saldo de wallet:', error.message);
