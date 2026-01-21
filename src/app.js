@@ -61,12 +61,15 @@ const corsOptions = {
 // 1. CORS debe ir PRIMERO para aplicarse a todas las rutas
 app.use(cors(corsOptions));
 app.use(morgan('dev'));
-// 2. La ruta IPN ANTES de express.json()
+
+// 2. La ruta IPN de Vita ANTES de express.json() (necesita raw body)
 app.use('/api/ipn/vita', ipnRoutes);
-app.use('/api/ipn/fintoc', ipnFintocRoutes); // NUEVO: Webhook de Fintoc
-// 3. express.json() DESPUÉS de IPN pero ANTES de otras rutas API
-// 3. express.json() DESPUÉS de IPN/Webhooks pero ANTES de otras rutas API
+
+// 3. express.json() para parsear JSON en el resto de rutas
 app.use(express.json());
+
+// 4. IPN de Fintoc DESPUÉS de express.json() (necesita body parseado)
+app.use('/api/ipn/fintoc', ipnFintocRoutes);
 
 // --- SEGURIDAD ---
 // Set Security Headers
