@@ -113,27 +113,38 @@ router.post('/', async (req, res) => {
         // ✅ HYBRID FLOW: Fintoc Direct Payment (Payin) + Deferred Withdrawal (Payout)
         console.log('[withdrawals] 💰 Hybrid Flow: Creating Fintoc Widget Link for profit retention...');
 
-        // Calcular monto ajustado para withdrawal (usando tasa Vita real)
-        let adjustedWithdrawalAmount = Number(amount);
+        // ✅ FIX CRÍTICO: NO recalcular, usar el principal NETO de FX
+        // El FX ya calculó el monto correcto considerando:
+        // - Fees de Fintoc (payin)
+        // - Spread de Alyto
+        // - Fees de Vita (payout)
+        //
+        // Si recalculamos con vitaRate (que puede estar desactualizado), el usuario
+        // recibe MENOS de lo prometido. En su lugar, enviamos el principal neto y
+        // dejamos que Vita use SU tasa actual en tiempo real.
 
-        if (req.body.amountsTracking?.destReceiveAmount && req.body.rateTracking?.vitaRate) {
-          const targetDest = Number(req.body.amountsTracking.destReceiveAmount);
-          const vitaRate = Number(req.body.rateTracking.vitaRate);
+        const adjustedWithdrawalAmount = req.body.amountsTracking?.originPrincipal
+          ? Number(req.body.amountsTracking.originPrincipal)
+          : Number(amount);
 
-          if (targetDest > 0 && vitaRate > 0) {
-            // Cálculo inverso: CLP necesarios = destino_prometido / tasa_vita_real
-            const calculatedSource = Number((targetDest / vitaRate).toFixed(2));
+        // Calcular profit (diferencia entre lo que recibimos y lo que enviamos)
+        const fintocFees = Number(amount) - adjustedWithdrawalAmount;
+        const profitCOP = req.body.amountsTracking?.profitDestCurrency || 0;
+        const destReceiveAmount = req.body.amountsTracking?.destReceiveAmount || 0;
+        const destCurrency = req.body.amountsTracking?.destCurrency || 'COP';
 
-            // Safety check
-            if (calculatedSource <= (Number(amount) + 1)) {
-              adjustedWithdrawalAmount = calculatedSource;
-              const profit = Number(amount) - adjustedWithdrawalAmount;
-              console.log(`[withdrawals] 💰 Profit calculation: Client pays ${amount}, we send ${adjustedWithdrawalAmount}, profit: ${profit} ${currency}`);
-            } else {
-              console.warn('[withdrawals] ⚠️ Calculated cost > client payment. Using original amount.');
-            }
-          }
-        }
+        console.log(`[withdrawals] 💰 Hybrid Flow Financial Breakdown:`);
+        console.log(`  ┌─ PAY-IN (Fintoc):`);
+        console.log(`  │  - Client pays (gross):       ${amount} ${currency}`);
+        console.log(`  │  - Fintoc fees:               ${fintocFees.toFixed(2)} ${currency}`);
+        console.log(`  │  - Net to Vita (principal):  ${adjustedWithdrawalAmount} ${currency}`);
+        console.log(`  ├─ PAY-OUT (Vita):`);
+        console.log(`  │  - Vita sends:               ${adjustedWithdrawalAmount} ${currency}`);
+        console.log(`  │  - Beneficiary receives:     ${destReceiveAmount} ${destCurrency}`);
+        console.log(`  │  - (Vita rate: ${req.body.rateTracking?.vitaRate || 'N/A'})`);
+        console.log(`  └─ PROFIT:`);
+        console.log(`     - Spread profit (${destCurrency}):  ${profitCOP.toFixed(2)}`);
+        console.log(`     - Profit % of principal:   ${((profitCOP / destReceiveAmount) * 100).toFixed(2)}%`);
 
         // 💰 PASO 0: VALIDACIÓN DE TESORERÍA (OPCIONAL)
         // Solo validar si está habilitado en .env
