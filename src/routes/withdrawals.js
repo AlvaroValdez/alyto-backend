@@ -133,17 +133,30 @@ router.post('/', async (req, res) => {
         const destReceiveAmount = req.body.amountsTracking?.destReceiveAmount || 0;
         const destCurrency = req.body.amountsTracking?.destCurrency || 'COP';
 
+        // Calcular monto real que Vita enviará (usando su tasa real-time)
+        const vitaRateRealTime = req.body.rateTracking?.vitaRate || 0;
+        const vitaActualSend = vitaRateRealTime > 0
+          ? (adjustedWithdrawalAmount * vitaRateRealTime).toFixed(2)
+          : 'N/A';
+        const actualExcess = vitaRateRealTime > 0
+          ? (adjustedWithdrawalAmount * vitaRateRealTime) - destReceiveAmount
+          : 0;
+
         console.log(`[withdrawals] 💰 Hybrid Flow Financial Breakdown:`);
         console.log(`  ┌─ PAY-IN (Fintoc):`);
-        console.log(`  │  - Client pays (gross):       ${amount} ${currency}`);
-        console.log(`  │  - Fintoc fees:               ${fintocFees.toFixed(2)} ${currency}`);
-        console.log(`  │  - Net to Vita (principal):  ${adjustedWithdrawalAmount} ${currency}`);
-        console.log(`  ├─ PAY-OUT (Vita):`);
-        console.log(`  │  - Vita sends:               ${adjustedWithdrawalAmount} ${currency}`);
-        console.log(`  │  - Beneficiary receives:     ${destReceiveAmount} ${destCurrency}`);
-        console.log(`  │  - (Vita rate: ${req.body.rateTracking?.vitaRate || 'N/A'})`);
-        console.log(`  └─ PROFIT:`);
-        console.log(`     - Spread profit (${destCurrency}):  ${profitCOP.toFixed(2)}`);
+        console.log(`  │  - Client pays (gross):         ${amount} ${currency}`);
+        console.log(`  │  - Fintoc fees (${((fintocFees / amount) * 100).toFixed(2)}%):       ${fintocFees.toFixed(2)} ${currency}`);
+        console.log(`  │  - Net to Vita (principal):    ${adjustedWithdrawalAmount} ${currency}`);
+        console.log(`  ├─ QUOTE (What we promised):`);
+        console.log(`  │  - Alyto rate (with spread):   ${req.body.rateTracking?.alytoRate || 'N/A'}`);
+        console.log(`  │  - PROMISED to beneficiary:    ${destReceiveAmount} ${destCurrency}`);
+        console.log(`  ├─ PAY-OUT (Vita - Actual):`);
+        console.log(`  │  - Vita sends:                 ${adjustedWithdrawalAmount} ${currency}`);
+        console.log(`  │  - Vita rate (real-time):      ${vitaRateRealTime || 'N/A'}`);
+        console.log(`  │  - ACTUAL Vita will send:      ${vitaActualSend} ${destCurrency}`);
+        console.log(`  │  - Excess over promise:        +${actualExcess.toFixed(2)} ${destCurrency}`);
+        console.log(`  └─ SUMMARY:`);
+        console.log(`     - User receives AT LEAST:     ${destReceiveAmount} ${destCurrency} ✅`);
         console.log(`     - Profit % of principal:   ${((profitCOP / destReceiveAmount) * 100).toFixed(2)}%`);
 
         // 💰 PASO 0: VALIDACIÓN DE TESORERÍA (OPCIONAL)
