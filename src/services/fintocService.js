@@ -44,7 +44,9 @@ export async function createWidgetLink(params) {
             amount,
             currency = 'CLP',
             metadata = {},
-            success_url
+            success_url,
+            cancel_url,
+            customer_email
         } = params;
 
         if (!amount || amount <= 0) {
