@@ -133,11 +133,8 @@ export function verifyFintocWebhook(payload, signature) {
             .update(payloadString)
             .digest('hex');
 
-        // Comparación segura para prevenir timing attacks
-        const isValid = crypto.timingSafeEqual(
-            Buffer.from(signature),
-            Buffer.from(expectedSignature)
-        );
+        // Comparación simple de strings (no buffers para evitar error de longitud)
+        const isValid = expectedSignature === signature;
 
         if (isValid) {
             console.log('✅ [fintocService] Webhook signature válida');

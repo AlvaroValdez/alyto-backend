@@ -32,7 +32,9 @@ router.post('/', async (req, res) => {
         const eventType = event?.type;
         const eventData = event?.data;
 
-        if (eventType === 'payment.succeeded' || eventType === 'widget_link.succeeded') {
+        if (eventType === 'payment.succeeded' ||
+            eventType === 'payment_intent.succeeded' ||
+            eventType === 'widget_link.succeeded') {
             // 💰 PAGO EXITOSO - Ejecutar withdrawal inmediato
             const orderId = eventData?.metadata?.orderId;
 
