@@ -209,10 +209,10 @@ router.post('/', async (req, res) => {
         }
 
         try {
-          // PASO 1: Crear Fintoc Widget Link (cliente paga monto COMPLETO)
+          // PASO 1: Crear Fintoc Checkout Session
           const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
-          const successRedirectUrl = `${frontendUrl}/#/payment-success/${orderId}`;
-          const cancelRedirectUrl = `${frontendUrl}/#/payment-cancelled/${orderId}`;
+          const successRedirectUrl = `${frontendUrl}/payment-success/${orderId}`; // SIN # (usa BrowserRouter)
+          const cancelRedirectUrl = `${frontendUrl}/payment-cancelled/${orderId}`;
 
           const fintocWidgetPayload = {
             amount: Math.round(Number(amount)), // Cliente paga el monto completo
