@@ -77,7 +77,8 @@ export async function createWidgetLink(params) {
         console.log('[fintocService] Creando Payment Link:', {
             amount: payload.amount,
             currency: payload.currency,
-            metadata: payload.metadata
+            metadata: payload.metadata,
+            success_url: payload.success_url  // Agregar para debugging
         });
 
         const response = await fintocClient.post('/payment_links', payload);
