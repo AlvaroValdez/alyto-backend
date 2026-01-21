@@ -57,11 +57,15 @@ export async function createWidgetLink(params) {
             metadata
         };
 
-        // Agregar success_url si fue provisto
-        // Fintoc puede usar 'success_url' o 'return_url'
+        // URLs de redirección (REQUERIDAS para Checkout Sessions)
         if (success_url) {
             payload.success_url = success_url;
-            payload.return_url = success_url;  // Try both fields
+            payload.cancel_url = cancel_url || success_url.replace('/payment-success/', '/payment-cancelled/');
+        }
+
+        // Email del cliente (recomendado)
+        if (customer_email) {
+            payload.customer_email = customer_email;
         }
 
         // Solo agregar recipient_account si se quiere Direct Payment
@@ -76,21 +80,22 @@ export async function createWidgetLink(params) {
             };
         }
 
-        console.log('[fintocService] Creando Payment Link:', {
+        console.log('[fintocService] Creando Checkout Session:', {
             amount: payload.amount,
             currency: payload.currency,
-            metadata: payload.metadata,
-            success_url: payload.success_url  // Agregar para debugging
+            customer_email: payload.customer_email,
+            success_url: payload.success_url,
+            cancel_url: payload.cancel_url
         });
 
-        const response = await fintocClient.post('/payment_links', payload);
+        const response = await fintocClient.post('/checkout_sessions', payload);
         const data = response.data;
 
-        console.log('✅ [fintocService] Payment Link creado:', data.id);
+        console.log('✅ [fintocService] Checkout Session creado:', data.id);
 
         return {
             id: data.id,
-            url: data.url,  // Fintoc devuelve 'url' no 'widget_url'
+            url: data.redirect_url,  // Checkout Sessions usan 'redirect_url'
             status: data.status,
             amount: data.amount,
             currency: data.currency,

@@ -212,10 +212,12 @@ router.post('/', async (req, res) => {
           // PASO 1: Crear Fintoc Widget Link (cliente paga monto COMPLETO)
           const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
           const successRedirectUrl = `${frontendUrl}/#/payment-success/${orderId}`;
+          const cancelRedirectUrl = `${frontendUrl}/#/payment-cancelled/${orderId}`;
 
           const fintocWidgetPayload = {
             amount: Math.round(Number(amount)), // Cliente paga el monto completo
             currency: 'CLP',
+            customer_email: beneficiary_email || 'cliente@example.com', // Email del cliente
             metadata: {
               orderId,
               userId: userId.toString(),
@@ -223,7 +225,8 @@ router.post('/', async (req, res) => {
               country,
               destCurrency: currency
             },
-            success_url: successRedirectUrl
+            success_url: successRedirectUrl,
+            cancel_url: cancelRedirectUrl
           };
 
           const fintocResp = await createWidgetLink(fintocWidgetPayload);
