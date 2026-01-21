@@ -127,19 +127,26 @@ export function verifyFintocWebhook(payload, signature) {
         }
 
         // Fintoc envía firma en formato: "t=timestamp,v1=signature"
-        // Necesitamos extraer solo la parte v1
+        // Extraer timestamp y signature
+        let timestamp = '';
         let signatureHash = signature;
-        if (signature.includes('v1=')) {
+
+        if (signature.includes('t=') && signature.includes('v1=')) {
             const parts = signature.split(',');
+            const tPart = parts.find(p => p.startsWith('t='));
             const v1Part = parts.find(p => p.startsWith('v1='));
+
+            timestamp = tPart ? tPart.replace('t=', '') : '';
             signatureHash = v1Part ? v1Part.replace('v1=', '') : signature;
         }
 
-        // Fintoc usa HMAC SHA256 para firmar webhooks
+        // Fintoc firma el formato: "timestamp.payload"
         const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        const signedPayload = `${timestamp}.${payloadString}`;
+
         const expectedSignature = crypto
             .createHmac('sha256', FINTOC_WEBHOOK_SECRET)
-            .update(payloadString)
+            .update(signedPayload)
             .digest('hex');
 
         // Comparación simple de strings
@@ -152,6 +159,8 @@ export function verifyFintocWebhook(payload, signature) {
             console.error('[fintocService] Expected:', expectedSignature);
             console.error('[fintocService] Received (raw):', signature);
             console.error('[fintocService] Received (v1):', signatureHash);
+            console.error('[fintocService] Timestamp:', timestamp);
+            console.error('[fintocService] Signed payload:', signedPayload.substring(0, 100) + '...');
         }
 
         return isValid;
