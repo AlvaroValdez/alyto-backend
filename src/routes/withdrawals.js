@@ -113,23 +113,38 @@ router.post('/', async (req, res) => {
         // ✅ HYBRID FLOW: Fintoc Direct Payment (Payin) + Deferred Withdrawal (Payout)
         console.log('[withdrawals] 💰 Hybrid Flow: Creating Fintoc Widget Link for profit retention...');
 
-        // ✅ FIX CRÍTICO: NO recalcular, usar el principal NETO de FX
-        // El FX ya calculó el monto correcto considerando:
-        // - Fees de Fintoc (payin)
-        // - Spread de Alyto
-        // - Fees de Vita (payout)
-        //
-        // Si recalculamos con vitaRate (que puede estar desactualizado), el usuario
-        // recibe MENOS de lo prometido. En su lugar, enviamos el principal neto y
-        // dejamos que Vita use SU tasa actual en tiempo real.
-
-        const adjustedWithdrawalAmount = req.body.amountsTracking?.originPrincipal
+        // ✅ PROFIT RETENTION: Calcular monto a retener según % configurado
+        const profitRetentionPercent = rule?.profitRetentionPercent || 0;
+        const originPrincipal = req.body.amountsTracking?.originPrincipal
           ? Number(req.body.amountsTracking.originPrincipal)
           : Number(amount);
 
-        // Calcular profit (diferencia entre lo que recibimos y lo que enviamos)
-        const fintocFees = Number(amount) - adjustedWithdrawalAmount;
-        const profitCOP = req.body.amountsTracking?.profitDestCurrency || 0;
+        let adjustedWithdrawalAmount;
+        let profitRetained = 0;
+
+        if (profitRetentionPercent > 0) {
+          // MODO: Retener Porcentaje del Principal
+          profitRetained = (originPrincipal * profitRetentionPercent) / 100;
+          adjustedWithdrawalAmount = originPrincipal - profitRetained;
+
+          // Safety check: No retener más del 5% (protección)
+          const maxSafeRetention = originPrincipal * 0.05;
+          if (profitRetained > maxSafeRetention) {
+            console.warn(`⚠️ [withdrawals] Profit retention ${profitRetentionPercent}% exceeds safe limit! Capping at 5%`);
+            profitRetained = maxSafeRetention;
+            adjustedWithdrawalAmount = originPrincipal - profitRetained;
+          }
+
+          console.log(`[withdrawals] 💰 Profit Retention Active: ${profitRetentionPercent}%`);
+          console.log(`[withdrawals] 💰 Profit to retain: ${profitRetained.toFixed(2)} ${currency}`);
+        } else {
+          // MODO: Sin Retención (enviar todo el principal)
+          adjustedWithdrawalAmount = originPrincipal;
+          console.log(`[withdrawals] 💰 No profit retention (0%)`);
+        }
+
+        // Calcular montos para logging
+        const fintocFees = Number(amount) - originPrincipal;
         const destReceiveAmount = req.body.amountsTracking?.destReceiveAmount || 0;
         const destCurrency = req.body.amountsTracking?.destCurrency || 'COP';
 
@@ -138,26 +153,47 @@ router.post('/', async (req, res) => {
         const vitaActualSend = vitaRateRealTime > 0
           ? (adjustedWithdrawalAmount * vitaRateRealTime).toFixed(2)
           : 'N/A';
-        const actualExcess = vitaRateRealTime > 0
+        const vitaExcess = vitaRateRealTime > 0
           ? (adjustedWithdrawalAmount * vitaRateRealTime) - destReceiveAmount
           : 0;
+
+        // Validar que la diferencia no sea mayor al 1% negativo
+        if (vitaRateRealTime > 0 && destReceiveAmount > 0) {
+          const diffPercent = (vitaExcess / destReceiveAmount) * 100;
+          if (diffPercent < -1.0) {
+            console.warn(`⚠️ [withdrawals] User will receive ${Math.abs(diffPercent).toFixed(2)}% LESS than promised!`);
+            console.warn(`⚠️ [withdrawals] Consider reducing profitRetentionPercent to ${Math.max(0, profitRetentionPercent - 0.5).toFixed(1)}%`);
+          }
+        }
 
         console.log(`[withdrawals] 💰 Hybrid Flow Financial Breakdown:`);
         console.log(`  ┌─ PAY-IN (Fintoc):`);
         console.log(`  │  - Client pays (gross):         ${amount} ${currency}`);
         console.log(`  │  - Fintoc fees (${((fintocFees / amount) * 100).toFixed(2)}%):       ${fintocFees.toFixed(2)} ${currency}`);
-        console.log(`  │  - Net to Vita (principal):    ${adjustedWithdrawalAmount} ${currency}`);
+        console.log(`  │  - Net to Alyto (principal):    ${originPrincipal.toFixed(2)} ${currency}`);
         console.log(`  ├─ QUOTE (What we promised):`);
-        console.log(`  │  - Alyto rate (with spread):   ${req.body.rateTracking?.alytoRate || 'N/A'}`);
-        console.log(`  │  - PROMISED to beneficiary:    ${destReceiveAmount} ${destCurrency}`);
+        console.log(`  │  - Alyto rate (with spread):    ${req.body.rateTracking?.alytoRate || 'N/A'}`);
+        console.log(`  │  - PROMISED to beneficiary:     ${destReceiveAmount.toFixed(2)} ${destCurrency}`);
+
+        if (profitRetentionPercent > 0) {
+          console.log(`  ├─ PROFIT RETENTION:`);
+          console.log(`  │  - Retention % (configured):    ${profitRetentionPercent}%`);
+          console.log(`  │  - Profit retained:             ${profitRetained.toFixed(2)} ${currency}`);
+          console.log(`  │  - Amount to Vita:              ${adjustedWithdrawalAmount.toFixed(2)} ${currency}`);
+        }
+
         console.log(`  ├─ PAY-OUT (Vita - Actual):`);
-        console.log(`  │  - Vita sends:                 ${adjustedWithdrawalAmount} ${currency}`);
-        console.log(`  │  - Vita rate (real-time):      ${vitaRateRealTime || 'N/A'}`);
-        console.log(`  │  - ACTUAL Vita will send:      ${vitaActualSend} ${destCurrency}`);
-        console.log(`  │  - Excess over promise:        +${actualExcess.toFixed(2)} ${destCurrency}`);
+        console.log(`  │  - Vita sends:                   ${adjustedWithdrawalAmount.toFixed(2)} ${currency}`);
+        console.log(`  │  - Vita rate (real-time):        ${vitaRateRealTime || 'N/A'}`);
+        console.log(`  │  - ACTUAL Vita will send:        ${vitaActualSend} ${destCurrency}`);
+        console.log(`  │  - Difference vs promised:       ${vitaExcess >= 0 ? '+' : ''}${vitaExcess.toFixed(2)} ${destCurrency}`);
         console.log(`  └─ SUMMARY:`);
-        console.log(`     - User receives AT LEAST:     ${destReceiveAmount} ${destCurrency} ✅`);
-        console.log(`     - Profit % of principal:   ${((profitCOP / destReceiveAmount) * 100).toFixed(2)}%`);
+
+        if (profitRetentionPercent > 0) {
+          console.log(`     - Alyto PROFIT RETAINED:       ${profitRetained.toFixed(2)} ${currency} (${profitRetentionPercent}%) ✅`);
+        }
+        console.log(`     - User receives:               ${vitaActualSend} ${destCurrency}`);
+        console.log(`     - Promised amount:             ${destReceiveAmount.toFixed(2)} ${destCurrency}`);
 
         // 💰 PASO 0: VALIDACIÓN DE TESORERÍA (OPCIONAL)
         // Solo validar si está habilitado en .env
