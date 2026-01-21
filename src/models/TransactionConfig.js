@@ -11,6 +11,7 @@ const transactionConfigSchema = new mongoose.Schema({
   fixedFee: { type: Number, default: 0 },
   isEnabled: { type: Boolean, default: true },
   profitRetention: { type: Boolean, default: false }, // ✅ Si true, enviamos monto destino fijo para retener profit
+  profitRetentionPercent: { type: Number, default: 0, min: 0, max: 100 }, // % del principal a retener (ej: 2.0 = 2%)
   alertMessage: { type: String, default: '' },
 
   provider: {
