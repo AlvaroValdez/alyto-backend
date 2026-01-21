@@ -58,8 +58,10 @@ export async function createWidgetLink(params) {
         };
 
         // Agregar success_url si fue provisto
+        // Fintoc puede usar 'success_url' o 'return_url'
         if (success_url) {
             payload.success_url = success_url;
+            payload.return_url = success_url;  // Try both fields
         }
 
         // Solo agregar recipient_account si se quiere Direct Payment
