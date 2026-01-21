@@ -126,6 +126,15 @@ export function verifyFintocWebhook(payload, signature) {
             return false;
         }
 
+        // Fintoc envía firma en formato: "t=timestamp,v1=signature"
+        // Necesitamos extraer solo la parte v1
+        let signatureHash = signature;
+        if (signature.includes('v1=')) {
+            const parts = signature.split(',');
+            const v1Part = parts.find(p => p.startsWith('v1='));
+            signatureHash = v1Part ? v1Part.replace('v1=', '') : signature;
+        }
+
         // Fintoc usa HMAC SHA256 para firmar webhooks
         const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
         const expectedSignature = crypto
@@ -133,15 +142,16 @@ export function verifyFintocWebhook(payload, signature) {
             .update(payloadString)
             .digest('hex');
 
-        // Comparación simple de strings (no buffers para evitar error de longitud)
-        const isValid = expectedSignature === signature;
+        // Comparación simple de strings
+        const isValid = expectedSignature === signatureHash;
 
         if (isValid) {
             console.log('✅ [fintocService] Webhook signature válida');
         } else {
             console.error('❌ [fintocService] Webhook signature inválida');
             console.error('[fintocService] Expected:', expectedSignature);
-            console.error('[fintocService] Received:', signature);
+            console.error('[fintocService] Received (raw):', signature);
+            console.error('[fintocService] Received (v1):', signatureHash);
         }
 
         return isValid;
