@@ -232,4 +232,89 @@ router.get('/alyto-summary', async (req, res) => {
   }
 });
 
+// GET /api/prices/alyto-admin-summary - Admin rates (spread only, NO Fintoc fees)
+router.get('/alyto-admin-summary', async (req, res) => {
+  try {
+    console.log('\n🔍 [AlytoAdminSummary] Iniciando cálculo de tasas ADMIN (sin fees Fintoc)...');
+    const Markup = (await import('../models/Markup.js')).default;
+    const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
+    const allRates = await getListPrices();
+
+    const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP' && r.code !== 'BO');
+    console.log(`📊 [AlytoAdminSummary] Total CLP rates (sin BO): ${clpRates.length}`);
+
+    const allMarkups = await Markup.find();
+    console.log(`💰 [AlytoAdminSummary] Markups en BD: ${allMarkups.length}`);
+
+    const adminRates = await Promise.all(clpRates.map(async (r) => {
+      const destCountry = r.code;
+      let markup = await Markup.findOne({ originCountry: 'CL', destCountry });
+      if (!markup) {
+        markup = await Markup.findOne({ originCountry: 'CL', destCountry: { $exists: false } });
+      }
+      if (!markup) {
+        markup = await Markup.findOne({ isDefault: true });
+      }
+
+      const spreadPercent = markup?.percent || 2.0;
+      const vitaRate = Number(r.rate);
+      const adminRate = vitaRate * (1 - spreadPercent / 100);
+
+      if (['CO', 'PE', 'AR'].includes(destCountry)) {
+        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Spread: ${spreadPercent}% | Admin: ${adminRate.toFixed(4)}`);
+      }
+
+      return {
+        from: 'CLP',
+        to: r.code,
+        currency: r.code,
+        vitaRate: vitaRate.toFixed(4),
+        alytoRate: adminRate.toFixed(4),
+        spreadPercent: spreadPercent.toFixed(2),
+        fixedCost: Number(r.fixedCost || 0)
+      };
+    }));
+
+    try {
+      const boliviaConfig = await TransactionConfig.findOne({ originCountry: 'CL' });
+      if (boliviaConfig) {
+        const boliviaDest = boliviaConfig.destinations?.find(d => d.countryCode === 'BO' && d.isEnabled);
+        if (boliviaDest && boliviaDest.manualExchangeRate > 0) {
+          const manualRate = Number(boliviaDest.manualExchangeRate);
+          let spreadPercent = 0;
+          if (boliviaDest.feeType === 'percentage' && boliviaDest.feeAmount) {
+            spreadPercent = Number(boliviaDest.feeAmount);
+          }
+          const adminBoliviaRate = manualRate * (1 - spreadPercent / 100);
+          adminRates.push({
+            from: 'CLP',
+            to: 'BO',
+            currency: 'BOB',
+            vitaRate: manualRate.toFixed(4),
+            alytoRate: adminBoliviaRate.toFixed(4),
+            spreadPercent: spreadPercent.toFixed(2),
+            fixedCost: Number(boliviaDest.payoutFixedFee || 0),
+            isManual: true
+          });
+        }
+      }
+    } catch (boErr) {
+      console.warn('⚠️ [AlytoAdminSummary] Error inyectando tasa manual de Bolivia:', boErr.message);
+    }
+
+    console.log(`✅ [AlytoAdminSummary] Tasas admin calculadas: ${adminRates.length}\n`);
+
+    return res.json({
+      ok: true,
+      data: {
+        lastUpdate: new Date().toISOString(),
+        rates: adminRates.sort((a, b) => a.to.localeCompare(b.to))
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Prices/AlytoAdminSummary] Error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;
