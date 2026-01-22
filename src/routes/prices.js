@@ -141,9 +141,17 @@ router.get('/alyto-summary', async (req, res) => {
     console.log(`   - Global default: ${allMarkups.find(m => m.isDefault)?._id || 'NO EXISTE'}`);
     console.log(`   - CL default: ${allMarkups.find(m => m.originCountry === 'CL' && !m.destCountry)?._id || 'NO EXISTE'}`);
 
-    // Fees de Fintoc (promedio, para mostrar tasa efectiva real)
-    const FINTOC_FEE_PERCENT = 2.99; // 2.99% fees de Fintoc
-    console.log(`💳 [AlytoSummary] Fintoc fees considerados: ${FINTOC_FEE_PERCENT}%`);
+    // Obtener config de Fintoc para fees dinámicos
+    const clConfig = await TransactionConfig.findOne({ originCountry: 'CL' });
+    const fintocConfig = clConfig?.fintocConfig || { ufValue: 37500, tier: 1 };
+
+    // Calcular fee de Fintoc para monto promedio (conservador)
+    const { getFintocFeePercent } = await import('../utils/fintocFees.js');
+    const AVG_TRANSACTION_AMOUNT = 8000; // Monto conservador para cálculo
+    const fintocFeePercent = getFintocFeePercent(fintocConfig, AVG_TRANSACTION_AMOUNT);
+
+    console.log(`💳 [AlytoSummary] Fintoc config: UF=${fintocConfig.ufValue}, Tier=${fintocConfig.tier}`);
+    console.log(`💳 [AlytoSummary] Fee efectivo: ${fintocFeePercent.toFixed(2)}% (para ${AVG_TRANSACTION_AMOUNT} CLP)`);
 
     // Aplicar spread a cada tasa
     const alytoRates = await Promise.all(clpRates.map(async (r) => {
