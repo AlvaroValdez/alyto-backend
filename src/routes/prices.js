@@ -169,15 +169,14 @@ router.get('/alyto-summary', async (req, res) => {
       const spreadPercent = markup?.percent || 2.0;
       const vitaRate = Number(r.rate);
 
-      // ✅ FIX CRÍTICO: Calcular tasa efectiva considerando fees de Fintoc
+      // ✅ Usar fee dinámico de Fintoc (calculado arriba con config)
       // Usuario paga X CLP, pero solo (X * 0.9701) llega después de fees
       // Entonces la tasa efectiva es menor que la tasa de Vita
-      const FINTOC_FEE_PERCENT = 2.99;
-      const effectiveRate = vitaRate * (1 - FINTOC_FEE_PERCENT / 100) * (1 - spreadPercent / 100);
+      const effectiveRate = vitaRate * (1 - fintocFeePercent / 100) * (1 - spreadPercent / 100);
 
       // Log para primeros 3 países
       if (['CO', 'PE', 'AR'].includes(destCountry)) {
-        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Fees: ${FINTOC_FEE_PERCENT}% | Spread: ${spreadPercent}% | Efectiva: ${effectiveRate.toFixed(4)}`);
+        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Fees: ${fintocFeePercent.toFixed(2)}% | Spread: ${spreadPercent}% | Efectiva: ${effectiveRate.toFixed(4)}`);
       }
 
       return {

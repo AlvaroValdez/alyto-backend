@@ -206,9 +206,27 @@ router.get('/quote', async (req, res) => {
 
     // --- Caso 1: Origen CLP (flujo spread) ---
     if (originCurrency === 'CLP') {
-      // 🔍 NUEVO: Calcular fees de pasarela (Payin)
-      const payinFee = await getPayinFeeBreakdown(safeOriginCountry, inputAmount);
-      console.log(`💳 [FX-PAYIN] Gross: ${payinFee.grossAmount}, Fee: ${payinFee.totalFee} (${payinFee.feePercent}%), Net: ${payinFee.netAmount}`);
+      const inputIsOrigin = mode === 'send';
+      const destCurrency = priceData.code;
+      console.log(`📄 [FX-QUOTE] Modo: ${mode}, Input: ${inputAmount} ${inputIsOrigin ? 'CLP (origen)' : destCurrency + ' (destino)'}`);
+
+      // 💳 Obtener fees de Fintoc dinámicos desde config
+      const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
+      const config = await TransactionConfig.findOne({ originCountry: safeOriginCountry });
+      const fintocConfig = config?.fintocConfig || { ufValue: 37500, tier: 1 };
+
+      const { calculateFintocFee } = await import('../utils/fintocFees.js');
+      const { fixedFee: fintocFixedFee, percentage: fintocFeePercent } = calculateFintocFee(inputAmount, fintocConfig);
+
+      const payinFee = {
+        grossAmount: inputAmount,
+        totalFee: fintocFixedFee,
+        netAmount: inputAmount - fintocFixedFee,
+        feePercent: fintocFeePercent
+      };
+
+      console.log(`💳 [FX-PAYIN] Gross: ${payinFee.grossAmount}, Fee: ${payinFee.totalFee} CLP (${payinFee.feePercent.toFixed(2)}%), Net: ${payinFee.netAmount}`);
+      console.log(`💳 [FX-FINTOC] Config: UF=${fintocConfig.ufValue}, Tier=${fintocConfig.tier}, Fixed Fee=${fintocFixedFee} CLP`);
 
       // 💰 Obtener spread desde Markup (con lógica priorizada)
       const Markup = (await import('../models/Markup.js')).default;

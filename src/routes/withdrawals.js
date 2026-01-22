@@ -166,10 +166,17 @@ router.post('/', async (req, res) => {
           }
         }
 
-        console.log(`[withdrawals] 💰 Hybrid Flow Financial Breakdown:`);
-        console.log(`  ┌─ PAY-IN (Fintoc):`);
-        console.log(`  │  - Client pays (gross):         ${amount} ${currency}`);
-        console.log(`  │  - Fintoc fees (${((fintocFees / amount) * 100).toFixed(2)}%):       ${fintocFees.toFixed(2)} ${currency}`);
+        // Obtener config de Fintoc para fees dinámicos
+        const { calculateFintocFee } = await import('../utils/fintocFees.js');
+        const fintocConfig = rule?.fintocConfig || { ufValue: 37500, tier: 1 };
+        const { fixedFee: fintocFee, percentage: fintocFeePercent } = calculateFintocFee(req.body.amountsTracking?.grossAmount || 10000, fintocConfig);
+
+        console.log(`
+[withdrawals] 💰 Hybrid Flow Financial Breakdown:`);
+        console.log(`  ├─ PAY-IN (Fintoc):`);
+        console.log(`  │  - Client pays (gross):         ${req.body.amountsTracking?.grossAmount} CLP`);
+        console.log(`  │  - Fintoc config:               UF=${fintocConfig.ufValue}, Tier=${fintocConfig.tier}`);
+        console.log(`  │  - Fintoc fees:                 ${fintocFee} CLP (${fintocFeePercent.toFixed(2)}%)`);
         console.log(`  │  - Net to Alyto (principal):    ${originPrincipal.toFixed(2)} ${currency}`);
         console.log(`  ├─ QUOTE (What we promised):`);
         console.log(`  │  - Alyto rate (with spread):    ${req.body.rateTracking?.alytoRate || 'N/A'}`);
