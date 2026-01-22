@@ -141,6 +141,10 @@ router.get('/alyto-summary', async (req, res) => {
     console.log(`   - Global default: ${allMarkups.find(m => m.isDefault)?._id || 'NO EXISTE'}`);
     console.log(`   - CL default: ${allMarkups.find(m => m.originCountry === 'CL' && !m.destCountry)?._id || 'NO EXISTE'}`);
 
+    // Fees de Fintoc (promedio, para mostrar tasa efectiva real)
+    const FINTOC_FEE_PERCENT = 2.99; // 2.99% fees de Fintoc
+    console.log(`💳 [AlytoSummary] Fintoc fees considerados: ${FINTOC_FEE_PERCENT}%`);
+
     // Aplicar spread a cada tasa
     const alytoRates = await Promise.all(clpRates.map(async (r) => {
       const destCountry = r.code;
@@ -156,11 +160,16 @@ router.get('/alyto-summary', async (req, res) => {
 
       const spreadPercent = markup?.percent || 2.0;
       const vitaRate = Number(r.rate);
-      const alytoRate = vitaRate * (1 - spreadPercent / 100);
 
-      // Log para  primeros 3 países
+      // ✅ FIX CRÍTICO: Calcular tasa efectiva considerando fees de Fintoc
+      // Usuario paga X CLP, pero solo (X * 0.9701) llega después de fees
+      // Entonces la tasa efectiva es menor que la tasa de Vita
+      const FINTOC_FEE_PERCENT = 2.99;
+      const effectiveRate = vitaRate * (1 - FINTOC_FEE_PERCENT / 100) * (1 - spreadPercent / 100);
+
+      // Log para primeros 3 países
       if (['CO', 'PE', 'AR'].includes(destCountry)) {
-        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Spread: ${spreadPercent}% | Alyto: ${alytoRate.toFixed(4)}`);
+        console.log(`   [${destCountry}] Vita: ${vitaRate.toFixed(4)} | Fees: ${FINTOC_FEE_PERCENT}% | Spread: ${spreadPercent}% | Efectiva: ${effectiveRate.toFixed(4)}`);
       }
 
       return {
@@ -168,7 +177,7 @@ router.get('/alyto-summary', async (req, res) => {
         to: r.code,
         currency: r.code,
         vitaRate: vitaRate.toFixed(4),
-        alytoRate: alytoRate.toFixed(4),
+        alytoRate: effectiveRate.toFixed(4),  // ← Tasa REAL que verá el usuario
         spreadPercent: spreadPercent.toFixed(2),
         fixedCost: Number(r.fixedCost || 0)
       };
