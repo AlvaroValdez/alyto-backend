@@ -416,8 +416,13 @@ router.get('/quote', async (req, res) => {
 
       // 1. Convertir monto origen a CLP (pivot) usando tasa ajustada
       const clpAmount = inputAmount * adjustedRate;
-      console.log(`💱 [FX] Conversión: ${inputAmount} ${originCurrency} × ${adjustedRate.toFixed(4)} (con margen) = ${clpAmount.toFixed(2)} CLP`);
-      console.log(`📊 [FX] Tasa base: ${manualRate}, Margen: ${feeAmount}%, Tasa final: ${adjustedRate.toFixed(4)}`);
+
+      console.log(`\n💱 [FX] PASO 1: ${originCurrency} → CLP`);
+      console.log(`├─ Monto origen: ${inputAmount} ${originCurrency}`);
+      console.log(`├─ Tasa base: 1 ${originCurrency} = ${manualRate} CLP`);
+      console.log(`├─ Margen aplicado: ${feeAmount}%`);
+      console.log(`├─ Tasa ajustada: 1 ${originCurrency} = ${adjustedRate.toFixed(4)} CLP (con margen)`);
+      console.log(`└─ Resultado: ${clpAmount.toFixed(2)} CLP\n`);
 
       // 2. NO cobramos fee adicional - el usuario paga exactamente lo que ingresó
       const totalOriginAmount = inputAmount;
@@ -436,11 +441,23 @@ router.get('/quote', async (req, res) => {
       // 4. Convertir a Destino usando tasa Vita (CLP → Destino)
       const grossDestAmount = finalCLP * clpToDestRate;
 
+      console.log(`💱 [FX] PASO 2: CLP → ${priceData.code}`);
+      console.log(`├─ Monto CLP: ${finalCLP.toFixed(2)}`);
+      console.log(`├─ Tasa Vita: 1 CLP = ${clpToDestRate.toFixed(4)} ${priceData.code}`);
+      console.log(`└─ Resultado bruto: ${grossDestAmount.toFixed(2)} ${priceData.code}\n`);
+
       // 5. Descontar costo fijo de payout (en destino)
       const payoutFixedCost = Number(priceData.fixedCost || 0);
       const finalAmount = grossDestAmount - payoutFixedCost;
 
-      console.log(`📤 [FX] Resultado: ${inputAmount} ${originCurrency} → ${finalCLP.toFixed(2)} CLP → ${finalAmount.toFixed(2)} ${priceData.code}`);
+      console.log(`📊 [FX] RESUMEN FINAL:`);
+      console.log(`├─ Usuario envía: ${inputAmount} ${originCurrency}`);
+      console.log(`├─ Equivalente CLP: ${clpAmount.toFixed(2)} (antes de fee fijo)`);
+      console.log(`├─ CLP final: ${finalCLP.toFixed(2)} (después de fee fijo si aplica)`);
+      console.log(`├─ Margen Alyto: ${ourMarginCLP.toFixed(2)} CLP (${feeAmount}%)`);
+      console.log(`├─ Bruto destino: ${grossDestAmount.toFixed(2)} ${priceData.code}`);
+      console.log(`├─ Costo Vita: ${payoutFixedCost.toFixed(2)} ${priceData.code}`);
+      console.log(`└─ Usuario recibe: ${finalAmount.toFixed(2)} ${priceData.code}\n`);
 
       // Calcular tasa efectiva BOB→Destino para mostrar al usuario
       const effectiveRate = finalAmount / inputAmount;
@@ -483,10 +500,22 @@ router.get('/quote', async (req, res) => {
 
           // 📊 Tracking Data (para guardar en Transaction)
           rateTracking: {
+            // Paso 1: Origen → CLP
+            originToClpBase: Number(manualRate.toFixed(4)),         // Tasa base sin margen
+            originToClpRate: Number(adjustedRate.toFixed(4)),       // Tasa con margen aplicado
+            marginPercent: Number(feeAmount.toFixed(2)),            // % de margen/fee
+            marginCLP: Number(ourMarginCLP.toFixed(2)),             // Margen en CLP
+
+            // Paso 2: CLP → Destino
             vitaRate: Number(clpToDestRate.toFixed(4)),              // CLP→COP rate from Vita
+
+            // Tasa efectiva final: Origen → Destino
             alytoRate: Number(effectiveRate.toFixed(4)),            // BOB→COP effective rate
+
+            // Profit
             spreadPercent: Number(feeAmount.toFixed(2)),            // Our margin %
-            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)) // Profit in dest currency
+            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)), // Profit in dest currency
+            profitOriginCurrency: Number(ourMarginCLP.toFixed(2))   // Profit in CLP
           },
 
           amountsTracking: {
