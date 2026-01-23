@@ -399,12 +399,12 @@ router.get('/quote', async (req, res) => {
 
       // 🔧 NUEVO MODELO: Comisión incluida en la tasa
       // En lugar de cobrar fee separado, ajustamos la tasa para incluir nuestro margen
-      const feeType = originConfig.feeType || 'percent';
+      const feeType = originConfig.feeType || 'percentage';
       const feeAmount = Number(originConfig.feeAmount || 0);
 
       let adjustedRate = manualRate;
 
-      if (feeType === 'percent' && feeAmount > 0) {
+      if (feeType === 'percentage' && feeAmount > 0) {
         // Si la tasa base es 140 CLP/BOB y queremos 3% de margen:
         // El usuario recibe MENOS CLP por su BOB
         // Tasa ajustada = 140 × (1 - 0.03) = 135.8 CLP/BOB
