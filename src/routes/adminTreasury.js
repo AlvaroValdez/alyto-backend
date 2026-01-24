@@ -118,16 +118,26 @@ router.put('/:id/approve-deposit', async (req, res) => {
             const axios = (await import('axios')).default;
             const API_URL = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`;
 
-            const destCountry = tx.withdrawalPayload.destination_country;
+            // ✅ FIX: Obtener destCountry de múltiples fuentes posibles
+            const destCountry = tx.country || tx.destCountry || tx.withdrawalPayload?.destination_country;
+            const originCurrency = finalPayload.currency?.toUpperCase() || 'CLP';
+            const originCountry = originCurrency === 'CLP' ? 'CL' : (tx.originCountry || 'CL');
             const amountForQuote = finalPayload.amount; // CLP amount (with fee if BOB)
 
-            console.log(`[treasury] 🔄 Refrescando quote: ${amountForQuote} CLP → ${destCountry}`);
+            if (!destCountry) {
+                throw new Error('[treasury] destCountry no está definido. Verifica tx.country o tx.destCountry');
+            }
 
+            console.log(`[treasury] 🔄 Refrescando quote: ${amountForQuote} ${originCurrency} (${originCountry}) → ${destCountry}`);
+
+            // ✅ FIX: Usar parámetros correctos que espera /api/fx/quote
             const quoteResponse = await axios.get(`${API_URL}/api/fx/quote`, {
                 params: {
                     amount: amountForQuote,
-                    from: 'CL',
-                    to: destCountry
+                    origin: originCurrency,           // CLP
+                    originCountry: originCountry,     // CL
+                    destCountry: destCountry,         // CO
+                    mode: 'send'
                 }
             });
 
@@ -164,6 +174,7 @@ router.put('/:id/approve-deposit', async (req, res) => {
                 // Usar valores frescos en payload final para Vita
                 finalPayload = {
                     ...finalPayload,
+                    transactions_type: 'redeem',      // ✅ FIX: Required by Vita API
                     rate: freshQuote.rate,
                     estimated_amount: freshQuote.amountOut,
                     fee: freshQuote.payoutFixedCost || 0
@@ -188,6 +199,16 @@ router.put('/:id/approve-deposit', async (req, res) => {
         tx.vitaResponse = vitaRes;
         tx.status = 'processing'; // IPN debe marcar succeeded/failed
         await tx.save();
+
+        // ✅ FIX: Generar y enviar comprobante automáticamente
+        try {
+            const { generateAndSendReceipt } = await import('../services/receipt/receiptGenerator.js');
+            await generateAndSendReceipt(tx._id.toString());
+            console.log('[treasury] ✅ Comprobante generado y enviado');
+        } catch (receiptError) {
+            console.error('[treasury] ⚠️ Error generando comprobante:', receiptError.message);
+            // No bloquear la aprobación si falla el comprobante
+        }
 
         res.json({
             ok: true,
