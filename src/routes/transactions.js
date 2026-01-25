@@ -43,18 +43,44 @@ router.get('/', async (req, res) => {
       projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry metadata beneficiary_cc account_type concept purpose';
     }
 
-    // 3. Consulta a la Base de Datos: Realiza dos consultas eficientes
-    //    a) Obtiene el conteo total de documentos que coinciden con los filtros
+    // 3. Consulta a la Base de Datos
     const total = await Transaction.countDocuments(filters);
-    //    b) Obtiene los documentos de la página actual, ordenados y con datos relacionados
-    const transactions = await query // Ejecutamos la consulta ya construida
-      .select(projection)
-      .sort({ createdAt: -1 }) // Ordena por fecha de creación descendente
-      .skip(skip)               // Salta los documentos de páginas anteriores
-      .limit(limit)             // Limita al número de resultados por página
-      .populate('ipnEvents');   // Trae los datos de los eventos IPN asociados
 
-    // 4. Respuesta Exitosa: Devuelve un objeto completo para el frontend
+    // Aseguramos traer withdrawalPayload para extraer datos bancarios si faltan en root
+    const projectionWithPayload = projection + ' withdrawalPayload';
+
+    const transactionsDocs = await query
+      .select(projectionWithPayload)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('ipnEvents');
+
+    // 4. Procesamiento: Hoist de datos bancarios y limpieza
+    const transactions = transactionsDocs.map(doc => {
+      const tx = doc.toObject(); // Convertir a objeto plano
+
+      // Si no hay cuenta en root, buscar en payload (estructura varía según país/servicio)
+      if (!tx.account_bank && tx.withdrawalPayload) {
+        tx.account_bank = tx.withdrawalPayload.account_bank ||
+          tx.withdrawalPayload.account_number ||
+          tx.withdrawalPayload.destination_settings?.account_number;
+      }
+
+      if (!tx.bank_code && tx.withdrawalPayload) {
+        tx.bank_code = tx.withdrawalPayload.bank_code ||
+          tx.withdrawalPayload.bank_name;
+      }
+
+      // Para seguridad en public query, podríamos borrar el payload completo si se desea,
+      // pero por ahora lo dejamos por si el frontend necesita algo más.
+      if (isPublicOrderQuery) {
+        // Opcional: delete tx.withdrawalPayload; 
+      }
+
+      return tx;
+    });
+
     res.json({
       ok: true,
       page,
