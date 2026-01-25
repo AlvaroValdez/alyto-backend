@@ -432,6 +432,10 @@ router.post('/', async (req, res) => {
       beneficiary_address,
       beneficiary_document_type,
       beneficiary_document_number,
+      // ✅ FIX: Guardar datos bancarios en raíz del documento
+      account_bank,
+      bank_code,
+      account_type: account_type_bank,
       status: transactionStatus,
       vitaResponse,
       withdrawalPayload: deferredWithdrawalPayload || { amount: Number(amount) },

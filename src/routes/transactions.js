@@ -60,16 +60,27 @@ router.get('/', async (req, res) => {
     const transactions = transactionsDocs.map(doc => {
       const tx = doc.toObject(); // Convertir a objeto plano
 
-      // Si no hay cuenta en root, buscar en payload (estructura varía según país/servicio)
-      if (!tx.account_bank && tx.withdrawalPayload) {
-        tx.account_bank = tx.withdrawalPayload.account_bank ||
-          tx.withdrawalPayload.account_number ||
-          tx.withdrawalPayload.destination_settings?.account_number;
+      // ✅ FIX: Hoist con múltiples fallbacks (withdrawalPayload, deferredWithdrawalPayload, metadata)
+      if (!tx.account_bank) {
+        tx.account_bank =
+          tx.withdrawalPayload?.account_bank ||
+          tx.deferredWithdrawalPayload?.account_bank ||
+          tx.withdrawalPayload?.account_number ||
+          tx.metadata?.beneficiary?.account_bank;
       }
 
-      if (!tx.bank_code && tx.withdrawalPayload) {
-        tx.bank_code = tx.withdrawalPayload.bank_code ||
-          tx.withdrawalPayload.bank_name;
+      if (!tx.bank_code) {
+        tx.bank_code =
+          tx.withdrawalPayload?.bank_code ||
+          tx.deferredWithdrawalPayload?.bank_code ||
+          tx.metadata?.beneficiary?.bank_code;
+      }
+
+      if (!tx.account_type) {
+        tx.account_type =
+          tx.withdrawalPayload?.account_type_bank ||
+          tx.deferredWithdrawalPayload?.account_type_bank ||
+          tx.metadata?.beneficiary?.account_type;
       }
 
       // Para seguridad en public query, podríamos borrar el payload completo si se desea,
