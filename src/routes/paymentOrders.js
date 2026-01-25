@@ -166,4 +166,32 @@ router.post('/:vitaOrderId/execute', async (req, res, next) => {
 });
 
 
+
+// POST /api/payment-orders/:orderId/check-status
+// Endpoint para verificar estado (polling desde frontend)
+router.post('/:orderId/check-status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const transaction = await Transaction.findOne({ order: orderId });
+
+    if (!transaction) {
+      return res.status(404).json({ ok: false, error: 'Transacción no encontrada' });
+    }
+
+    // Retornamos el estado actual.
+    // TODO: Si fuera necesario, llamar a VitaService.getPaymentOrder(transaction.vitaPaymentOrderId)
+    // para actualizar el estado antes de responder. Por ahora devolvemos lo que hay en BD.
+
+    return res.json({
+      ok: true,
+      status: transaction.status,
+      payinStatus: transaction.payinStatus
+    });
+  } catch (e) {
+    console.error('[check-status] Error:', e);
+    return res.status(500).json({ ok: false, error: 'Error verificando estado' });
+  }
+});
+
+
 export default router;
