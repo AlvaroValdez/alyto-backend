@@ -30,6 +30,8 @@ import uploadRoutes from './routes/upload.js';
 import adminTreasuryRoutes from './routes/adminTreasury.js';
 import adminComplianceRoutes from './routes/adminCompliance.js';
 import directPayRoutes from './routes/directPay.js';
+import receiptsRoutes from './routes/receipts.js';
+import publicVerifyRoutes from './routes/publicVerify.js';
 //import './utils/envValidation.js';
 
 const app = express();
@@ -96,6 +98,10 @@ app.use('/api/auth', authRoutes); // Rutas públicas de autenticación
 app.use('/api/prices', pricesRoutes);
 app.use('/api/transaction-rules', transactionRulesRoutes);
 app.use('/api/withdrawal-rules', withdrawalRulesRoutes);
+
+// --- Rutas de Comprobantes ---
+app.use('/api/receipts', receiptsRoutes);
+app.use('/public', publicVerifyRoutes); // Rutas públicas de verificación
 
 // ✅ AQUÍ SE ACTIVA LA CALCULADORA (Sin duplicados)
 app.use('/api/fx', fxRoutes);

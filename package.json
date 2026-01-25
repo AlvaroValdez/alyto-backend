@@ -16,6 +16,7 @@
     "cloudinary": "^1.41.3",
     "cors": "^2.8.5",
     "cross-env": "^10.1.0",
+    "decimal.js": "^10.6.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
@@ -30,6 +31,8 @@
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^7.0.12",
+    "puppeteer": "^24.36.0",
+    "qrcode": "^1.5.4",
     "resend": "^6.7.0",
     "winston": "^3.19.0",
     "xss-clean": "^0.1.4"
