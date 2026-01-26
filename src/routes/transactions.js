@@ -32,15 +32,16 @@ router.get('/', async (req, res) => {
     let query = Transaction.find(filters);
 
     // Campos a seleccionar según el tipo de acceso
-    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry metadata beneficiary_cc account_type concept purpose';
+    // ✅ FIX: Incluir bank_name, account_type_name, beneficiary_document_number
+    let projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code bank_name account_bank account_type account_type_name rateTracking amountsTracking destCountry metadata beneficiary_cc beneficiary_document_number concept purpose paymentMethod';
 
     if (isAdmin) {
       projection += ' vitaResponse createdBy fee feePercent feeOriginAmount feeAudit';
       // --- Populamos los datos del usuario creador ---
       query = query.populate('createdBy', 'name email');
     } else if (isPublicOrderQuery) {
-      // Para consultas públicas por order, mostrar solo datos básicos (sin info financiera sensible del negocio)
-      projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code account_bank rateTracking amountsTracking destCountry metadata beneficiary_cc account_type concept purpose';
+      // Para consultas públicas por order, mostrar datos completos del beneficiario
+      projection = 'beneficiary_first_name beneficiary_last_name company_name createdAt amount currency status country order bank_code bank_name account_bank account_type account_type_name rateTracking amountsTracking destCountry metadata beneficiary_cc beneficiary_document_number concept purpose paymentMethod';
     }
 
     // 3. Consulta a la Base de Datos
@@ -81,6 +82,30 @@ router.get('/', async (req, res) => {
           tx.withdrawalPayload?.account_type_bank ||
           tx.deferredWithdrawalPayload?.account_type_bank ||
           tx.metadata?.beneficiary?.account_type;
+      }
+
+      // ✅ FIX: Hoist para bank_name (nombre legible del banco)
+      if (!tx.bank_name) {
+        tx.bank_name =
+          tx.withdrawalPayload?.bank_name ||
+          tx.deferredWithdrawalPayload?.bank_name ||
+          tx.metadata?.beneficiary?.bank_name;
+      }
+
+      // ✅ FIX: Hoist para account_type_name (nombre legible del tipo de cuenta)
+      if (!tx.account_type_name) {
+        tx.account_type_name =
+          tx.withdrawalPayload?.account_type_name ||
+          tx.deferredWithdrawalPayload?.account_type_name ||
+          tx.metadata?.beneficiary?.account_type_name;
+      }
+
+      // ✅ FIX: Hoist para beneficiary_document_number
+      if (!tx.beneficiary_document_number && !tx.beneficiary_cc) {
+        tx.beneficiary_document_number =
+          tx.withdrawalPayload?.beneficiary_document_number ||
+          tx.deferredWithdrawalPayload?.beneficiary_document_number ||
+          tx.metadata?.beneficiary?.document_number;
       }
 
       // Para seguridad en public query, podríamos borrar el payload completo si se desea,
