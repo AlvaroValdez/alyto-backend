@@ -43,6 +43,7 @@ router.post('/', async (req, res) => {
       beneficiary_type, beneficiary_first_name, beneficiary_last_name,
       beneficiary_email, beneficiary_address, beneficiary_document_type,
       beneficiary_document_number, account_type_bank, account_bank, bank_code,
+      bank_name, account_type_name, // ✅ FIX: Nombres legibles de banco y tipo de cuenta
       proofOfPayment, metadata
     } = req.body || {};
 
@@ -435,7 +436,9 @@ router.post('/', async (req, res) => {
       // ✅ FIX: Guardar datos bancarios en raíz del documento
       account_bank,
       bank_code,
+      bank_name, // "Bancolombia" (nombre legible)
       account_type: account_type_bank,
+      account_type_name, // "Cuenta de Ahorros" (nombre legible)
       status: transactionStatus,
       vitaResponse,
       withdrawalPayload: deferredWithdrawalPayload || { amount: Number(amount) },
