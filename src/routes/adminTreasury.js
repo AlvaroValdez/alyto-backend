@@ -231,11 +231,24 @@ router.put('/:id/approve-deposit', async (req, res) => {
 
                     // Compliance
                     ...complianceFields
-
-                    // REMOVED: rate, estimated_amount, fee (Causes Error 300/303 Invalid Signature)
-                    // The 'withdrawal' endpoint likely does not accept these fields, or they mess up the HMAC signature.
-                    // We rely on Vita to calculate the rate at the moment of execution (Market Order).
                 };
+
+                // 🧹 HELPER: Remove undefined/null/empty strings from payload
+                // Mirrors 'withdrawals.js' / 'buildFinalCustomerData' logic
+                const cleanObject = (obj) => {
+                    return Object.fromEntries(
+                        Object.entries(obj).filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== '')
+                    );
+                };
+
+                finalPayload = cleanObject(finalPayload);
+
+                // Validation Warning
+                if (!finalPayload.wallet) {
+                    console.warn('[treasury] ⚠️ ADVERTENCIA: wallet (UUID) no está definido en el payload. La transacción podría fallar.');
+                }
+
+                console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean & Filtered):', JSON.stringify(finalPayload, null, 2));
 
                 console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean):', JSON.stringify(finalPayload, null, 2));
             } else {
