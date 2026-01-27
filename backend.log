@@ -22,9 +22,9 @@
   reason: TopologyDescription {
     type: 'ReplicaSetNoPrimary',
     servers: Map(3) {
-      'ac-t09g8ls-shard-00-01.oh8gqvz.mongodb.net:27017' => [ServerDescription],
       'ac-t09g8ls-shard-00-02.oh8gqvz.mongodb.net:27017' => [ServerDescription],
-      'ac-t09g8ls-shard-00-00.oh8gqvz.mongodb.net:27017' => [ServerDescription]
+      'ac-t09g8ls-shard-00-00.oh8gqvz.mongodb.net:27017' => [ServerDescription],
+      'ac-t09g8ls-shard-00-01.oh8gqvz.mongodb.net:27017' => [ServerDescription]
     },
     stale: false,
     compatible: true,
