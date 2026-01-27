@@ -198,18 +198,14 @@ router.put('/:id/approve-deposit', async (req, res) => {
                 finalPayload = {
                     transactions_type: 'withdrawal',
                     order: tx.order,
-                    url_notify: process.env.VITA_NOTIFY_URL || basePayload.url_notify,
+                    url_notify: (process.env.VITA_NOTIFY_URL || basePayload.url_notify || '').trim(),
                     wallet: vita.walletUUID,
 
-                    currency: (freshQuote.destCurrency || basePayload.currency || '').toLowerCase(),
+                    // ✅ FIX: 'currency' defines the SOURCE wallet (CLP), not destination!
+                    // Log showed 'co' (country code), which is wrong and causes Signature Error 300/303
+                    currency: (freshQuote.originCurrency || basePayload.currency || 'CLP').toLowerCase(),
                     country: (destCountry || basePayload.country || '').toUpperCase(),
-                    amount: freshQuote.amount || basePayload.amount, // Input Amount (Cost) // Vita expects 'amount' to be the COST for withdrawal? No, amount usually IS the send amount. Wait.
-                    // Vita /transactions (withdrawal): amount is the amount to WITHDRAW from execution currency? 
-                    // Verify logic: withdrawals.js sends 'adjustedWithdrawalAmount'.
-                    // Here we calculated everything in CLP.
-                    // freshQuote.amount is Input(CLP).
-                    // We want to send THAT amount.
-                    amount: Number(freshQuote.amount || basePayload.amount),
+                    amount: Number(freshQuote.amount || basePayload.amount), // Input Amount (CLP)
 
                     // Beneficiary Data
                     beneficiary_type: basePayload.beneficiary_type,
