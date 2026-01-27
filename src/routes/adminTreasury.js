@@ -187,6 +187,7 @@ router.put('/:id/approve-deposit', async (req, res) => {
                 finalPayload = {
                     ...finalPayload,
                     transactions_type: 'withdrawal',      // ✅ FIX: Use 'withdrawal' as seen in other files
+                    order: tx.order,                      // ✅ FIX: Verify order is present (Vita requires it)
                     rate: freshQuote.rate,
                     estimated_amount: freshQuote.amountOut,
                     fee: freshQuote.payoutFixedCost || 0
