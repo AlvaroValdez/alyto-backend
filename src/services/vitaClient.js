@@ -175,6 +175,17 @@ client.interceptors.request.use((config) => {
     const signature = hmacSha256Hex(secretKey, signatureBase);
     config.headers['Authorization'] = `V2-HMAC-SHA256, Signature: ${signature}`;
 
+    // DEBUG: Log signature base to debug Error 300/303
+    if (url.includes('/transactions')) {
+      console.log('🔐 [Vita Signature Debug]');
+      console.log('   URL:', url);
+      console.log('   Method:', method);
+      console.log('   X-Login:', xLogin);
+      console.log('   X-Date:', xDate);
+      console.log('   Signature Base:', signatureBase);
+      console.log('   Final Signature:', signature);
+    }
+
     return config;
   } catch (e) {
     throw e;
