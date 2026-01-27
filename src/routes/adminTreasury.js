@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import Transaction from '../models/Transaction.js';
 import { createWithdrawal } from '../services/vitaService.js';
+import { vita } from '../config/env.js';
 
 const router = Router();
 
@@ -188,6 +189,8 @@ router.put('/:id/approve-deposit', async (req, res) => {
                     ...finalPayload,
                     transactions_type: 'withdrawal',      // ✅ FIX: Use 'withdrawal' as seen in other files
                     order: tx.order,                      // ✅ FIX: Verify order is present (Vita requires it)
+                    url_notify: process.env.VITA_NOTIFY_URL || finalPayload.url_notify, // ✅ FIX: Ensure notify URL is present
+                    wallet: vita.walletUUID || finalPayload.wallet, // ✅ FIX: Ensure wallet UUID is present
                     rate: freshQuote.rate,
                     estimated_amount: freshQuote.amountOut,
                     fee: freshQuote.payoutFixedCost || 0
