@@ -441,7 +441,27 @@ router.post('/', async (req, res) => {
       account_type_name, // "Cuenta de Ahorros" (nombre legible)
       status: transactionStatus,
       vitaResponse,
-      withdrawalPayload: deferredWithdrawalPayload || { amount: Number(amount) },
+      withdrawalPayload: deferredWithdrawalPayload || {
+        // ✅ FIX: Para transacciones manuales (BOB), incluir datos completos del beneficiario
+        // Esto permite que el comprobante muestre toda la información
+        amount: Number(amount),
+        currency: currency?.toLowerCase(),
+        country,
+        beneficiary_type,
+        beneficiary_first_name,
+        beneficiary_last_name,
+        beneficiary_email,
+        beneficiary_address,
+        beneficiary_document_type,
+        beneficiary_document_number,
+        account_type_bank,
+        account_bank,
+        bank_code,
+        bank_name,
+        account_type_name,
+        purpose,
+        purpose_comentary
+      },
       vitaPaymentOrderId: null, // Ya no usamos Payment Orders de Vita
       fintocPaymentIntentId: vitaTxnId, // NUEVO: ID de Fintoc
       vitaWithdrawalId,
