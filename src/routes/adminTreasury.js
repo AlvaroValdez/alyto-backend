@@ -184,19 +184,68 @@ router.put('/:id/approve-deposit', async (req, res) => {
                 await tx.save();
 
                 // Usar valores frescos en payload final para Vita
+                // ⚠️ CRÍTICO: Reconstruir payload explícitamente para evitar campos basura que rompan la firma (Error 303)
+                const basePayload = tx.withdrawalPayload || {};
+
+                // Extraer compliance fields (fc_*)
+                const complianceFields = Object.keys(basePayload)
+                    .filter(key => key.startsWith('fc_'))
+                    .reduce((obj, key) => {
+                        obj[key] = basePayload[key];
+                        return obj;
+                    }, {});
+
                 finalPayload = {
-                    ...finalPayload,
-                    transactions_type: 'withdrawal',      // ✅ FIX: Use 'withdrawal' as seen in other files
-                    order: tx.order,                      // ✅ FIX: Verify order is present (Vita requires it)
-                    url_notify: process.env.VITA_NOTIFY_URL || finalPayload.url_notify, // ✅ FIX: Ensure notify URL is present
-                    wallet: vita.walletUUID || finalPayload.wallet, // ✅ FIX: Ensure wallet UUID is present
+                    transactions_type: 'withdrawal',
+                    order: tx.order,
+                    url_notify: process.env.VITA_NOTIFY_URL || basePayload.url_notify,
+                    wallet: vita.walletUUID,
+
+                    currency: (freshQuote.destCurrency || basePayload.currency || '').toLowerCase(),
+                    country: (destCountry || basePayload.country || '').toUpperCase(),
+                    amount: freshQuote.amount || basePayload.amount, // Input Amount (Cost) // Vita expects 'amount' to be the COST for withdrawal? No, amount usually IS the send amount. Wait.
+                    // Vita /transactions (withdrawal): amount is the amount to WITHDRAW from execution currency? 
+                    // Verify logic: withdrawals.js sends 'adjustedWithdrawalAmount'.
+                    // Here we calculated everything in CLP.
+                    // freshQuote.amount is Input(CLP).
+                    // We want to send THAT amount.
+                    amount: Number(freshQuote.amount || basePayload.amount),
+
+                    // Beneficiary Data
+                    beneficiary_type: basePayload.beneficiary_type,
+                    beneficiary_first_name: basePayload.beneficiary_first_name,
+                    beneficiary_last_name: basePayload.beneficiary_last_name,
+                    beneficiary_email: basePayload.beneficiary_email,
+                    beneficiary_address: basePayload.beneficiary_address || 'N/A',
+                    beneficiary_document_type: basePayload.beneficiary_document_type,
+                    beneficiary_document_number: basePayload.beneficiary_document_number,
+
+                    // Bank Data
+                    account_type_bank: basePayload.account_type_bank,
+                    account_bank: basePayload.account_bank,
+                    bank_code: basePayload.bank_code ? Number(basePayload.bank_code) : undefined,
+
+                    // Metadata
+                    purpose: basePayload.purpose,
+                    purpose_comentary: basePayload.purpose_comentary || 'Pago manual',
+
+                    // Compliance
+                    ...complianceFields,
+
+                    // Quote Data (Required for Rate Locking? Or just informational?)
+                    // Vita usually finds its own rate. We send rate/estimated only if we want to enforce?
+                    // withdrawals.js sends NO rate/estimated for legacy flow.
+                    // BUT for fresh quote usage, we might want to include them?
+                    // The docs say: "To calculate final amount...".
+                    // Let's stick to MINIMAL fields first similar to withdrawals.js legacy flow if possible?
+                    // PROD LOGIC: "Usar valores frescos en payload".
+                    // Let's include them but ensuring no garbage.
                     rate: freshQuote.rate,
                     estimated_amount: freshQuote.amountOut,
                     fee: freshQuote.payoutFixedCost || 0
-                    // NO incluir expires_at - Vita lo genera automáticamente
                 };
 
-                console.log('[treasury] 📦 Payload actualizado con quote fresco');
+                console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean):', JSON.stringify(finalPayload, null, 2));
             } else {
                 console.warn('[treasury] ⚠️ Error en respuesta de quote, usando valores guardados');
             }
