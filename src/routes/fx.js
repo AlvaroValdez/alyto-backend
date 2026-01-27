@@ -323,6 +323,7 @@ router.get('/quote', async (req, res) => {
           amount: Number(inputAmount.toFixed(2)),           // Monto que paga el usuario
           clpAmountWithFee: Number(inputAmount.toFixed(2)), // Total que paga
           receiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
+          amountOut: Number(Math.max(0, destReceiveAmount).toFixed(2)), // Alias for consistency
 
           // 🆕 DESGLOSE DE FEES DE PASARELA (Payin)
           payinFeeBreakdown: {

@@ -144,6 +144,10 @@ router.put('/:id/approve-deposit', async (req, res) => {
             if (quoteResponse.data.ok) {
                 const freshQuote = quoteResponse.data.data;
 
+                // DEBUG: Confirm code version and inspected keys
+                console.log('[treasury] 🛠️ DEBUG: Validando respuesta de quote (versión parcheada)');
+                console.log('[treasury] Keys recibidas:', Object.keys(freshQuote));
+
                 console.log('[treasury] ✅ Quote refrescado:', {
                     rate: freshQuote.rate,
                     estimated: freshQuote.amountOut,
@@ -163,11 +167,19 @@ router.put('/:id/approve-deposit', async (req, res) => {
                     originPrincipal: tx.amount,
                     originFee: tx.fee || 0,
                     originTotal: tx.amount + (tx.fee || 0),
+                    originTotal: tx.amount + (tx.fee || 0),
                     destCurrency: freshQuote.destCurrency,
-                    destGrossAmount: freshQuote.amountOut + (freshQuote.payoutFixedCost || 0),
+                    destGrossAmount: (freshQuote.amountOut || freshQuote.receiveAmount || 0) + (freshQuote.payoutFixedCost || 0),
                     destVitaFixedCost: freshQuote.payoutFixedCost || 0,
-                    destReceiveAmount: freshQuote.amountOut
+                    destReceiveAmount: freshQuote.amountOut || freshQuote.receiveAmount || 0
                 };
+
+                // Safety check for NaN
+                if (isNaN(tx.amountsTracking.destGrossAmount)) {
+                    console.error('[treasury] ⚠️ Error de cálculo NaN en destGrossAmount. Usando valores seguros.');
+                    tx.amountsTracking.destGrossAmount = 0;
+                    tx.amountsTracking.destReceiveAmount = 0;
+                }
 
                 await tx.save();
 
