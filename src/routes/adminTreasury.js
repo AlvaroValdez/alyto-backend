@@ -116,9 +116,6 @@ router.put('/:id/approve-deposit', async (req, res) => {
         // 🔄 CRÍTICO: Refrescar quote para obtener precios actuales de Vita
         // Esto soluciona el error "Los precios caducaron"
         try {
-            const axios = (await import('axios')).default;
-            const API_URL = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`;
-
             // ✅ FIX: Obtener destCountry de múltiples fuentes posibles
             const destCountry = tx.country || tx.destCountry || tx.withdrawalPayload?.destination_country;
             const originCurrency = finalPayload.currency?.toUpperCase() || 'CLP';
@@ -131,16 +128,18 @@ router.put('/:id/approve-deposit', async (req, res) => {
 
             console.log(`[treasury] 🔄 Refrescando quote: ${amountForQuote} ${originCurrency} (${originCountry}) → ${destCountry}`);
 
-            // ✅ FIX: Usar parámetros correctos que espera /api/fx/quote
-            const quoteResponse = await axios.get(`${API_URL}/api/fx/quote`, {
-                params: {
-                    amount: amountForQuote,
-                    origin: originCurrency,           // CLP
-                    originCountry: originCountry,     // CL
-                    destCountry: destCountry,         // CO
-                    mode: 'send'
-                }
+            // ✅ FIX: Call internal logic directly to avoid self-HTTP 500 Deadlock
+            const { calculateQuote } = await import('../services/fxCalculator.js');
+            const freshQuote = await calculateQuote({
+                amount: amountForQuote,
+                origin: originCurrency,
+                originCountry: originCountry,
+                destCountry: destCountry,
+                mode: 'send'
             });
+
+            // Simulate API response structure for minimal code change below
+            const quoteResponse = { data: { ok: true, data: freshQuote } };
 
             if (quoteResponse.data.ok) {
                 const freshQuote = quoteResponse.data.data;
