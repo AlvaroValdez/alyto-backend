@@ -186,7 +186,7 @@ router.put('/:id/approve-deposit', async (req, res) => {
                 // Usar valores frescos en payload final para Vita
                 finalPayload = {
                     ...finalPayload,
-                    transactions_type: 'redeem',      // ✅ FIX: Required by Vita API
+                    transactions_type: 'withdrawal',      // ✅ FIX: Use 'withdrawal' as seen in other files
                     rate: freshQuote.rate,
                     estimated_amount: freshQuote.amountOut,
                     fee: freshQuote.payoutFixedCost || 0
