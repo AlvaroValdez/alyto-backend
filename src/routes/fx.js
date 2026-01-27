@@ -363,7 +363,7 @@ router.get('/quote', async (req, res) => {
             destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),
             destReceiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
 
-            profitOriginCurrency: Number(profitCLP.toFixed(2)),
+            profitOriginCurrency: Number(profitCLP.toFixed(2)), // Profit in CLP (pivot currency), NOT origin currency
             profitDestCurrency: Number(profitCOP.toFixed(2))
           },
 
@@ -529,7 +529,7 @@ router.get('/quote', async (req, res) => {
             destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),   // Vita's fixed cost
             destReceiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Final amount
 
-            profitOriginCurrency: Number(ourMarginCLP.toFixed(2)),   // Profit in CLP
+            profitOriginCurrency: Number(ourMarginCLP.toFixed(2)),   // Profit in CLP (pivot currency), NOT origin currency
             profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)) // Profit in COP
           },
 
