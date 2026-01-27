@@ -230,19 +230,11 @@ router.put('/:id/approve-deposit', async (req, res) => {
                     purpose_comentary: basePayload.purpose_comentary || 'Pago manual',
 
                     // Compliance
-                    ...complianceFields,
+                    ...complianceFields
 
-                    // Quote Data (Required for Rate Locking? Or just informational?)
-                    // Vita usually finds its own rate. We send rate/estimated only if we want to enforce?
-                    // withdrawals.js sends NO rate/estimated for legacy flow.
-                    // BUT for fresh quote usage, we might want to include them?
-                    // The docs say: "To calculate final amount...".
-                    // Let's stick to MINIMAL fields first similar to withdrawals.js legacy flow if possible?
-                    // PROD LOGIC: "Usar valores frescos en payload".
-                    // Let's include them but ensuring no garbage.
-                    rate: freshQuote.rate,
-                    estimated_amount: freshQuote.amountOut,
-                    fee: freshQuote.payoutFixedCost || 0
+                    // REMOVED: rate, estimated_amount, fee (Causes Error 300/303 Invalid Signature)
+                    // The 'withdrawal' endpoint likely does not accept these fields, or they mess up the HMAC signature.
+                    // We rely on Vita to calculate the rate at the moment of execution (Market Order).
                 };
 
                 console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean):', JSON.stringify(finalPayload, null, 2));
