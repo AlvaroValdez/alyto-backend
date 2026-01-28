@@ -3,6 +3,7 @@ import { createWithdrawal, forceRefreshPrices, getWalletBalance } from '../servi
 import { createWidgetLink } from '../services/fintocService.js';
 import { vita } from '../config/env.js';
 import Transaction from '../models/Transaction.js';
+import { transactionLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
 
@@ -31,7 +32,7 @@ function buildFinalCustomerData(req) {
   return { ...cleanedFromUser, ...fromBody };
 }
 
-router.post('/', async (req, res) => {
+router.post('/', transactionLimiter, async (req, res) => {
   try {
     if (!req.user?._id) {
       return res.status(401).json({ ok: false, error: 'No se pudo identificar al usuario para la transacción.' });

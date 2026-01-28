@@ -6,11 +6,17 @@ import { jwtSecret, jwtExpiresIn } from '../config/env.js';
 import { sendEmail, getVerificationEmailTemplate } from '../services/emailService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
+import {
+  loginLimiter,
+  registerLimiter,
+  passwordResetLimiter,
+  kycUploadLimiter
+} from '../middleware/rateLimiters.js';
 
 const router = Router();
 
 // --- REGISTRO DE USUARIO ---
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
@@ -137,8 +143,39 @@ router.get('/verify-email', async (req, res) => {
   }
 });
 
+// --- VALIDACIÓN DE SESIÓN (Para timeout de inactividad) ---
+/**
+ * GET /api/auth/session-status
+ * Verifica el estado de la sesión actual basado en la última actividad.
+ * Retorna información sobre si la sesión está expirada o cuánto tiempo queda.
+ */
+router.get('/session-status', protect, (req, res) => {
+  try {
+    const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS) || 30 * 60 * 1000; // 30 minutos
+
+    const lastActivity = req.user.lastActivity || req.user.updatedAt || new Date();
+    const lastActivityTime = new Date(lastActivity).getTime();
+    const currentTime = Date.now();
+    const inactiveMs = currentTime - lastActivityTime;
+
+    const isExpired = inactiveMs >= SESSION_TIMEOUT_MS;
+    const timeRemaining = Math.max(0, SESSION_TIMEOUT_MS - inactiveMs);
+
+    res.json({
+      ok: true,
+      isExpired,
+      timeRemaining, // milliseconds hasta timeout
+      lastActivity: lastActivity,
+      sessionTimeout: SESSION_TIMEOUT_MS
+    });
+  } catch (error) {
+    console.error('[auth/session-status] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error verificando estado de sesión.' });
+  }
+});
+
 // --- INICIO DE SESIÓN ---
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -279,7 +316,7 @@ router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
 });
 
 // --- SUBIDA DE DOCUMENTOS KYC (Nivel 2) ---
-router.post('/kyc-documents', protect, (req, res, next) => {
+router.post('/kyc-documents', protect, kycUploadLimiter, (req, res, next) => {
   const uploadMiddleware = upload.fields([
     { name: 'idFront', maxCount: 1 },
     { name: 'idBack', maxCount: 1 },
@@ -336,7 +373,7 @@ router.post('/kyc-documents', protect, (req, res, next) => {
 });
 
 // --- OLVIDÉ MI CONTRASEÑA ---
-router.post('/forgotpassword', async (req, res) => {
+router.post('/forgotpassword', passwordResetLimiter, async (req, res) => {
   const { email } = req.body;
   try {
     const user = await User.findOne({ email: email.toLowerCase() });

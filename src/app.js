@@ -5,6 +5,7 @@ import connectMongo from './config/mongo.js';
 import { protect, isAdmin } from './middleware/authMiddleware.js';
 import { optionalAuth } from './middleware/optionalAuth.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { trackActivity } from './middleware/activityTracker.js';
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
@@ -105,6 +106,10 @@ app.use('/public', publicVerifyRoutes); // Rutas públicas de verificación
 
 // ✅ AQUÍ SE ACTIVA LA CALCULADORA (Sin duplicados)
 app.use('/api/fx', fxRoutes);
+
+// --- Actividad de Usuario (Para Session Timeout) ---
+// IMPORTANTE: Debe ir DESPUÉS de protect pero ANTES de las rutas protegidas
+app.use('/api', protect, trackActivity);
 
 // --- Rutas Protegidas ---
 app.use('/api/withdrawals', protect, withdrawalsRoutes);

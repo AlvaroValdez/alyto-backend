@@ -16,6 +16,9 @@ const userSchema = new mongoose.Schema({
   loginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date },
 
+  // --- SESSION MANAGEMENT ---
+  lastActivity: { type: Date, default: Date.now },
+
   // --- CAMPOS PARA RECUPERACIÓN DE CONTRASEÑA ---
   resetPasswordToken: String,
   resetPasswordExpire: Date,

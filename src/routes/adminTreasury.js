@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Transaction from '../models/Transaction.js';
 import { createWithdrawal } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
+import { adminTreasuryLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.get('/pending', async (req, res) => {
 // PUT /api/admin/treasury/:id/approve-deposit
 // Admin confirma que el depósito/entrada fue recibido y, si hay payload guardado,
 // ejecuta el envío real (withdrawal) en Vita.
-router.put('/:id/approve-deposit', async (req, res) => {
+router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
     try {
         const tx = await Transaction.findById(req.params.id);
         if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
@@ -244,7 +245,22 @@ router.put('/:id/approve-deposit', async (req, res) => {
                     console.warn('[treasury] ⚠️ ADVERTENCIA: wallet (UUID) no está definido en el payload. La transacción podría fallar.');
                 }
 
-                console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean & Filtered):', JSON.stringify(finalPayload, null, 2));
+                // SECURITY: NO loguear payload completo (contiene PII)
+                // Solo loguear estructura sin datos sensibles
+                if (process.env.NODE_ENV === 'development') {
+                    const safePayloadSummary = {
+                        transactions_type: finalPayload.transactions_type,
+                        order: finalPayload.order,
+                        currency: finalPayload.currency,
+                        country: finalPayload.country,
+                        amount: finalPayload.amount,
+                        hasWallet: !!finalPayload.wallet,
+                        hasBeneficiary: !!finalPayload.beneficiary_first_name,
+                        hasAccountNumber: !!finalPayload.account_number,
+                        fieldCount: Object.keys(finalPayload).length
+                    };
+                    console.log('[treasury] 📦 Payload Summary (Sanitized):', safePayloadSummary);
+                }
 
                 console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean):', JSON.stringify(finalPayload, null, 2));
             } else {
