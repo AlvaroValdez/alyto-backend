@@ -133,7 +133,7 @@ const transactionSchema = new mongoose.Schema({
   },
   payoutStatus: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed', 'blocked_insufficient_funds'], // NUEVO estado
+    enum: ['pending', 'pending_manual_payout', 'processing', 'completed', 'failed', 'blocked_insufficient_funds'],
     default: 'pending'
   },
 
