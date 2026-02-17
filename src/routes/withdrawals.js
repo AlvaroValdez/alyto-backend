@@ -74,12 +74,14 @@ router.post('/', transactionLimiter, async (req, res) => {
 
     const finalCustomerData = buildFinalCustomerData(req);
 
-    // 🔧 FIXED: Chile → Bolivia debe usar Fintoc (no manual)
-    // Solo es manual si:
-    //  - Origen es Bolivia (BOB currency) → Manual On-Ramp
-    //  - Destino es Bolivia PERO origen NO es Chile → Manual Off-Ramp
+    // 🔧 FLOW DETECTION
+    // - Manual On-Ramp: Origen es Bolivia (BOB currency) → depósito manual
+    // - Manual Off-Ramp: Destino es Bolivia (origen NO Chile) → payout manual 
+    // - HYBRID CL→BO: Fintoc payin + Manual payout (Bolivia NO soportado por Vita API)
+    // - HYBRID Automático: Fintoc payin + Vita payout (resto de países)
     const isManualOnRamp = currency?.toUpperCase() === 'BOB';
     const isManualOffRamp = country?.toUpperCase() === 'BO' && currency?.toUpperCase() !== 'CLP';
+    const isHybridFintocManual = currency?.toUpperCase() === 'CLP' && country?.toUpperCase() === 'BO'; // ✅ CL→BO
 
     const orderId = order || `ORD-${Date.now()}`;
     const notifyUrl = vita.notifyUrl || 'https://google.com';
@@ -89,7 +91,11 @@ router.post('/', transactionLimiter, async (req, res) => {
     }
 
     console.log('[withdrawals] Purpose enviado:', purpose);
-    console.log(`[withdrawals] Flow Detection: isManualOnRamp=${isManualOnRamp}, isManualOffRamp=${isManualOffRamp}, currency=${currency}, country=${country}`);
+    console.log(`[withdrawals] Flow Detection:`);
+    console.log(`   isManualOnRamp: ${isManualOnRamp}`);
+    console.log(`   isManualOffRamp: ${isManualOffRamp}`);
+    console.log(`   isHybridFintocManual (CL→BO): ${isHybridFintocManual}`);
+    console.log(`   currency: ${currency}, country: ${country}`);
 
     // 💰 Verificar configuración de Profit Retention
     const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
@@ -117,10 +123,59 @@ router.post('/', transactionLimiter, async (req, res) => {
       transactionStatus = 'pending_manual_payout';
       vitaResponse = { manual: true, id: `MANUAL-OFF-${Date.now()}` };
 
+    } else if (isHybridFintocManual) {
+      // 💳🔧 HYBRID CL→BO: Fintoc Payin + MANUAL Payout
+      // Bolivia NO soportado por Vita API, admin procesa el payout manualmente
+      console.log('[withdrawals] 💳🔧 Flow: HYBRID CL→BO (Fintoc Payin + MANUAL Payout)');
+
+      try {
+        const frontendUrl = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
+        const successRedirectUrl = `${frontendUrl}/payment-success/${orderId}`;
+        const cancelRedirectUrl = `${frontendUrl}/payment-cancelled/${orderId}`;
+
+        const fintocWidgetPayload = {
+          amount: Math.round(Number(amount)),
+          currency: 'CLP',
+          customer_email: beneficiary_email || 'cliente@example.com',
+          metadata: {
+            orderId,
+            userId: userId.toString(),
+            beneficiaryName: `${beneficiary_first_name} ${beneficiary_last_name}`,
+            country: 'BO',
+            destCurrency: 'BOB',
+            note: 'Payout manual - Bolivia no soportado por Vita'
+          },
+          success_url: successRedirectUrl,
+          cancel_url: cancelRedirectUrl
+        };
+
+        console.log('[withdrawals] Creating Fintoc Widget for CL→BO...');
+        const fintocResp = await createWidgetLink(fintocWidgetPayload);
+
+        vitaResponse = { fintoc: true, manualPayout: true, ...fintocResp };
+        vitaTxnId = fintocResp?.id || null;
+        checkoutUrl = fintocResp?.url || null;
+
+        // ⚠️ NO CREAR deferredWithdrawalPayload - el payout es MANUAL
+        deferredWithdrawalPayload = null;
+
+        payinStatus = 'pending';
+        payoutStatus = 'pending_manual_payout'; // ✅ Admin procesará desde panel
+        transactionStatus = 'pending';
+
+        console.log(`✅ [withdrawals] Fintoc Widget created for CL→BO: ${vitaTxnId}`);
+        console.log(`✅ [withdrawals] Checkout URL: ${checkoutUrl}`);
+        console.log(`⚠️  [withdrawals] Payout MANUAL - Admin debe procesar payout desde panel de transacciones`);
+
+      } catch (error) {
+        console.error('❌ [withdrawals] Error creating Fintoc Widget for CL→BO:', error.message);
+        throw error;
+      }
+
     } else {
-      // 🔄 FLUJO HÍBRIDO: Fintoc Pay-in + Vita Pre-fondeado Payout
-      // ✅ Incluye: CL → BO, CL → CO, CL → PE, etc.
-      console.log('[withdrawals] 💳 Flow: HYBRID (Fintoc Payin + Vita Payout)');
+      // 🔄 FLUJO HÍBRIDO AUTOMÁTICO: Fintoc Pay-in + Vita Pre-fondeado Payout
+      // ✅ Incluye: CL → CO, CL → PE, etc. (NO Bolivia)
+      console.log('[withdrawals] 💳 Flow: HYBRID AUTOMÁTICO (Fintoc Payin + Vita Payout)');
       if (rule?.profitRetention) {
         // ✅ HYBRID FLOW: Fintoc Direct Payment (Payin) + Deferred Withdrawal (Payout)
         console.log('[withdrawals] 💰 Hybrid Flow: Creating Fintoc Widget Link for profit retention...');

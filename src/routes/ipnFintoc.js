@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
                 payload: eventData
             });
 
-            // 🚀 EJECUTAR WITHDRAWAL INMEDIATO (asumir saldo en Vita)
+            // 🚀 EJECUTAR WITHDRAWAL INMEDIATO (si hay payload diferido)
             if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
                 console.log(`[Fintoc IPN] ⭐ Ejecutando withdrawal diferido para orden: ${orderId}`);
 
@@ -122,8 +122,14 @@ router.post('/', async (req, res) => {
                         transaction.errorMessage = withdrawalError.message;
                     }
                 }
+            } else if (transaction.payoutStatus === 'pending_manual_payout') {
+                // 🔧 FLUJO HÍBRIDO CL→BO: Fintoc completó el payin, payout es manual
+                console.log(`[Fintoc IPN] 💳🔧 Payin completado. Payout MANUAL - Admin debe procesar desde panel.`);
+                transaction.status = 'pending_manual_payout';
+
             } else {
                 // No hay withdrawal diferido, solo marcar como succeeded
+                console.log(`[Fintoc IPN] ✅ Payin completado. No hay withdrawal diferido.`);
                 transaction.status = 'succeeded';
             }
 
