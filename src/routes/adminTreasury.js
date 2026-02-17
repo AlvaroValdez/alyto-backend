@@ -322,18 +322,15 @@ router.put('/:id/complete-payout', async (req, res) => {
         if (tx.status !== 'pending_manual_payout') {
             return res.status(409).json({
                 ok: false,
-                error: `Estado inválido para completar pago: ${tx.status}`
+                error: `Estado inválido para completar pago: ${tx.status}. Debe estar en 'pending_manual_payout'.`
             });
         }
 
         const { proofUrl, transferDetails, adminNotes } = req.body || {};
 
-        // ⚠️ Validación: Bolivia requiere comprobante obligatorio
+        // ⚠️ Advertencia: Recomendar comprobante para Bolivia
         if (tx.country?.toUpperCase() === 'BO' && !proofUrl) {
-            return res.status(400).json({
-                ok: false,
-                error: 'Para Bolivia se requiere comprobante de transferencia (proofUrl)'
-            });
+            console.warn('[treasury] ⚠️ Completando payout a Bolivia sin comprobante. Recomendado agregar proofUrl.');
         }
 
         // Guardar información de la transferencia
@@ -345,17 +342,55 @@ router.put('/:id/complete-payout', async (req, res) => {
         tx.approvedDepositBy = req.user?._id;
         tx.approvedDepositAt = new Date();
 
+        // Actualizar estados
+        tx.payoutStatus = 'completed'; // ⭐ IMPORTANTE
         tx.status = 'succeeded';
         await tx.save();
 
+        console.log(`✅ [treasury] Payout manual completado: ${tx.order} (${tx.country})`);
+
         res.json({
             ok: true,
-            message: 'Pago marcado como completado.',
+            message: 'Payout marcado como completado.',
             transaction: tx
         });
     } catch (error) {
         console.error('[treasury] Error completando payout:', error);
         res.status(500).json({ ok: false, error: 'Error al completar pago.' });
+    }
+});
+
+// PUT /api/admin/treasury/:id/upload-proof
+// Admin sube el comprobante de pago para un payout manual
+router.put('/:id/upload-proof', async (req, res) => {
+    try {
+        const tx = await Transaction.findById(req.params.id);
+        if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
+
+        const { proofUrl } = req.body;
+
+        if (!proofUrl) {
+            return res.status(400).json({
+                ok: false,
+                error: 'proofUrl es requerido'
+            });
+        }
+
+        // Actualizar comprobante
+        tx.proofOfPayment = proofUrl;
+        await tx.save();
+
+        console.log(`✅ [treasury] Comprobante de pago agregado para: ${tx.order}`);
+
+        res.json({
+            ok: true,
+            message: 'Comprobante de pago actualizado.',
+            proofUrl,
+            transaction: tx
+        });
+    } catch (error) {
+        console.error('[treasury] Error subiendo comprobante:', error);
+        res.status(500).json({ ok: false, error: 'Error al subir comprobante.' });
     }
 });
 
