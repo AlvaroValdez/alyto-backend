@@ -86,6 +86,12 @@ router.post('/', async (req, res) => {
                     const errorData = withdrawalError.response?.data?.error || {};
                     const msg = `${errorData?.message || ''} ${errorData?.details?.message || ''}`.toLowerCase();
 
+                    // 🐛 LOG COMPLETO DEL ERROR PARA DEBUGGING
+                    console.error('[Fintoc IPN] ❌ Error ejecutando withdrawal:', withdrawalError.message);
+                    console.error('[Fintoc IPN] Status:', withdrawalError.response?.status);
+                    console.error('[Fintoc IPN] Error Data:', JSON.stringify(errorData, null, 2));
+                    console.error('[Fintoc IPN] Payload que causó el error:', JSON.stringify(transaction.deferredWithdrawalPayload, null, 2));
+
                     if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
                         console.warn('[Fintoc IPN] ⚠️ Precios expirados. Refrescando y reintentando...');
 
@@ -104,6 +110,7 @@ router.post('/', async (req, res) => {
 
                         } catch (retryError) {
                             console.error('[Fintoc IPN] ❌ Error en retry:', retryError.message);
+                            console.error('[Fintoc IPN] Retry Error Data:', JSON.stringify(retryError.response?.data, null, 2));
                             transaction.payoutStatus = 'failed';
                             transaction.status = 'failed';
                             transaction.errorMessage = retryError.message;
