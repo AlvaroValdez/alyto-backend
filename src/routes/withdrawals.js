@@ -74,8 +74,13 @@ router.post('/', transactionLimiter, async (req, res) => {
 
     const finalCustomerData = buildFinalCustomerData(req);
 
+    // 🔧 FIXED: Chile → Bolivia debe usar Fintoc (no manual)
+    // Solo es manual si:
+    //  - Origen es Bolivia (BOB currency) → Manual On-Ramp
+    //  - Destino es Bolivia PERO origen NO es Chile → Manual Off-Ramp
     const isManualOnRamp = currency?.toUpperCase() === 'BOB';
-    const isManualOffRamp = country?.toUpperCase() === 'BO';
+    const isManualOffRamp = country?.toUpperCase() === 'BO' && currency?.toUpperCase() !== 'CLP';
+
     const orderId = order || `ORD-${Date.now()}`;
     const notifyUrl = vita.notifyUrl || 'https://google.com';
 
@@ -84,6 +89,7 @@ router.post('/', transactionLimiter, async (req, res) => {
     }
 
     console.log('[withdrawals] Purpose enviado:', purpose);
+    console.log(`[withdrawals] Flow Detection: isManualOnRamp=${isManualOnRamp}, isManualOffRamp=${isManualOffRamp}, currency=${currency}, country=${country}`);
 
     // 💰 Verificar configuración de Profit Retention
     const { default: TransactionConfig } = await import('../models/TransactionConfig.js');
@@ -102,15 +108,19 @@ router.post('/', transactionLimiter, async (req, res) => {
     let deferredWithdrawalPayload = null;
 
     if (isManualOnRamp) {
+      console.log('[withdrawals] 📝 Flow: MANUAL ON-RAMP (BOB origin)');
       transactionStatus = 'pending_verification';
       vitaResponse = { manual: true, message: 'Esperando verificación', id: `MANUAL-ON-${Date.now()}` };
 
     } else if (isManualOffRamp) {
+      console.log('[withdrawals] 📝 Flow: MANUAL OFF-RAMP (BO destination, non-CLP origin)');
       transactionStatus = 'pending_manual_payout';
       vitaResponse = { manual: true, id: `MANUAL-OFF-${Date.now()}` };
 
     } else {
       // 🔄 FLUJO HÍBRIDO: Fintoc Pay-in + Vita Pre-fondeado Payout
+      // ✅ Incluye: CL → BO, CL → CO, CL → PE, etc.
+      console.log('[withdrawals] 💳 Flow: HYBRID (Fintoc Payin + Vita Payout)');
       if (rule?.profitRetention) {
         // ✅ HYBRID FLOW: Fintoc Direct Payment (Payin) + Deferred Withdrawal (Payout)
         console.log('[withdrawals] 💰 Hybrid Flow: Creating Fintoc Widget Link for profit retention...');
