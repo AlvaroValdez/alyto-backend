@@ -107,11 +107,8 @@ app.use('/public', publicVerifyRoutes); // Rutas públicas de verificación
 // ✅ AQUÍ SE ACTIVA LA CALCULADORA (Sin duplicados)
 app.use('/api/fx', fxRoutes);
 
-// --- Actividad de Usuario (Para Session Timeout) ---
-// IMPORTANTE: Debe ir DESPUÉS de protect pero ANTES de las rutas protegidas
-app.use('/api', protect, trackActivity);
-
 // --- Rutas Protegidas ---
+// NOTA: trackActivity se aplica implícitamente en routes individuales si es necesario
 app.use('/api/withdrawals', protect, withdrawalsRoutes);
 app.use('/api/ipn/events', protect, ipnEventsRoutes);
 app.use('/api/transactions', optionalAuth, transactionsRoutes);

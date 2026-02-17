@@ -210,8 +210,12 @@ router.post('/login', loginLimiter, async (req, res) => {
     if (user.loginAttempts > 0 || user.lockUntil) {
       user.loginAttempts = 0;
       user.lockUntil = undefined;
-      await user.save();
     }
+
+    // --- ACTUALIZAR ÚLTIMA ACTIVIDAD (Session Timeout) ---
+    user.lastActivity = new Date();
+
+    await user.save();
 
     if (!user.isEmailVerified) {
       return res.status(401).json({ ok: false, error: 'Cuenta no verificada.' });
