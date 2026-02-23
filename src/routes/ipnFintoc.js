@@ -4,6 +4,12 @@ import { verifyFintocWebhook } from '../services/fintocService.js';
 import { createWithdrawal, forceRefreshPrices } from '../services/vitaService.js';
 import Transaction from '../models/Transaction.js';
 import { vita } from '../config/env.js';
+import {
+    notifyPayinSuccess,
+    notifyAdminManualPayoutPending,
+    notifyTransactionFailed,
+    notifyAdminWithdrawalError
+} from '../services/notificationService.js';
 
 const router = Router();
 
@@ -54,6 +60,9 @@ router.post('/', async (req, res) => {
 
             // Actualizar payin status
             transaction.payinStatus = 'completed';
+
+            // 🔔 U2 — Notificar usuario: pago confirmado
+            notifyPayinSuccess(transaction).catch(() => { });
 
             // Registrar evento de Fintoc
             if (!transaction.fintocWebhookEvents) {
@@ -127,6 +136,9 @@ router.post('/', async (req, res) => {
                 console.log(`[Fintoc IPN] 💳🔧 Payin completado. Payout MANUAL - Admin debe procesar desde panel.`);
                 transaction.status = 'pending_manual_payout';
 
+                // 🔔 A2 — Notificar admins: payout Bolivia pendiente
+                notifyAdminManualPayoutPending(transaction).catch(() => { });
+
             } else {
                 // No hay withdrawal diferido, solo marcar como succeeded
                 console.log(`[Fintoc IPN] ✅ Payin completado. No hay withdrawal diferido.`);
@@ -142,12 +154,15 @@ router.post('/', async (req, res) => {
             const orderId = eventData?.metadata?.orderId;
 
             if (orderId) {
-                const transaction = await Transaction.findOne({ order: orderId });
+                const transaction = await Transaction.findOne({ order: orderId }).populate('createdBy', 'email fcmToken');
 
                 if (transaction) {
                     transaction.payinStatus = 'failed';
                     transaction.status = 'failed';
                     transaction.errorMessage = eventData?.error_message || 'Payment failed';
+
+                    // 🔔 U8 — Notificar usuario: pago fallido
+                    notifyTransactionFailed(transaction, 'Tu pago no pudo ser procesado.').catch(() => { });
 
                     // Registrar evento
                     if (!transaction.fintocWebhookEvents) {

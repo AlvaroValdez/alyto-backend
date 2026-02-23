@@ -33,7 +33,11 @@ import adminComplianceRoutes from './routes/adminCompliance.js';
 import directPayRoutes from './routes/directPay.js';
 import receiptsRoutes from './routes/receipts.js';
 import publicVerifyRoutes from './routes/publicVerify.js';
+import sep12Routes from './routes/sep12.js';
+import stellarTomlRoute from './routes/stellarToml.js';
+import { sep12Auth } from './middleware/sep12Auth.js';
 //import './utils/envValidation.js';
+
 
 const app = express();
 
@@ -95,7 +99,15 @@ app.use('/api', limiter);
 
 // --- Rutas de la API ---
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'Backend funcionando 🚀' }));
+
+// --- Stellar TOML (must be public, open CORS) ---
+app.use('/.well-known/stellar.toml', stellarTomlRoute);
+
+// --- SEP-12 KYC API (open CORS for any Stellar wallet) ---
+app.use('/api/sep12', cors({ origin: '*' }), sep12Auth, sep12Routes);
+
 app.use('/api/auth', authRoutes); // Rutas públicas de autenticación
+
 app.use('/api/prices', pricesRoutes);
 app.use('/api/transaction-rules', transactionRulesRoutes);
 app.use('/api/withdrawal-rules', withdrawalRulesRoutes);

@@ -9,7 +9,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export const sendEmail = async (options) => {
   try {
     const { data, error } = await resend.emails.send({
-      from: `Alyto Remesas <${process.env.EMAIL_FROM || 'noreply@alyto.app'}>`,
+      from: `Alyto <${process.env.EMAIL_FROM || 'noreply@alyto.app'}>`,
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -110,7 +110,7 @@ export const getVerificationEmailTemplate = (verificationUrl, userName) => {
                 © 2026 Alyto. Todos los derechos reservados.
               </p>
               <p style="margin: 0; color: #999999; font-size: 12px;">
-                Remesas internacionales seguras y confiables
+                Transferencias internacionales seguras y confiables
               </p>
               <p style="margin: 15px 0 0; color: #999999; font-size: 12px;">
                 <a href="https://alyto.app" style="color: #20c997; text-decoration: none;">Visitar sitio web</a> • 

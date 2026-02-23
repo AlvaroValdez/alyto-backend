@@ -13,7 +13,7 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'avf-remesas-kyc', // Carpeta en tu Cloudinary
+    folder: 'alyto-kyc', // Carpeta en Cloudinary para documentos KYC
     allowed_formats: ['jpg', 'png', 'jpeg', 'pdf'], // Formatos permitidos
     // Opcional: transformación para reducir tamaño
     transformation: [{ width: 1000, crop: "limit" }],
@@ -21,7 +21,7 @@ const storage = new CloudinaryStorage({
 });
 
 // 3. Inicialización de Multer
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 } // Límite de 5MB por archivo
 });

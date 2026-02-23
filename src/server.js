@@ -4,7 +4,7 @@ import { port, isProd, vita, mongoURI } from './config/env.js';
 
 app.listen(port, () => {
   console.log('======================================');
-  console.log('🚀 Backend AVF Remesas corriendo');
+  console.log('🚀 Backend Alyto corriendo');
   console.log('--------------------------------------');
   console.log(`🌐 Entorno: ${isProd ? 'PRODUCCIÓN' : 'STAGE/DEV'}`);
   console.log(`📡 API Vita Base URL: ${vita.baseURL}`);

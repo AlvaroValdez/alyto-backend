@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema({
   // --- SESSION MANAGEMENT ---
   lastActivity: { type: Date, default: Date.now },
 
+  // --- PUSH NOTIFICATIONS (FCM) ---
+  fcmToken: { type: String, default: null },        // Token del dispositivo
+  fcmTokenUpdatedAt: { type: Date },                 // Última actualización
+
   // --- CAMPOS PARA RECUPERACIÓN DE CONTRASEÑA ---
   resetPasswordToken: String,
   resetPasswordExpire: Date,
@@ -54,6 +58,10 @@ const userSchema = new mongoose.Schema({
 
   // Bandera virtual para compatibilidad con lógica anterior
   isProfileComplete: { type: Boolean, default: false },
+
+  // --- SEP-12 / STELLAR ---
+  stellarAccount: { type: String, sparse: true, index: true }, // G... Stellar public key del usuario
+  sep12CallbackUrl: { type: String },                           // URL de callback del wallet para updates de estado
 
   // --- CONTRATO DE MANDATO Y COMPLIANCE (UIF/ASFI) ---
   contractAcceptance: {

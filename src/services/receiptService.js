@@ -12,7 +12,7 @@ import cloudinary from '../config/cloudinary.js';
 
 const AV_FINANCE_DATA = {
     razonSocial: 'AV Finance',
-    producto: 'Alyto - Wallet de Remesas',
+    producto: 'Alyto - Transferencias Internacionales',
     nitStatus: 'En trámite',
     direccion: 'Bolivia', // Actualizar con dirección real
     telefono: '+591 XXX XXXXX', // Actualizar

@@ -81,7 +81,7 @@ const client = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    'User-Agent': 'RemesasAVF/1.0 (Node.js)'
+    'User-Agent': 'Alyto/1.0 (Node.js)'
   },
 });
 

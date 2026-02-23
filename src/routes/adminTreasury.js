@@ -3,6 +3,7 @@ import Transaction from '../models/Transaction.js';
 import { createWithdrawal } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
 import { adminTreasuryLimiter } from '../middleware/rateLimiters.js';
+import { notifyManualPayoutCompleted, notifyProofUploaded, notifyTransactionRejected } from '../services/notificationService.js';
 
 const router = Router();
 
@@ -316,7 +317,7 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
 // Admin confirma que ya transfirió el dinero en el off-ramp manual (ej: Bolivia)
 router.put('/:id/complete-payout', async (req, res) => {
     try {
-        const tx = await Transaction.findById(req.params.id);
+        const tx = await Transaction.findById(req.params.id).populate('createdBy', 'email fcmToken');
         if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
 
         if (tx.status !== 'pending_manual_payout') {
@@ -346,6 +347,9 @@ router.put('/:id/complete-payout', async (req, res) => {
         tx.payoutStatus = 'completed'; // ⭐ IMPORTANTE
         tx.status = 'succeeded';
         await tx.save();
+
+        // 🔔 U6 — Notificar usuario: payout Bolivia completado
+        notifyManualPayoutCompleted(tx).catch(() => { });
 
         console.log(`✅ [treasury] Payout manual completado: ${tx.order} (${tx.country})`);
 
@@ -379,6 +383,9 @@ router.put('/:id/upload-proof', async (req, res) => {
         // Actualizar comprobante
         tx.proofOfPayment = proofUrl;
         await tx.save();
+
+        // 🔔 U7 — Notificar usuario: comprobante disponible
+        notifyProofUploaded(tx).catch(() => { });
 
         console.log(`✅ [treasury] Comprobante de pago agregado para: ${tx.order}`);
 

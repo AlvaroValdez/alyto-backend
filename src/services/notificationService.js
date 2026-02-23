@@ -1,8 +1,9 @@
 import { sendEmail } from './emailService.js';
+import { sendPushNotification, notifyUser, notifyAdmins } from './fcmService.js';
 
 /**
  * Servicio Centralizado de Notificaciones
- * Maneja la lógica de "qué" enviar y "cuándo", delegando el "cómo" a emailService.
+ * Envía email + push en paralelo (fire-and-forget para push)
  */
 
 const STYLES = `
@@ -18,25 +19,29 @@ const STYLES = `
 
 const HEADER = `
   <div style="text-align: center; margin-bottom: 30px;">
-    <h1 style="color: #007bff; margin: 0;">AVF Remesas</h1>
+    <h1 style="color: #007bff; margin: 0;">Alyto</h1>
   </div>
 `;
 
 const FOOTER = `
   <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center;">
-    <p>Gracias por confiar en AVF Remesas.</p>
+    <p>Gracias por confiar en Alyto.</p>
     <p>Este es un correo automático, por favor no respondas a esta dirección.</p>
   </div>
 `;
 
-/**
- * Notifica que se ha creado una nueva intención de orden (frontend).
- * @param {object} data - Datos de la orden { orderId, amount, country, email }
- */
-export const notifyOrderCreated = async ({ orderId, amount, country, email }) => {
-    if (!email) return;
+// Helper: disparo push sin bloquear
+const pushSilent = (promise) => {
+  promise?.catch(err => console.error('[Notify] Push error:', err.message));
+};
 
-    const html = `
+// ─────────────────────────────────────────────
+// U1 — Orden creada (email + push usuario)
+// ─────────────────────────────────────────────
+export const notifyOrderCreated = async ({ orderId, amount, country, email, userId }) => {
+  if (!email) return;
+
+  const html = `
     <div style="${STYLES}">
       ${HEADER}
       <h2>Orden de Pago Creada</h2>
@@ -52,22 +57,24 @@ export const notifyOrderCreated = async ({ orderId, amount, country, email }) =>
     </div>
   `;
 
-    await sendEmail({
-        to: email,
-        subject: `Orden #${orderId} Creada - AVF Remesas`,
-        html
-    });
+  await sendEmail({ to: email, subject: `Orden #${orderId} Creada - Alyto`, html });
+
+  if (userId) pushSilent(notifyUser(userId, {
+    title: '💸 Envío iniciado',
+    body: `Tu orden #${orderId} fue creada. Completa el pago para continuar.`,
+    data: { type: 'order_created', orderId }
+  }));
 };
 
-/**
- * Notifica que el Payin se ha completado exitosamente (Dinero recibido).
- * @param {object} transaction - Objeto transacción de la BD
- */
+// ─────────────────────────────────────────────
+// U2/U3 — Payin exitoso (Fintoc o Vita)
+// ─────────────────────────────────────────────
 export const notifyPayinSuccess = async (transaction) => {
-    const email = transaction.userEmail || transaction.createdBy?.email;
-    if (!email) return;
+  const email = transaction.userEmail || transaction.createdBy?.email;
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!email) return;
 
-    const html = `
+  const html = `
     <div style="${STYLES}">
       ${HEADER}
       <h2 style="color: #28a745;">¡Pago Recibido!</h2>
@@ -81,22 +88,38 @@ export const notifyPayinSuccess = async (transaction) => {
     </div>
   `;
 
-    await sendEmail({
-        to: transaction.userEmail,
-        subject: `Pago Confirmado - Orden #${transaction.order}`,
-        html
-    });
+  await sendEmail({ to: email, subject: `Pago Confirmado - Orden #${transaction.order}`, html });
+
+  if (userId) pushSilent(notifyUser(userId, {
+    title: '✅ Pago recibido',
+    body: `Recibimos tu pago. Procesando envío de la orden #${transaction.order}.`,
+    data: { type: 'payin_success', orderId: transaction.order }
+  }));
 };
 
-/**
- * Notifica que el Payout (Envío) se ha realizado exitosamente o está en proceso bancario.
- * @param {object} transaction - Objeto transacción de la BD
- */
-export const notifyPayoutSuccess = async (transaction) => {
-    const email = transaction.userEmail || transaction.createdBy?.email;
-    if (!email) return;
+// ─────────────────────────────────────────────
+// U4 — Withdrawal en proceso (payout iniciado)
+// ─────────────────────────────────────────────
+export const notifyPayoutProcessing = async (transaction) => {
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!userId) return;
 
-    const html = `
+  pushSilent(notifyUser(userId, {
+    title: '🚀 Enviando dinero',
+    body: `Tu envío de la orden #${transaction.order} está en camino.`,
+    data: { type: 'payout_processing', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// U5 — Envío completado automático (Vita)
+// ─────────────────────────────────────────────
+export const notifyPayoutSuccess = async (transaction) => {
+  const email = transaction.userEmail || transaction.createdBy?.email;
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!email) return;
+
+  const html = `
     <div style="${STYLES}">
       ${HEADER}
       <h2 style="color: #28a745;">¡Envío en Camino!</h2>
@@ -111,50 +134,65 @@ export const notifyPayoutSuccess = async (transaction) => {
     </div>
   `;
 
-    await sendEmail({
-        to: transaction.userEmail,
-        subject: `Envío Completado - Orden #${transaction.order}`,
-        html
-    });
+  await sendEmail({ to: email, subject: `Envío Completado - Orden #${transaction.order}`, html });
+
+  if (userId) pushSilent(notifyUser(userId, {
+    title: '🎉 ¡Envío completado!',
+    body: `Tu beneficiario recibió el dinero de la orden #${transaction.order}.`,
+    data: { type: 'payout_success', orderId: transaction.order }
+  }));
 };
 
-/**
- * Notifica que el envío requiere procesamiento manual (Casos Manual Anchor).
- * @param {object} transaction - Objeto transacción de la BD
- */
-export const notifyManualPayoutQueued = async (transaction) => {
-    const email = transaction.userEmail || transaction.createdBy?.email;
-    if (!email) return;
+// ─────────────────────────────────────────────
+// U6 — Payout manual Bolivia completado por admin
+// ─────────────────────────────────────────────
+export const notifyManualPayoutCompleted = async (transaction) => {
+  const email = transaction.userEmail || transaction.createdBy?.email;
+  const userId = transaction.createdBy?._id || transaction.createdBy;
 
+  if (email) {
     const html = `
-    <div style="${STYLES}">
-      ${HEADER}
-      <h2 style="color: #ffc107;">Envío en Revisión</h2>
-      <p>Hola,</p>
-      <p>Tu orden <strong>#${transaction.order}</strong> ha sido recibida y el pago confirmado.</p>
-      <p>Debido al destino seleccionado, tu envío está siendo procesado manualmente por nuestro equipo de tesorería para garantizar la mejor tasa de cambio.</p>
-      <p>Te notificaremos apenas se complete el depósito.</p>
-      ${FOOTER}
-    </div>
-  `;
+        <div style="${STYLES}">
+          ${HEADER}
+          <h2 style="color: #28a745;">🎉 Transferencia Enviada</h2>
+          <p>Tu envío a Bolivia para la orden <strong>#${transaction.order}</strong> fue procesado exitosamente.</p>
+          <p>Puedes ver el comprobante bancario en el detalle de tu transacción.</p>
+          ${FOOTER}
+        </div>
+        `;
+    await sendEmail({ to: email, subject: `Transferencia a Bolivia Completada - Orden #${transaction.order}`, html }).catch(() => { });
+  }
 
-    await sendEmail({
-        to: transaction.userEmail,
-        subject: `Procesando Envío - Orden #${transaction.order}`,
-        html
-    });
+  if (userId) pushSilent(notifyUser(userId, {
+    title: '🎉 Transferencia enviada',
+    body: `Tu envío a Bolivia fue completado. Revisa el comprobante bancario.`,
+    data: { type: 'manual_payout_complete', orderId: transaction.order }
+  }));
 };
 
-/**
- * Notifica que hubo un fallo en el proceso (Payin o Payout).
- * @param {object} transaction - Objeto transacción de la BD
- * @param {string} reason - Razón del fallo
- */
+// ─────────────────────────────────────────────
+// U7 — Comprobante disponible
+// ─────────────────────────────────────────────
+export const notifyProofUploaded = async (transaction) => {
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!userId) return;
+
+  pushSilent(notifyUser(userId, {
+    title: '📄 Comprobante listo',
+    body: `Ya puedes ver el comprobante de tu transferencia #${transaction.order}.`,
+    data: { type: 'proof_uploaded', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// U8 — Transacción fallida
+// ─────────────────────────────────────────────
 export const notifyTransactionFailed = async (transaction, reason = 'Error desconocido') => {
-    const email = transaction.userEmail || transaction.createdBy?.email;
-    if (!email) return;
+  const email = transaction.userEmail || transaction.createdBy?.email;
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!email) return;
 
-    const html = `
+  const html = `
     <div style="${STYLES}">
       ${HEADER}
       <h2 style="color: #dc3545;">Problema con tu Envío</h2>
@@ -166,9 +204,111 @@ export const notifyTransactionFailed = async (transaction, reason = 'Error desco
     </div>
   `;
 
-    await sendEmail({
-        to: transaction.userEmail,
-        subject: `Error en Orden #${transaction.order} - AVF Remesas`,
-        html
-    });
+  await sendEmail({ to: email, subject: `Error en Orden #${transaction.order} - Alyto`, html });
+
+  if (userId) pushSilent(notifyUser(userId, {
+    title: '❌ Problema con tu envío',
+    body: `Hubo un inconveniente con la orden #${transaction.order}. Contáctanos.`,
+    data: { type: 'transaction_failed', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// U9/U10 — KYC aprobado o rechazado
+// ─────────────────────────────────────────────
+export const notifyKycResult = async (user, approved, reason = '') => {
+  const userId = user._id;
+  if (approved) {
+    pushSilent(notifyUser(userId, {
+      title: '✅ Verificación aprobada',
+      body: 'Tu identidad fue verificada. Ahora tienes límites ampliados.',
+      data: { type: 'kyc_approved' }
+    }));
+  } else {
+    pushSilent(notifyUser(userId, {
+      title: '❌ Verificación rechazada',
+      body: `Tu solicitud fue rechazada. Motivo: ${reason || 'Documentos no válidos'}`,
+      data: { type: 'kyc_rejected' }
+    }));
+  }
+};
+
+// ─────────────────────────────────────────────
+// U11 — Transacción rechazada por admin
+// ─────────────────────────────────────────────
+export const notifyTransactionRejected = async (transaction, reason) => {
+  const userId = transaction.createdBy?._id || transaction.createdBy;
+  if (!userId) return;
+
+  pushSilent(notifyUser(userId, {
+    title: '❌ Transacción rechazada',
+    body: `Tu orden #${transaction.order} fue rechazada. Motivo: ${reason}`,
+    data: { type: 'transaction_rejected', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A1 — Admin: nuevo depósito BOB pendiente
+// ─────────────────────────────────────────────
+export const notifyAdminNewManualDeposit = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '🇧🇴 Depósito BOB pendiente',
+    body: `Nueva orden #${transaction.order} requiere verificación manual.`,
+    data: { type: 'admin_manual_deposit', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A2 — Admin: pago Fintoc CL→BO confirmado (payout manual pendiente)
+// ─────────────────────────────────────────────
+export const notifyAdminManualPayoutPending = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '💸 Payout Bolivia pendiente',
+    body: `Fintoc confirmó pago para orden #${transaction.order}. Procesar envío a Bolivia.`,
+    data: { type: 'admin_payout_pending', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A3 — Admin: nuevo KYC pendiente
+// ─────────────────────────────────────────────
+export const notifyAdminNewKyc = async (user) => {
+  pushSilent(notifyAdmins({
+    title: '📋 KYC nuevo para revisar',
+    body: `Usuario ${user.name || user.email} subió documentos KYC.`,
+    data: { type: 'admin_kyc_pending', userId: String(user._id) }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A5 — Admin: error en withdrawal automático
+// ─────────────────────────────────────────────
+export const notifyAdminWithdrawalError = async (transaction, errorMsg) => {
+  pushSilent(notifyAdmins({
+    title: '⚠️ Error de payout',
+    body: `Withdrawal falló para orden #${transaction.order}: ${errorMsg?.slice(0, 60)}`,
+    data: { type: 'admin_withdrawal_error', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// Legacy — Mantener compatibilidad
+// ─────────────────────────────────────────────
+export const notifyManualPayoutQueued = async (transaction) => {
+  const email = transaction.userEmail || transaction.createdBy?.email;
+  if (!email) return;
+
+  const html = `
+    <div style="${STYLES}">
+      ${HEADER}
+      <h2 style="color: #ffc107;">Envío en Revisión</h2>
+      <p>Hola,</p>
+      <p>Tu orden <strong>#${transaction.order}</strong> ha sido recibida y el pago confirmado.</p>
+      <p>Debido al destino seleccionado, tu envío está siendo procesado manualmente por nuestro equipo de tesorería.</p>
+      <p>Te notificaremos apenas se complete el depósito.</p>
+      ${FOOTER}
+    </div>
+  `;
+
+  await sendEmail({ to: email, subject: `Procesando Envío - Orden #${transaction.order}`, html });
 };

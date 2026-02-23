@@ -3,7 +3,13 @@ import { Router } from 'express';
 import { verifyVitaSignature } from '../middleware/vitaSignature.js';
 import VitaEvent from '../models/VitaEvent.js';
 import Transaction from '../models/Transaction.js';
-import { notifyTransactionFailed } from '../services/notificationService.js';
+import {
+  notifyTransactionFailed,
+  notifyPayinSuccess,
+  notifyPayoutProcessing,
+  notifyPayoutSuccess,
+  notifyAdminWithdrawalError
+} from '../services/notificationService.js';
 
 const router = Router();
 
@@ -38,6 +44,9 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       transaction.payinStatus = 'completed';
       transaction.ipnEvents.push(vitaEvent._id);
 
+      // 🔔 U3 — Notificar usuario: pago recibido
+      notifyPayinSuccess(transaction).catch(() => { });
+
       // 🔄 Si tiene withdrawal diferido pendiente, ejecutarlo ahora
       if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
         console.log(`[IPN] ⭐ Executing deferred withdrawal for order: ${transaction.order}`);
@@ -50,6 +59,9 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
           transaction.vitaWithdrawalId = wData?.id || wData?.data?.id || null;
           transaction.payoutStatus = 'processing';
           transaction.status = 'processing';
+
+          // 🔔 U4 — Notificar usuario: envío en proceso
+          notifyPayoutProcessing(transaction).catch(() => { });
 
           console.log(`✅ [IPN] Withdrawal executed: ${transaction.vitaWithdrawalId} (amount: ${transaction.deferredWithdrawalPayload.amount})`);
 
@@ -76,6 +88,7 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
               transaction.payoutStatus = 'failed';
               transaction.status = 'failed';
               transaction.errorMessage = retryError.message;
+              notifyAdminWithdrawalError(transaction, retryError.message).catch(() => { });
             }
           } else {
             console.error('[IPN] ❌ Error executing withdrawal:', withdrawalError.message);

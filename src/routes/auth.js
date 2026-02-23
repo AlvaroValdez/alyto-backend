@@ -458,4 +458,27 @@ router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
   }
 });
 
+// PUT /api/auth/fcm-token — registrar token FCM del dispositivo
+router.put('/fcm-token', protect, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ ok: false, error: 'token es requerido' });
+    await User.findByIdAndUpdate(req.user._id, { fcmToken: token, fcmTokenUpdatedAt: new Date() });
+    res.json({ ok: true, message: 'FCM token registrado' });
+  } catch (error) {
+    console.error('[auth/fcm-token] Error:', error.message);
+    res.status(500).json({ ok: false, error: 'Error registrando token' });
+  }
+});
+
+// DELETE /api/auth/fcm-token — eliminar token al hacer logout
+router.delete('/fcm-token', protect, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { $unset: { fcmToken: 1 } });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: 'Error eliminando token' });
+  }
+});
+
 export default router;

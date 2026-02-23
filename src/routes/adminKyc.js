@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import User from '../models/User.js';
+import { notifyKycResult, notifyAdminNewKyc } from '../services/notificationService.js';
+import { fireSep12Callback } from '../services/sep12CallbackService.js';
+
 
 const router = Router();
 
@@ -43,10 +46,15 @@ router.put('/:userId/review', async (req, res) => {
 
     await user.save();
 
-    // Aquí podrías enviar un email de notificación al usuario (Fase futura)
+    // 🔔 Push notification al usuario
+    notifyKycResult(user, action === 'approve', reason).catch(() => { });
 
-    res.json({ 
-      ok: true, 
+    // 🌐 SEP-12 callback al wallet Stellar (si tiene URL registrada)
+    fireSep12Callback(user, action, reason).catch(() => { });
+
+
+    res.json({
+      ok: true,
       message: `Solicitud ${action === 'approve' ? 'aprobada' : 'rechazada'} correctamente.`,
       user: { id: user._id, kyc: user.kyc }
     });
