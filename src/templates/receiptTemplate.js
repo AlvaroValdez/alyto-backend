@@ -44,11 +44,11 @@ export function generateReceiptHTML(data) {
     };
 
     // Traducir tipo de transacción
-    const transactionTypes = {
-        'COMPRA_ACTIVOS': 'Compra de Activos Virtuales',
-        'PAGO_TERCEROS': 'Pago a Terceros (Remesa)',
-        'REMESA_SALIENTE': 'Remesa Internacional Saliente',
-        'CONVERSION': 'Conversión BOB ↔ USD'
+    const displayMap = {
+        'COMPRA_ACTIVOS': 'Compra de Activos Digitales',
+        'PAGO_TERCEROS': 'Pago a Terceros (Transferencia)',
+        'REMESA_SALIENTE': 'Transferencia Internacional Saliente',
+        'CONVERSION': 'Conversión de Divisas'
     };
 
     const statusIcons = {

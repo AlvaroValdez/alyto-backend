@@ -184,7 +184,7 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
           bank_code: metadata.beneficiary.bank_code,
 
           purpose: transaction.purpose || 'EPFAMT',
-          purpose_comentary: transaction.purpose_comentary || 'Remesa familiar'
+          purpose_comentary: transaction.purpose_comentary || 'Transferencia familiar'
         };
 
         const withdrawalResp = await createWithdrawal(withdrawalPayload);

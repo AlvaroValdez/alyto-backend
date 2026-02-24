@@ -1,5 +1,5 @@
 /**
- * Catálogo maestro de países soportados para remesas
+ * Catálogo maestro de países soportados para transferencias
  * 
  * Modos:
  * - 'vita_wallet': Países que usan API directa de Vita Wallet para pay-ins y payouts

@@ -72,10 +72,9 @@ class QRGeneratorService {
     /**
      * Generar URL de verificación para el comprobante
      * @param {String} txHash - Hash de la transacción
-     * @param {String} baseUrl - URL base del sistema (ej: https://avfinance.bo)
-     * @returns {String} - URL completa de verificación
+     * @param {String} baseUrl - URL base del sistema (ej: https://alyto.app)
      */
-    generateVerificationURL(txHash, baseUrl = process.env.PUBLIC_URL || 'https://avfinance.bo') {
+    generateVerificationURL(txHash, baseUrl = process.env.PUBLIC_URL || 'https://alyto.app') {
         return `${baseUrl}/verify/${txHash}`;
     }
 

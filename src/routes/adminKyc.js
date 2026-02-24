@@ -10,14 +10,27 @@ const router = Router();
 // Obtiene todos los usuarios que están esperando revisión
 router.get('/pending', async (req, res) => {
   try {
-    const users = await User.find({ 'kyc.status': 'pending' })
-      .select('name email kyc createdAt') // Solo traemos los datos necesarios
-      .sort({ 'kyc.submittedAt': 1 }); // Los más antiguos primero
+    const users = await User.find({ 'kyc.status': { $in: ['pending', 'review'] } })
+      .select('name email kyc accountType createdAt') // Incluimos accountType
+      .sort({ 'kyc.submittedAt': 1 });
 
     res.json({ ok: true, users });
   } catch (error) {
     console.error('[adminKyc] Error listando pendientes:', error);
     res.status(500).json({ ok: false, error: 'Error al obtener solicitudes pendientes.' });
+  }
+});
+
+// GET /api/admin/kyc/:userId
+// Obtiene el detalle completo de KYC/KYB de un usuario
+router.get('/:userId', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('name email kyc business accountType documentType documentNumber firstName lastName phoneNumber address birthDate');
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+    res.json({ ok: true, user });
+  } catch (error) {
+    console.error('[adminKyc] Error obteniendo detalle:', error);
+    res.status(500).json({ ok: false, error: 'Error al obtener detalle del usuario.' });
   }
 });
 

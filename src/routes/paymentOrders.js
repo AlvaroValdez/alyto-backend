@@ -55,7 +55,7 @@ router.post('/', [
     const payload = {
       amount: Math.round(Number(amount)),
       country_iso_code: safeCountry,
-      issue: `Pago de remesa #${orderId}`,
+      issue: `Pago de transferencia #${orderId}`,
       success_redirect_url: successRedirectUrl,
       metadata: metadata  // ✅ Pasar metadata al Payment Order para que el webhook pueda ejecutar el withdrawal
     };

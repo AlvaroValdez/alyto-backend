@@ -240,6 +240,8 @@ router.post('/login', loginLimiter, async (req, res) => {
         documentType: user.documentType,
         documentNumber: user.documentNumber,
         kyc: user.kyc,
+        accountType: user.accountType,
+        business: user.business,
         // --- CORRECCIÓN: ENVIAR AVATAR AL INICIAR SESIÓN ---
         avatar: user.avatar
       },
@@ -267,6 +269,19 @@ router.put('/profile', protect, async (req, res) => {
     if (address) user.address = address;
     if (birthDate) user.birthDate = birthDate;
 
+    // KYB fields
+    if (req.body.accountType) user.accountType = req.body.accountType;
+    if (req.body.business) {
+      if (!user.business) user.business = {};
+      const { name, taxId, registrationNumber, registeredAddress, countryCode, ubos } = req.body.business;
+      if (name) user.business.name = name;
+      if (taxId) user.business.taxId = taxId;
+      if (registrationNumber) user.business.registrationNumber = registrationNumber;
+      if (registeredAddress) user.business.registeredAddress = registeredAddress;
+      if (countryCode) user.business.countryCode = countryCode;
+      if (ubos) user.business.ubos = ubos;
+    }
+
     const updatedUser = await user.save();
 
     res.json({
@@ -285,6 +300,8 @@ router.put('/profile', protect, async (req, res) => {
         documentType: updatedUser.documentType,
         documentNumber: updatedUser.documentNumber,
         kyc: updatedUser.kyc,
+        accountType: updatedUser.accountType,
+        business: updatedUser.business,
         // --- CORRECCIÓN: MANTENER EL AVATAR AL ACTUALIZAR PERFIL ---
         avatar: updatedUser.avatar
       }
@@ -373,6 +390,51 @@ router.post('/kyc-documents', protect, kycUploadLimiter, (req, res, next) => {
   } catch (error) {
     console.error('[auth/kyc-documents] Error:', error);
     res.status(500).json({ ok: false, error: 'Error al procesar documentos.' });
+  }
+});
+
+// --- SUBIDA DE DOCUMENTOS KYB (Empresas) ---
+router.post('/kyb-documents', protect, kycUploadLimiter, (req, res, next) => {
+  const uploadMiddleware = upload.fields([
+    { name: 'incorporation', maxCount: 1 },
+    { name: 'taxIdCard', maxCount: 1 },
+    { name: 'repAuthorization', maxCount: 1 }
+  ]);
+
+  uploadMiddleware(req, res, (err) => {
+    if (err) {
+      console.error('❌ [auth/kyb-documents] Error Multer:', err);
+      return res.status(400).json({ ok: false, error: 'Error al subir archivos empresariales.' });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const files = req.files || {};
+
+    if (!user.business) user.business = {};
+    if (!user.business.documents) user.business.documents = {};
+
+    if (files.incorporation) user.business.documents.incorporation = files.incorporation[0].path;
+    if (files.taxIdCard) user.business.documents.taxIdCard = files.taxIdCard[0].path;
+    if (files.repAuthorization) user.business.documents.repAuthorization = files.repAuthorization[0].path;
+
+    user.kyc.status = 'pending';
+    user.kyc.submittedAt = new Date();
+    user.kyc.level = 2; // B2B también usa nivel 2 para documental
+
+    await user.save();
+
+    res.json({
+      ok: true,
+      message: 'Documentos empresariales subidos correctamente.',
+      business: user.business,
+      kyc: user.kyc
+    });
+  } catch (error) {
+    console.error('[auth/kyb-documents] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al procesar documentos KYB.' });
   }
 });
 

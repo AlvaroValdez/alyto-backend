@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
+  accountType: { type: String, enum: ['individual', 'business'], default: 'individual' },
 
   // --- SEGURIDAD DE ACCESO (Account Lockout) ---
   loginAttempts: { type: Number, default: 0 },
@@ -59,6 +60,28 @@ const userSchema = new mongoose.Schema({
   // Bandera virtual para compatibilidad con lógica anterior
   isProfileComplete: { type: Boolean, default: false },
 
+  // --- DATOS EMPRESARIALES (KYB / B2B) ---
+  business: {
+    name: { type: String, trim: true },
+    taxId: { type: String, trim: true },           // NIT, RUT, etc.
+    registrationNumber: { type: String, trim: true },
+    registeredAddress: { type: String, trim: true },
+    countryCode: { type: String, trim: true },
+    ubos: [
+      {
+        firstName: { type: String, trim: true },
+        lastName: { type: String, trim: true },
+        idNumber: { type: String, trim: true },
+        position: { type: String, trim: true }
+      }
+    ],
+    documents: {
+      incorporation: { type: String }, // URL PDF/Image
+      taxIdCard: { type: String },     // URL
+      repAuthorization: { type: String } // URL
+    }
+  },
+
   // --- SEP-12 / STELLAR ---
   stellarAccount: { type: String, sparse: true, index: true }, // G... Stellar public key del usuario
   sep12CallbackUrl: { type: String },                           // URL de callback del wallet para updates de estado
@@ -88,7 +111,10 @@ userSchema.pre('save', async function (next) {
   }
 
   // Lógica automática Nivel 1: Si tiene datos básicos, es Nivel 1
-  const hasBasicData = this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address;
+  const hasIndividualData = this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address;
+  const hasBusinessData = this.business?.name && this.business?.taxId && this.business?.registeredAddress;
+
+  const hasBasicData = this.accountType === 'individual' ? hasIndividualData : hasBusinessData;
 
   if (hasBasicData) {
     this.isProfileComplete = true;

@@ -7,8 +7,8 @@ import { Resend } from 'resend';
 class EmailService {
     constructor() {
         this.resend = new Resend(process.env.RESEND_API_KEY);
-        this.fromEmail = process.env.COMPANY_EMAIL || 'soporte@avfinance.bo';
-        this.companyName = process.env.COMPANY_LEGAL_NAME || 'AV Finance';
+        this.fromEmail = process.env.COMPANY_EMAIL || 'soporte@alyto.app';
+        this.companyName = process.env.COMPANY_LEGAL_NAME || 'Alyto';
     }
 
     /**
@@ -215,7 +215,7 @@ class EmailService {
 
             <p>Atentamente,<br>
             <strong>${this.companyName}</strong><br>
-            ${process.env.COMPANY_EMAIL || 'soporte@avfinance.bo'}</p>
+            ${process.env.COMPANY_EMAIL || 'soporte@alyto.app'}</p>
         </div>
 
         <div class="footer">
@@ -267,7 +267,7 @@ IMPORTANTE: Conserve este comprobante por un mínimo de 5 años según la Ley N�
 
 Atentamente,
 ${this.companyName}
-${process.env.COMPANY_EMAIL || 'soporte@avfinance.bo'}
+${process.env.COMPANY_EMAIL || 'soporte@alyto.app'}
     `.trim();
     }
 

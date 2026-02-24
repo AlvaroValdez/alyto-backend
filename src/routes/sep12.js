@@ -36,20 +36,37 @@ function buildCustomerResponse(user) {
 
     // provided_fields — fields we have received
     const provided_fields = {};
-    if (user.email) provided_fields.email_address = { type: 'string', status: 'ACCEPTED' };
-    if (user.firstName) provided_fields.first_name = { type: 'string', status: 'ACCEPTED' };
-    if (user.lastName) provided_fields.last_name = { type: 'string', status: 'ACCEPTED' };
-    if (user.birthDate) provided_fields.birth_date = { type: 'date', status: 'ACCEPTED' };
-    if (user.documentType) provided_fields.id_type = { type: 'string', status: 'ACCEPTED' };
-    if (user.documentNumber) provided_fields.id_number = { type: 'string', status: 'ACCEPTED' };
-    if (user.phoneNumber) provided_fields.mobile_number = { type: 'string', status: 'ACCEPTED' };
-    if (user.address) provided_fields.address = { type: 'string', status: 'ACCEPTED' };
+
+    if (user.accountType === 'business' && user.business) {
+        const b = user.business;
+        if (b.name) provided_fields.organization_name = { type: 'string', status: 'ACCEPTED' };
+        if (b.taxId) provided_fields.tax_id = { type: 'string', status: 'ACCEPTED' };
+        if (b.registrationNumber) provided_fields.registration_number = { type: 'string', status: 'ACCEPTED' };
+        if (b.registeredAddress) provided_fields.registered_address = { type: 'string', status: 'ACCEPTED' };
+        if (b.countryCode) provided_fields.registration_country_code = { type: 'string', status: 'ACCEPTED' };
+    } else {
+        if (user.email) provided_fields.email_address = { type: 'string', status: 'ACCEPTED' };
+        if (user.firstName) provided_fields.first_name = { type: 'string', status: 'ACCEPTED' };
+        if (user.lastName) provided_fields.last_name = { type: 'string', status: 'ACCEPTED' };
+        if (user.birthDate) provided_fields.birth_date = { type: 'date', status: 'ACCEPTED' };
+        if (user.documentType) provided_fields.id_type = { type: 'string', status: 'ACCEPTED' };
+        if (user.documentNumber) provided_fields.id_number = { type: 'string', status: 'ACCEPTED' };
+        if (user.phoneNumber) provided_fields.mobile_number = { type: 'string', status: 'ACCEPTED' };
+        if (user.address) provided_fields.address = { type: 'string', status: 'ACCEPTED' };
+    }
 
     if (docsProvided) {
         const docStatus = kycApproved ? 'ACCEPTED' : (kyc.status === 'rejected' ? 'REJECTED' : 'PROCESSING');
         provided_fields.photo_id_front = { type: 'binary', status: docStatus };
         provided_fields.photo_id_back = { type: 'binary', status: docStatus };
         provided_fields.proof_of_liveness = { type: 'binary', status: docStatus };
+    }
+
+    if (user.accountType === 'business' && user.business?.documents) {
+        const bdocs = user.business.documents;
+        const docStatus = kycApproved ? 'ACCEPTED' : (kyc.status === 'rejected' ? 'REJECTED' : 'PROCESSING');
+        if (bdocs.incorporation) provided_fields.organization_incorporation_doc = { type: 'binary', status: docStatus };
+        if (bdocs.taxIdCard) provided_fields.organization_tax_id_doc = { type: 'binary', status: docStatus };
     }
 
     if (Object.keys(provided_fields).length > 0) {
@@ -59,20 +76,33 @@ function buildCustomerResponse(user) {
     // fields — fields still required (only show when NEEDS_INFO)
     if (sep12Status === 'NEEDS_INFO') {
         const fields = {};
-        if (!user.firstName) fields.first_name = { type: 'string', description: 'Nombre(s) del cliente' };
-        if (!user.lastName) fields.last_name = { type: 'string', description: 'Apellido(s) del cliente' };
-        if (!user.email) fields.email_address = { type: 'string', description: 'Correo electrónico' };
-        if (!user.birthDate) fields.birth_date = { type: 'date', description: 'Fecha de nacimiento (YYYY-MM-DD)' };
-        if (!user.documentType) fields.id_type = { type: 'string', description: 'Tipo de documento: passport, id_card, drivers_license' };
-        if (!user.documentNumber) fields.id_number = { type: 'string', description: 'Número del documento de identidad' };
-        if (!user.phoneNumber) fields.mobile_number = { type: 'string', description: 'Teléfono con código de país (E.164)' };
-        if (!user.address) fields.address = { type: 'string', description: 'Dirección residencial completa' };
+        if (user.accountType === 'business') {
+            const b = user.business || {};
+            if (!b.name) fields.organization_name = { type: 'string', description: 'Nombre legal de la empresa' };
+            if (!b.taxId) fields.tax_id = { type: 'string', description: 'NIT o RUT de la empresa' };
+            if (!b.registeredAddress) fields.registered_address = { type: 'string', description: 'Dirección legal' };
 
-        // If level 1 is complete but no docs yet, request docs
-        if (level1Complete && !docsProvided) {
-            fields.photo_id_front = { type: 'binary', description: 'Foto del frente del documento de identidad' };
-            fields.photo_id_back = { type: 'binary', description: 'Foto del reverso del documento de identidad' };
-            fields.proof_of_liveness = { type: 'binary', description: 'Selfie sosteniendo el documento' };
+            if (level1Complete) {
+                const bdocs = user.business?.documents || {};
+                if (!bdocs.incorporation) fields.organization_incorporation_doc = { type: 'binary', description: 'Certificado de constitución / Acta' };
+                if (!bdocs.taxIdCard) fields.organization_tax_id_doc = { type: 'binary', description: 'Copia del NIT / RUT' };
+            }
+        } else {
+            if (!user.firstName) fields.first_name = { type: 'string', description: 'Nombre(s) del cliente' };
+            if (!user.lastName) fields.last_name = { type: 'string', description: 'Apellido(s) del cliente' };
+            if (!user.email) fields.email_address = { type: 'string', description: 'Correo electrónico' };
+            if (!user.birthDate) fields.birth_date = { type: 'date', description: 'Fecha de nacimiento (YYYY-MM-DD)' };
+            if (!user.documentType) fields.id_type = { type: 'string', description: 'Tipo de documento: passport, id_card, drivers_license' };
+            if (!user.documentNumber) fields.id_number = { type: 'string', description: 'Número del documento de identidad' };
+            if (!user.phoneNumber) fields.mobile_number = { type: 'string', description: 'Teléfono con código de país (E.164)' };
+            if (!user.address) fields.address = { type: 'string', description: 'Dirección residencial completa' };
+
+            // If level 1 is complete but no docs yet, request docs
+            if (level1Complete && !docsProvided) {
+                fields.photo_id_front = { type: 'binary', description: 'Foto del frente del documento de identidad' };
+                fields.photo_id_back = { type: 'binary', description: 'Foto del reverso del documento de identidad' };
+                fields.proof_of_liveness = { type: 'binary', description: 'Selfie sosteniendo el documento' };
+            }
         }
 
         if (Object.keys(fields).length > 0) response.fields = fields;
@@ -155,7 +185,9 @@ router.get('/customer', async (req, res) => {
 const kycUploadFields = upload.fields([
     { name: 'photo_id_front', maxCount: 1 },
     { name: 'photo_id_back', maxCount: 1 },
-    { name: 'proof_of_liveness', maxCount: 1 }
+    { name: 'proof_of_liveness', maxCount: 1 },
+    { name: 'organization_incorporation_doc', maxCount: 1 },
+    { name: 'organization_tax_id_doc', maxCount: 1 }
 ]);
 
 router.put('/customer', (req, res, next) => {
@@ -189,14 +221,28 @@ router.put('/customer', (req, res, next) => {
             user.stellarAccount = req.stellarAccount;
         }
 
-        // --- Map SEP-9 Level 1 fields → internal fields ---
-        if (body.first_name) user.firstName = body.first_name.trim();
-        if (body.last_name) user.lastName = body.last_name.trim();
-        if (body.birth_date) user.birthDate = new Date(body.birth_date);
-        if (body.id_type) user.documentType = mapIdType(body.id_type);
-        if (body.id_number) user.documentNumber = body.id_number.trim();
-        if (body.mobile_number) user.phoneNumber = body.mobile_number.trim();
-        if (body.address) user.address = body.address.trim();
+        // --- Base Account Type ---
+        if (body.type) {
+            user.accountType = body.type.toLowerCase() === 'business' ? 'business' : 'individual';
+        }
+
+        // --- Map SEP-9 Fields ---
+        if (user.accountType === 'business') {
+            if (!user.business) user.business = {};
+            if (body.organization_name) user.business.name = body.organization_name.trim();
+            if (body.tax_id) user.business.taxId = body.tax_id.trim();
+            if (body.registration_number) user.business.registrationNumber = body.registration_number.trim();
+            if (body.registered_address) user.business.registeredAddress = body.registered_address.trim();
+            if (body.registration_country_code) user.business.countryCode = body.registration_country_code.trim().toUpperCase();
+        } else {
+            if (body.first_name) user.firstName = body.first_name.trim();
+            if (body.last_name) user.lastName = body.last_name.trim();
+            if (body.birth_date) user.birthDate = new Date(body.birth_date);
+            if (body.id_type) user.documentType = mapIdType(body.id_type);
+            if (body.id_number) user.documentNumber = body.id_number.trim();
+            if (body.mobile_number) user.phoneNumber = body.mobile_number.trim();
+            if (body.address) user.address = body.address.trim();
+        }
 
         // --- Level 2: Document images (uploaded via Cloudinary through Multer) ---
         let docsUploaded = false;
@@ -219,8 +265,26 @@ router.put('/customer', (req, res, next) => {
             docsUploaded = true;
         }
 
-        // If all 3 docs received, move to pending review
-        const allDocs = user.kyc?.documents?.idFront && user.kyc?.documents?.idBack && user.kyc?.documents?.selfie;
+        // --- Business Documents ---
+        if (files.organization_incorporation_doc?.[0]) {
+            if (!user.business) user.business = {};
+            if (!user.business.documents) user.business.documents = {};
+            user.business.documents.incorporation = files.organization_incorporation_doc[0].path;
+            docsUploaded = true;
+        }
+        if (files.organization_tax_id_doc?.[0]) {
+            if (!user.business) user.business = {};
+            if (!user.business.documents) user.business.documents = {};
+            user.business.documents.taxIdCard = files.organization_tax_id_doc[0].path;
+            docsUploaded = true;
+        }
+
+        // If all docs for the type are received, move to pending review
+        const individualDocs = user.kyc?.documents?.idFront && user.kyc?.documents?.idBack && user.kyc?.documents?.selfie;
+        const businessDocs = user.business?.documents?.incorporation && user.business?.documents?.taxIdCard;
+
+        const allDocs = user.accountType === 'business' ? businessDocs : individualDocs;
+
         if (docsUploaded && allDocs && user.kyc?.status !== 'approved') {
             user.kyc.status = 'pending';
             user.kyc.submittedAt = new Date();

@@ -14,7 +14,7 @@ class ReceiptService {
 
     /**
      * Generar número de comprobante único y correlativo
-     * Formato: AVF-{YYYY}-{NNNNNN}
+     * Formato: ALY-{YYYY}-{NNNNNN}
      */
     async generateReceiptNumber() {
         const year = new Date().getFullYear();
@@ -23,7 +23,7 @@ class ReceiptService {
         // Formatear con 6 dígitos (ej: 000159)
         const paddedSeq = String(sequence).padStart(6, '0');
 
-        return `AVF-${year}-${paddedSeq}`;
+        return `ALY-${year}-${paddedSeq}`;
     }
 
     /**
@@ -42,15 +42,15 @@ class ReceiptService {
      */
     getCompanyData() {
         return {
-            legalName: process.env.COMPANY_LEGAL_NAME || 'AV Finance S.R.L.',
+            legalName: process.env.COMPANY_LEGAL_NAME || 'Alyto S.R.L.',
             nit: process.env.COMPANY_NIT || '123456789',
             address: process.env.COMPANY_ADDRESS || 'Av. Arce #2081, Edificio Multicentro, Piso 8, La Paz - Bolivia',
             phone: process.env.COMPANY_PHONE || '+591 2 211-8765',
-            email: process.env.COMPANY_EMAIL || 'soporte@avfinance.bo',
-            website: process.env.COMPANY_WEBSITE || 'www.avfinance.bo',
-            logoPrefix: 'AV',
-            logoSuffix: 'Finance',
-            tagline: 'powered by Alyto'
+            email: process.env.COMPANY_EMAIL || 'soporte@alyto.app',
+            website: process.env.COMPANY_WEBSITE || 'www.alyto.app',
+            logoPrefix: 'Aly',
+            logoSuffix: 'to',
+            tagline: 'Transferencias Internacionales'
         };
     }
 
@@ -61,7 +61,7 @@ class ReceiptService {
         // Determinar tipo de operación
         let transactionType = 'COMPRA_ACTIVOS'; // default
         if (transaction.country) {
-            transactionType = 'REMESA_SALIENTE';
+            transactionType = 'REMESA_SALIENTE'; // Internal enum remains same, but label is "Transferencia"
         }
 
         // Calcular montos usando Decimal.js para precisión

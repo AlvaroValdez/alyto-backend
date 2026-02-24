@@ -196,7 +196,7 @@ export async function seedBoliviaLimits() {
         regulatory: {
             authority: 'ASFI',
             licenseRequired: true,
-            notes: 'Cumplimiento según normativa ASFI Bolivia para remesas transfronterizas'
+            notes: 'Cumplimiento según normativa ASFI Bolivia para transferencias transfronterizas'
         },
         isActive: true
     };

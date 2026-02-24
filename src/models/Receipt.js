@@ -24,8 +24,8 @@ const receiptSchema = new mongoose.Schema({
 
     /**
      * Número único y correlativo del comprobante
-     * Formato: AVF-{YYYY}-{NNNNNN}
-     * Ejemplo: AVF-2026-000159
+     * Formato: ALY-{YYYY}-{NNNNNN}
+     * Ejemplo: ALY-2026-000159
      */
     receiptNumber: {
         type: String,
@@ -74,8 +74,8 @@ const receiptSchema = new mongoose.Schema({
         /**
          * Tipo de operación
          * - COMPRA_ACTIVOS: Compra de Activos Virtuales
-         * - PAGO_TERCEROS: Pago a Terceros (Remesa)
-         * - REMESA_SALIENTE: Remesa Internacional Saliente
+         * - PAGO_TERCEROS: Pago a Terceros (Transferencia)
+         * - REMESA_SALIENTE: Transferencia Internacional Saliente
          * - CONVERSION: Conversión BOB ↔ USD
          */
         type: {
@@ -283,7 +283,7 @@ const receiptSchema = new mongoose.Schema({
 
         /**
          * URL pública de verificación
-         * Formato: https://avfinance.bo/verify/{txHash}
+         * Formato: https://alyto.app/verify/{txHash}
          */
         url: {
             type: String

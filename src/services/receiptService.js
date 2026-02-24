@@ -180,7 +180,7 @@ export async function generateTransactionReceipt(transaction, user) {
                 .fillColor('#666')
                 .text('IMPORTANTE:', 50, doc.y, { continued: true })
                 .font('Helvetica')
-                .text(' Este comprobante es un documento interno de control y NO constituye factura fiscal válida para fines tributarios. AV Finance se encuentra en proceso de obtención de licencia ETF ante ASFI.', { align: 'justify', width: 500 });
+                .text(' Este comprobante es un documento interno de control y NO constituye factura fiscal válida para fines tributarios. Alyto se encuentra en proceso de obtención de licencia ETF ante ASFI.', { align: 'justify', width: 500 });
 
             doc.moveDown();
 
@@ -192,7 +192,7 @@ export async function generateTransactionReceipt(transaction, user) {
                 .fillColor('#999')
                 .text(`Generado el ${new Date().toLocaleString('es-BO')}`, 50, footerY, { align: 'center' })
                 .text(`Orden: ${transaction.order}`, { align: 'center' })
-                .text('Alyto by AV Finance - Powered by Stellar Blockchain', { align: 'center' });
+                .text('Alyto - Powered by Stellar Blockchain', { align: 'center' });
 
             doc.end();
         } catch (error) {

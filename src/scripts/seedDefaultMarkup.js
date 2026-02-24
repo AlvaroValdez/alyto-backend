@@ -40,7 +40,7 @@ async function seedDefaultMarkup() {
         const defaultMarkup = await Markup.create({
             isDefault: true,
             percent: 2.0,
-            description: 'Comisión estándar (2%) para todas las remesas'
+            description: 'Comisión estándar (2%) para todas las transferencias'
         });
 
         console.log('✅ Markup por defecto creado:');
