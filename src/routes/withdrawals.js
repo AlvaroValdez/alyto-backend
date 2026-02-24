@@ -8,7 +8,8 @@ import {
   notifyComplianceLimitReached,
   notifyComplianceApprovalRequiredToAdmin,
   notifyComplianceRejectToAdmin,
-  notifyAdminNewManualDeposit
+  notifyAdminNewManualDeposit,
+  notifyOrderCreated // U1
 } from '../services/notificationService.js';
 
 const router = Router();
@@ -557,6 +558,15 @@ router.post('/', transactionLimiter, async (req, res) => {
     });
 
     console.log('✅ [withdrawals] Transaction saved:', newTransaction._id);
+
+    // 🔔 U1 — Notificar usuario: Transacción creada
+    notifyOrderCreated({
+      orderId,
+      amount: newTransaction.amount,
+      country: newTransaction.country,
+      email: req.user.email,
+      userId: req.user._id
+    }).catch(() => { });
 
     // 🔔 A4 — Notificar admins: Transacción de alto riesgo (si aprueba limits pero requiere revisión manual)
     if (complianceCheck.requiresApproval) {
