@@ -559,4 +559,25 @@ router.delete('/fcm-token', protect, async (req, res) => {
   }
 });
 
+// GET /api/auth/test-push — Enviar push de prueba al usuario actual
+router.get('/test-push', protect, async (req, res) => {
+  try {
+    console.log(`[test-push] Intentando enviar push de prueba a usuario: ${req.user.email}`);
+    const result = await notifyUser(req.user._id, {
+      title: '¡Campana Activa! 🔔',
+      body: 'Tu dispositivo está recibiendo notificaciones push correctamente.',
+      data: { type: 'test_ok', url: '/profile' }
+    });
+
+    if (result?.skipped) {
+      return res.status(400).json({ ok: false, error: 'No tienes un token FCM registrado en la base de datos.' });
+    }
+
+    res.json({ ok: true, message: 'Push enviada, revisa tu dispositivo.', result });
+  } catch (error) {
+    console.error('[test-push] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error interno enviando push' });
+  }
+});
+
 export default router;
