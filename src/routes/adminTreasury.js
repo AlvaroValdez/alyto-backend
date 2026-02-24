@@ -426,7 +426,9 @@ router.put('/:id/reject', async (req, res) => {
         tx.rejectedAt = new Date();
         await tx.save();
 
-        // TODO: Enviar notificación al usuario (email/push notification)
+        // 🔔 U11 — Notificar usuario: transacción rechazada
+        notifyTransactionRejected(tx, reason).catch(() => { });
+
         console.log(`[treasury] ❌ Transacción ${tx._id} rechazada por:`, req.user?.email || 'admin');
         console.log(`[treasury] Razón: ${reason}`);
 

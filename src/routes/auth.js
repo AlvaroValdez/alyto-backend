@@ -6,6 +6,7 @@ import { jwtSecret, jwtExpiresIn } from '../config/env.js';
 import { sendEmail, getVerificationEmailTemplate } from '../services/emailService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
+import { notifyAdminNewUser, notifyWelcomeUser, notifyAdminNewKyc } from '../services/notificationService.js';
 import {
   loginLimiter,
   registerLimiter,
@@ -93,12 +94,22 @@ router.post('/register', registerLimiter, async (req, res) => {
 
     // Respuesta diferenciada según éxito de email
     if (emailSent) {
+      // 🔔 A7 — Notificar admins: nuevo usuario registrado
+      notifyAdminNewUser(newUser).catch(() => { });
+      // 🔔 U15 — Notificar usuario: bienvenida
+      notifyWelcomeUser(newUser._id).catch(() => { });
+
       res.status(201).json({
         ok: true,
         message: 'Usuario registrado. Por favor, revisa tu correo para verificar tu cuenta.',
         emailSent: true
       });
     } else {
+      // 🔔 A7 — Notificar admins: nuevo usuario registrado
+      notifyAdminNewUser(newUser).catch(() => { });
+      // 🔔 U15 — Notificar usuario: bienvenida
+      notifyWelcomeUser(newUser._id).catch(() => { });
+
       res.status(201).json({
         ok: true,
         message: 'Usuario registrado, pero hubo un problema enviando el email de verificación. Por favor, contacta a soporte para verificar tu cuenta.',
@@ -382,6 +393,9 @@ router.post('/kyc-documents', protect, kycUploadLimiter, (req, res, next) => {
     await user.save();
 
     console.log(`✅ [auth/kyc-documents] Docs subidos para: ${user.email}`);
+
+    // 🔔 A3 — Notificar admins: nuevo KYC pendiente
+    notifyAdminNewKyc(user).catch(() => { });
 
     res.json({
       ok: true,

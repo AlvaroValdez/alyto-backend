@@ -281,6 +281,61 @@ export const notifyAdminNewKyc = async (user) => {
 };
 
 // ─────────────────────────────────────────────
+// U13 — Límite de compliance alcanzado
+// ─────────────────────────────────────────────
+export const notifyComplianceLimitReached = async (userId, amount, currency) => {
+  pushSilent(notifyUser(userId, {
+    title: '⚠️ Límite mensual',
+    body: `Tu envío de ${amount} ${currency} supera tu límite. Sube tus documentos KYC para ampliarlo.`,
+    data: { type: 'compliance_limit_reached' }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// U15 — Bienvenida (Registro)
+// ─────────────────────────────────────────────
+export const notifyWelcomeUser = async (userId) => {
+  pushSilent(notifyUser(userId, {
+    title: '👋 ¡Bienvenido!',
+    body: 'Tu cuenta fue creada. Completa tu perfil para empezar a enviar dinero.',
+    data: { type: 'welcome' }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A4 — Admin: Transacción de alto riesgo
+// ─────────────────────────────────────────────
+export const notifyComplianceApprovalRequiredToAdmin = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '🚨 Transacción alto riesgo',
+    body: `Orden #${transaction.order} (${transaction.amount} ${transaction.currency}) supera el umbral y requiere aprobación.`,
+    data: { type: 'admin_compliance_approval', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A7 — Admin: Nuevo usuario registrado
+// ─────────────────────────────────────────────
+export const notifyAdminNewUser = async (user) => {
+  pushSilent(notifyAdmins({
+    title: '👤 Nuevo usuario',
+    body: `Nuevo registro: ${user.email} (${user.registrationCountry}).`,
+    data: { type: 'admin_new_user', userId: String(user._id) }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A8 — Admin: Transacción rechazada por compliance
+// ─────────────────────────────────────────────
+export const notifyComplianceRejectToAdmin = async (userEmail, amount, currency, reason) => {
+  pushSilent(notifyAdmins({
+    title: '🚫 Compliance bloqueó tx',
+    body: `Usuario ${userEmail} intentó enviar ${amount} ${currency}. ${reason}`,
+    data: { type: 'admin_compliance_reject' }
+  }));
+};
+
+// ─────────────────────────────────────────────
 // A5 — Admin: error en withdrawal automático
 // ─────────────────────────────────────────────
 export const notifyAdminWithdrawalError = async (transaction, errorMsg) => {

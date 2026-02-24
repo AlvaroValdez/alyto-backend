@@ -4,6 +4,12 @@ import { createWidgetLink } from '../services/fintocService.js';
 import { vita } from '../config/env.js';
 import Transaction from '../models/Transaction.js';
 import { transactionLimiter } from '../middleware/rateLimiters.js';
+import {
+  notifyComplianceLimitReached,
+  notifyComplianceApprovalRequiredToAdmin,
+  notifyComplianceRejectToAdmin,
+  notifyAdminNewManualDeposit
+} from '../services/notificationService.js';
 
 const router = Router();
 
@@ -65,6 +71,11 @@ router.post('/', transactionLimiter, async (req, res) => {
     );
 
     if (!complianceCheck.valid) {
+      // 🔔 U13 — Notificar usuario: límite alcanzado
+      notifyComplianceLimitReached(userId, amount, currency).catch(() => { });
+      // 🔔 A8 — Notificar admins: transacción bloqueada por compliance
+      notifyComplianceRejectToAdmin(req.user?.email || 'Desconocido', amount, currency, complianceCheck.reason).catch(() => { });
+
       return res.status(403).json({
         ok: false,
         error: 'Transacción bloqueada por cumplimiento',
@@ -546,6 +557,16 @@ router.post('/', transactionLimiter, async (req, res) => {
     });
 
     console.log('✅ [withdrawals] Transaction saved:', newTransaction._id);
+
+    // 🔔 A4 — Notificar admins: Transacción de alto riesgo (si aprueba limits pero requiere revisión manual)
+    if (complianceCheck.requiresApproval) {
+      notifyComplianceApprovalRequiredToAdmin(newTransaction).catch(() => { });
+    }
+
+    // 🔔 A1 — Notificar admins: Nuevo depósito manual BOB
+    if (isManualOnRamp) {
+      notifyAdminNewManualDeposit(newTransaction).catch(() => { });
+    }
 
     return res.status(201).json({
       ok: true,
