@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
   accountType: { type: String, enum: ['individual', 'business'], default: 'individual' },
+  registrationCountry: { type: String, enum: ['BO', 'CL', 'OTHER'], default: 'BO' },
 
   // --- SEGURIDAD DE ACCESO (Account Lockout) ---
   loginAttempts: { type: Number, default: 0 },

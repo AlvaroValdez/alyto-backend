@@ -17,7 +17,7 @@ const router = Router();
 
 // --- REGISTRO DE USUARIO ---
 router.post('/register', registerLimiter, async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, accountType, registrationCountry } = req.body;
 
   try {
     // 1. Validaciones
@@ -43,10 +43,10 @@ router.post('/register', registerLimiter, async (req, res) => {
 
     // Si no acepta el contrato, no puede registrarse (Bloqueo Legal)
     if (contractAccepted !== true) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Debes aceptar el Contrato de Mandato y Declaración de Origen de Fondos para continuar.'
-      });
+      const errorMsg = registrationCountry === 'BO'
+        ? 'Debes aceptar el Contrato de Mandato y Declaración de Origen de Fondos para continuar.'
+        : 'Debes aceptar los Términos y Condiciones de Uso para continuar.';
+      return res.status(400).json({ ok: false, error: errorMsg });
     }
 
     // Obtener IP del cliente
@@ -57,6 +57,8 @@ router.post('/register', registerLimiter, async (req, res) => {
       name,
       email,
       password,
+      accountType: accountType || 'individual',
+      registrationCountry: registrationCountry || 'BO',
       contractAcceptance: {
         accepted: true,
         version: contractVersion || 'v1.0',
