@@ -11,7 +11,25 @@ let initialized = false;
 const initFirebase = () => {
     if (initialized) return;
     try {
-        const serviceAccount = require('../../firebase-service-account.json');
+        let serviceAccount;
+
+        // 1. Intentar variable de entorno (JSON stringificado)
+        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        } else {
+            // 2. Intentar archivo local (desarrollo)
+            try {
+                serviceAccount = require('../../firebase-service-account.json');
+            } catch (e1) {
+                // 3. Intentar Secret File de Render (producción)
+                try {
+                    serviceAccount = require('/etc/secrets/firebase-service-account.json');
+                } catch (e2) {
+                    throw new Error('No se encontró firebase-service-account.json ni en local ni en /etc/secrets/');
+                }
+            }
+        }
+
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
