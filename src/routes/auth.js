@@ -7,6 +7,7 @@ import { sendEmail, getVerificationEmailTemplate } from '../services/emailServic
 import { protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
 import { notifyAdminNewUser, notifyWelcomeUser, notifyAdminNewKyc } from '../services/notificationService.js';
+import { notifyUser } from '../services/fcmService.js';
 import {
   loginLimiter,
   registerLimiter,
