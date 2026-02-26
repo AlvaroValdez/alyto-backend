@@ -6,27 +6,60 @@ import { sendPushNotification, notifyUser, notifyAdmins } from './fcmService.js'
  * Envía email + push en paralelo (fire-and-forget para push)
  */
 
-const STYLES = `
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  line-height: 1.6;
-  color: #333;
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 20px;
-  border: 1px solid #eee;
-  border-radius: 8px;
+// ─── Shared branded helpers ────────────────────────────────────────────────
+
+const emailWrapper = (bodyContent) => `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f0f2f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+
+        <!-- HEADER -->
+        <tr>
+          <td style="background-color:#233E58;padding:28px 40px;text-align:center;">
+            <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">
+              al<span style="color:#F5C400;">y</span>to
+            </h1>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.65);font-size:12px;letter-spacing:1px;text-transform:uppercase;">Envíos Internacionales</p>
+          </td>
+        </tr>
+
+        <!-- YELLOW ACCENT BAR -->
+        <tr><td style="height:4px;background:linear-gradient(90deg,#F5C400 0%,#00A89D 100%);"></td></tr>
+
+        <!-- BODY -->
+        <tr>
+          <td style="padding:36px 40px;color:#333333;font-size:15px;line-height:1.7;">
+            ${bodyContent}
+          </td>
+        </tr>
+
+        <!-- FOOTER -->
+        <tr>
+          <td style="background-color:#f8f9fa;padding:24px 40px;border-top:1px solid #e9ecef;text-align:center;">
+            <p style="margin:0 0 6px;color:#666;font-size:13px;font-weight:600;">Gracias por confiar en Alyto</p>
+            <p style="margin:0;color:#aaa;font-size:11px;">Este es un correo automático — por favor no respondas a esta dirección.</p>
+            <p style="margin:12px 0 0;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#233E58;margin:0 2px;"></span>
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#F5C400;margin:0 2px;"></span>
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#00A89D;margin:0 2px;"></span>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
 `;
 
-const HEADER = `
-  <div style="text-align: center; margin-bottom: 30px;">
-    <h1 style="color: #007bff; margin: 0;">Alyto</h1>
-  </div>
-`;
-
-const FOOTER = `
-  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center;">
-    <p>Gracias por confiar en Alyto.</p>
-    <p>Este es un correo automático, por favor no respondas a esta dirección.</p>
+const infoBox = (content, color = '#00A89D') => `
+  <div style="background:${color}18;border-left:4px solid ${color};border-radius:0 8px 8px 0;padding:14px 18px;margin:20px 0;font-size:14px;">
+    ${content}
   </div>
 `;
 
@@ -41,23 +74,20 @@ const pushSilent = (promise) => {
 export const notifyOrderCreated = async ({ orderId, amount, country, email, userId }) => {
   if (!email) return;
 
-  const html = `
-    <div style="${STYLES}">
-      ${HEADER}
-      <h2>Orden de Pago Creada</h2>
-      <p>Hola,</p>
-      <p>Hemos recibido tu solicitud de envío de dinero. A continuación los detalles:</p>
-      <ul>
-        <li><strong>Orden:</strong> #${orderId}</li>
-        <li><strong>Monto a Enviar:</strong> ${amount} CLP</li>
-        <li><strong>Destino:</strong> ${country}</li>
-      </ul>
-      <p>Por favor completa el pago para procesar tu envío.</p>
-      ${FOOTER}
-    </div>
-  `;
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">Orden de Pago Creada</h2>
+    <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Hemos recibido tu solicitud</p>
+    <p style="margin:0 0 16px;">Hola, tu solicitud de envío de dinero fue generada exitosamente. A continuación los detalles:</p>
+    ${infoBox(`
+      <strong style="display:block;margin-bottom:6px;color:#233E58;">Detalles de la Orden</strong>
+      Nº Orden: <strong>#${orderId}</strong><br>
+      Monto: <strong>${amount} CLP</strong><br>
+      Destino: <strong>${country}</strong>
+    `)}
+    <p>Por favor, completa el pago para que procesemos tu envío de inmediato.</p>
+  `);
 
-  await sendEmail({ to: email, subject: `Orden #${orderId} Creada - Alyto`, html });
+  await sendEmail({ to: email, subject: `Orden #${orderId} Creada — Alyto`, html });
 
   if (userId) pushSilent(notifyUser(userId, {
     title: '💸 Envío iniciado',
@@ -74,21 +104,15 @@ export const notifyPayinSuccess = async (transaction) => {
   const userId = transaction.createdBy?._id || transaction.createdBy;
   if (!email) return;
 
-  const html = `
-    <div style="${STYLES}">
-      ${HEADER}
-      <h2 style="color: #28a745;">¡Pago Recibido!</h2>
-      <p>Hola,</p>
-      <p>Hemos confirmado la recepción de tu pago para la orden <strong>#${transaction.order}</strong>.</p>
-      <p>Estamos procesando el envío al destinatario en este momento.</p>
-      <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
-        <p style="margin: 0;"><strong>Estado:</strong> Procesando Envío</p>
-      </div>
-      ${FOOTER}
-    </div>
-  `;
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">✅ Pago Recibido</h2>
+    <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Todo en orden</p>
+    <p>Confirmamos la recepción de tu pago para la orden <strong>#${transaction.order}</strong>.</p>
+    ${infoBox(`<strong>Estado actual:</strong> Procesando envío al destinatario`, '#00A89D')}
+    <p>Te notificaremos en cuanto los fondos sean enviados.</p>
+  `);
 
-  await sendEmail({ to: email, subject: `Pago Confirmado - Orden #${transaction.order}`, html });
+  await sendEmail({ to: email, subject: `Pago Confirmado — Orden #${transaction.order} | Alyto`, html });
 
   if (userId) pushSilent(notifyUser(userId, {
     title: '✅ Pago recibido',
@@ -119,22 +143,19 @@ export const notifyPayoutSuccess = async (transaction) => {
   const userId = transaction.createdBy?._id || transaction.createdBy;
   if (!email) return;
 
-  const html = `
-    <div style="${STYLES}">
-      ${HEADER}
-      <h2 style="color: #28a745;">¡Envío en Camino!</h2>
-      <p>Buenas noticias,</p>
-      <p>Los fondos de la orden <strong>#${transaction.order}</strong> han sido enviados al destinatario.</p>
-      <ul>
-        <li><strong>Monto Enviado:</strong> ${transaction.amountSent} ${transaction.currencySent}</li>
-        <li><strong>Referencia de Retiro:</strong> ${transaction.vitaWithdrawalId || 'N/A'}</li>
-      </ul>
-      <p>Dependiendo del banco destino, los fondos pueden tardar unas horas en reflejarse.</p>
-      ${FOOTER}
-    </div>
-  `;
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">🎉 ¡Envío Completado!</h2>
+    <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Tu beneficiario recibió los fondos</p>
+    <p>Los fondos de la orden <strong>#${transaction.order}</strong> han sido enviados al destinatario exitosamente.</p>
+    ${infoBox(`
+      <strong style="display:block;margin-bottom:6px;color:#233E58;">Resumen del Envío</strong>
+      Monto enviado: <strong>${transaction.amountSent} ${transaction.currencySent}</strong><br>
+      Referencia: <strong>${transaction.vitaWithdrawalId || 'N/A'}</strong>
+    `, '#00A89D')}
+    <p style="color:#666;font-size:13px;">Dependiendo del banco destino, los fondos pueden tardar unas horas en reflejarse.</p>
+  `);
 
-  await sendEmail({ to: email, subject: `Envío Completado - Orden #${transaction.order}`, html });
+  await sendEmail({ to: email, subject: `¡Envío Completado! — Orden #${transaction.order} | Alyto`, html });
 
   if (userId) pushSilent(notifyUser(userId, {
     title: '🎉 ¡Envío completado!',
@@ -151,21 +172,21 @@ export const notifyManualPayoutCompleted = async (transaction) => {
   const userId = transaction.createdBy?._id || transaction.createdBy;
 
   if (email) {
-    const html = `
-        <div style="${STYLES}">
-          ${HEADER}
-          <h2 style="color: #28a745;">🎉 Transferencia Enviada</h2>
-          <p>Tu envío a Bolivia para la orden <strong>#${transaction.order}</strong> fue procesado exitosamente.</p>
-          <p>Puedes ver el comprobante bancario en el detalle de tu transacción.</p>
-          ${FOOTER}
-        </div>
-        `;
-    await sendEmail({ to: email, subject: `Transferencia a Bolivia Completada - Orden #${transaction.order}`, html }).catch(() => { });
+    const html = emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">🎉 Transferencia Enviada</h2>
+      <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Tu envío fue procesado</p>
+      <p>Tu envío para la orden <strong>#${transaction.order}</strong> fue procesado exitosamente.</p>
+      ${infoBox(`
+        <strong>Estado:</strong> Completado ✓<br>
+        Puedes ver el comprobante bancario en el detalle de tu transacción dentro de la app.
+      `, '#00A89D')}
+    `);
+    await sendEmail({ to: email, subject: `Transferencia Completada — Orden #${transaction.order} | Alyto`, html }).catch(() => { });
   }
 
   if (userId) pushSilent(notifyUser(userId, {
     title: '🎉 Transferencia enviada',
-    body: `Tu envío a Bolivia fue completado. Revisa el comprobante bancario.`,
+    body: `Tu envío fue completado. Revisa el comprobante bancario.`,
     data: { type: 'manual_payout_complete', orderId: transaction.order }
   }));
 };
@@ -192,19 +213,15 @@ export const notifyTransactionFailed = async (transaction, reason = 'Error desco
   const userId = transaction.createdBy?._id || transaction.createdBy;
   if (!email) return;
 
-  const html = `
-    <div style="${STYLES}">
-      ${HEADER}
-      <h2 style="color: #dc3545;">Problema con tu Envío</h2>
-      <p>Hola,</p>
-      <p>Hubo un inconveniente con la orden <strong>#${transaction.order}</strong>.</p>
-      <p><strong>Motivo:</strong> ${reason}</p>
-      <p>Por favor contacta a soporte si el problema persiste o si ya se descontó el dinero de tu cuenta.</p>
-      ${FOOTER}
-    </div>
-  `;
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 8px;color:#c0392b;font-size:20px;">⚠️ Problema con tu Envío</h2>
+    <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Se requiere tu atención</p>
+    <p>Hubo un inconveniente con la orden <strong>#${transaction.order}</strong>.</p>
+    ${infoBox(`<strong>Motivo:</strong> ${reason}`, '#c0392b')}
+    <p>Por favor contacta a nuestro soporte si el problema persiste o si ya se descontó el dinero de tu cuenta.</p>
+  `);
 
-  await sendEmail({ to: email, subject: `Error en Orden #${transaction.order} - Alyto`, html });
+  await sendEmail({ to: email, subject: `Atención Requerida — Orden #${transaction.order} | Alyto`, html });
 
   if (userId) pushSilent(notifyUser(userId, {
     title: '❌ Problema con tu envío',
