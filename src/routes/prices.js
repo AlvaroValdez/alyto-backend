@@ -324,4 +324,72 @@ router.get('/alyto-admin-summary', async (req, res) => {
   }
 });
 
+// GET /api/prices/bob-summary - Bolivia (BOB) rates to all supported countries
+// Derived via cross-rate: BOB→CLP (inverted CLP→BOB rate) × CLP→dest
+router.get('/bob-summary', async (req, res) => {
+  try {
+    console.log('\n🇧🇴 [BobSummary] Iniciando cálculo de tasas BOB...');
+    const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
+    const Markup = (await import('../models/Markup.js')).default;
+    const allRates = await getListPrices();
+
+    // 1. Obtener la tasa CLP→BOB manual (almacenada en config de Chile)
+    const clConfig = await TransactionConfig.findOne({ originCountry: 'CL' });
+    const boliviaDest = clConfig?.destinations?.find(d => d.countryCode === 'BO' && d.isEnabled);
+
+    if (!boliviaDest || !boliviaDest.manualExchangeRate || boliviaDest.manualExchangeRate <= 0) {
+      return res.json({ ok: true, data: { lastUpdate: new Date().toISOString(), rates: [] } });
+    }
+
+    const clpToBob = Number(boliviaDest.manualExchangeRate); // e.g., 0.0075 (1 CLP = 0.0075 BOB)
+    const bobToClp = 1 / clpToBob; // e.g., 133.33 (1 BOB = 133.33 CLP)
+
+    console.log(`   [BOB] CLP→BOB: ${clpToBob} | BOB→CLP: ${bobToClp.toFixed(4)}`);
+
+    // 2. Obtener tasas CLP→destination de Vita (filtrar BO)
+    const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP' && r.code !== 'BO');
+
+    // 3. Calcular BOB→dest mediante cross-rate y aplicar spread
+    const bobSummary = await Promise.all(clpRates.map(async (r) => {
+      const destCountry = r.code;
+
+      // Buscar markup para esta ruta (misma lógica que alyto-summary)
+      let markup = await Markup.findOne({ originCountry: 'CL', destCountry });
+      if (!markup) markup = await Markup.findOne({ originCountry: 'CL', destCountry: { $exists: false } });
+      if (!markup) markup = await Markup.findOne({ isDefault: true });
+
+      const spreadPercent = markup?.percent || 2.0;
+      const clpToDest = Number(r.rate); // e.g., CLP→USD = 0.001
+
+      // Cross rate: BOB→CLP→dest
+      const baseCrossRate = bobToClp * clpToDest;
+      // Apply spread (same as Alyto for consistency)
+      const bobRate = baseCrossRate * (1 - spreadPercent / 100);
+
+      return {
+        from: 'BOB',
+        to: destCountry,
+        currency: destCountry,
+        bobRate: bobRate.toFixed(6),    // 1 BOB = how much of destCountry
+        spreadPercent: spreadPercent.toFixed(2),
+        fixedCost: Number(r.fixedCost || 0)
+      };
+    }));
+
+    console.log(`✅ [BobSummary] Tasas calculadas: ${bobSummary.length}\n`);
+
+    return res.json({
+      ok: true,
+      data: {
+        lastUpdate: new Date().toISOString(),
+        bobToClp: bobToClp.toFixed(4),
+        rates: bobSummary.filter(r => r.bobRate > 0).sort((a, b) => a.to.localeCompare(b.to))
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Prices/BobSummary] Error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;
