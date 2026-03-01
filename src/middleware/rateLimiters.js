@@ -18,10 +18,7 @@ export const loginLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // Identificar por IP
-    keyGenerator: (req) => {
-        return req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    },
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     // Saltar rate limit para requests exitosos (opcional)
     skipSuccessfulRequests: false,
     // Log en caso de bloqueo
@@ -47,7 +44,7 @@ export const registerLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.ip,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     handler: (req, res) => {
         console.warn(`[SECURITY] Register rate limit exceeded for IP: ${req.ip}`);
         res.status(429).json({
@@ -70,7 +67,7 @@ export const passwordResetLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.ip,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     handler: (req, res) => {
         console.warn(`[SECURITY] Password reset rate limit exceeded for IP: ${req.ip}`);
         res.status(429).json({
@@ -93,14 +90,14 @@ export const transactionLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     // Identificar por usuario autenticado (no solo IP)
     keyGenerator: (req) => {
-        // Si hay usuario autenticado, usar su ID (más preciso)
+        // Validación de usuario explícita para evitar fallback a string vacío
         if (req.user && req.user._id) {
             return `user_${req.user._id}`;
         }
-        // Fallback a IP si no hay sesión
-        return `ip_${req.ip}`;
+        return req.ip; // Dejar la validación nativa de IPs si no hay user._id
     },
     // Omitir rate limit en desarrollo
     skip: (req) => process.env.NODE_ENV === 'development',
@@ -127,6 +124,7 @@ export const adminTreasuryLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     keyGenerator: (req) => {
         return req.user?._id ? `admin_${req.user._id}` : req.ip;
     },
@@ -153,6 +151,7 @@ export const kycUploadLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     keyGenerator: (req) => req.user?._id || req.ip,
     handler: (req, res) => {
         console.warn(`[SECURITY] KYC upload rate limit exceeded for: ${req.user?._id || req.ip}`);
@@ -175,7 +174,8 @@ export const generalApiLimiter = rateLimit({
         error: 'Demasiadas peticiones. Por favor, reduce la frecuencia.'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
 });
 
 export default {
