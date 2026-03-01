@@ -90,7 +90,6 @@ export const transactionLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     // Identificar por usuario autenticado (no solo IP)
     keyGenerator: (req) => {
         if (req.user && req.user._id) {
@@ -125,7 +124,6 @@ export const adminTreasuryLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     keyGenerator: (req) => {
         const clientIp = req['ip'];
         return req.user?._id ? `admin_${req.user._id}` : ipKeyGenerator(clientIp, 64);
@@ -153,7 +151,6 @@ export const kycUploadLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     keyGenerator: (req) => {
         const clientIp = req['ip'];
         return req.user?._id || ipKeyGenerator(clientIp, 64);
