@@ -9,7 +9,7 @@ import { trackActivity } from './middleware/activityTracker.js';
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // Importación de rutas
 import pricesRoutes from './routes/prices.js';
@@ -94,6 +94,10 @@ const limiter = rateLimit({
   max: 100, // Limite de 100 peticiones por IP
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const clientIp = req['ip'];
+    return ipKeyGenerator(clientIp, 64);
+  }
 });
 app.use('/api', limiter);
 
