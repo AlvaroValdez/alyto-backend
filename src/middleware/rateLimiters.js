@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
  * Rate limiters específicos para diferentes tipos de endpoints
@@ -23,7 +23,7 @@ export const loginLimiter = rateLimit({
     skipSuccessfulRequests: false,
     // Log en caso de bloqueo
     handler: (req, res) => {
-        console.warn(`[SECURITY] Login rate limit exceeded for IP: ${req.ip}`);
+        console.warn(`[SECURITY] Login rate limit exceeded for IP: ${req['ip']}`);
         res.status(429).json({
             ok: false,
             error: 'Demasiados intentos de inicio de sesión. Por favor, inténtalo nuevamente en 15 minutos.'
@@ -46,7 +46,7 @@ export const registerLimiter = rateLimit({
     legacyHeaders: false,
     ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     handler: (req, res) => {
-        console.warn(`[SECURITY] Register rate limit exceeded for IP: ${req.ip}`);
+        console.warn(`[SECURITY] Register rate limit exceeded for IP: ${req['ip']}`);
         res.status(429).json({
             ok: false,
             error: 'Has alcanzado el límite de registros por hora. Intenta nuevamente más tarde.'
@@ -69,7 +69,7 @@ export const passwordResetLimiter = rateLimit({
     legacyHeaders: false,
     ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     handler: (req, res) => {
-        console.warn(`[SECURITY] Password reset rate limit exceeded for IP: ${req.ip}`);
+        console.warn(`[SECURITY] Password reset rate limit exceeded for IP: ${req['ip']}`);
         res.status(429).json({
             ok: false,
             error: 'Has excedido el límite de solicitudes de recuperación de contraseña.'
@@ -93,16 +93,17 @@ export const transactionLimiter = rateLimit({
     ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     // Identificar por usuario autenticado (no solo IP)
     keyGenerator: (req) => {
-        // Validación de usuario explícita para evitar fallback a string vacío
         if (req.user && req.user._id) {
             return `user_${req.user._id}`;
         }
-        return req.ip; // Dejar la validación nativa de IPs si no hay user._id
+        // Obfuscate to prevent express-rate-limit regex from throwing ERR_ERL_KEY_GEN_IPV6
+        const clientIp = req['ip'];
+        return ipKeyGenerator(clientIp, 64);
     },
     // Omitir rate limit en desarrollo
     skip: (req) => process.env.NODE_ENV === 'development',
     handler: (req, res) => {
-        const identifier = req.user?._id || req.ip;
+        const identifier = req.user?._id || req['ip'];
         console.warn(`[SECURITY] Transaction rate limit exceeded for: ${identifier}`);
         res.status(429).json({
             ok: false,
@@ -126,11 +127,12 @@ export const adminTreasuryLimiter = rateLimit({
     legacyHeaders: false,
     ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
     keyGenerator: (req) => {
-        return req.user?._id ? `admin_${req.user._id}` : req.ip;
+        const clientIp = req['ip'];
+        return req.user?._id ? `admin_${req.user._id}` : ipKeyGenerator(clientIp, 64);
     },
     skip: (req) => process.env.NODE_ENV === 'development',
     handler: (req, res) => {
-        console.warn(`[SECURITY] Admin treasury rate limit exceeded for: ${req.user?._id || req.ip}`);
+        console.warn(`[SECURITY] Admin treasury rate limit exceeded for: ${req.user?._id || req['ip']}`);
         res.status(429).json({
             ok: false,
             error: 'Has excedido el límite de aprobaciones. Pausa brevemente.'
@@ -152,9 +154,12 @@ export const kycUploadLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     ipv6Subnet: 64, // Fix para ERR_ERL_KEY_GEN_IPV6 proxy headers
-    keyGenerator: (req) => req.user?._id || req.ip,
+    keyGenerator: (req) => {
+        const clientIp = req['ip'];
+        return req.user?._id || ipKeyGenerator(clientIp, 64);
+    },
     handler: (req, res) => {
-        console.warn(`[SECURITY] KYC upload rate limit exceeded for: ${req.user?._id || req.ip}`);
+        console.warn(`[SECURITY] KYC upload rate limit exceeded for: ${req.user?._id || req['ip']}`);
         res.status(429).json({
             ok: false,
             error: 'Has alcanzado el límite diario de subida de documentos. Si tienes problemas, contacta a soporte.'

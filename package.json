@@ -1,5 +1,5 @@
 {
-  "name": "remesas-backend",
+  "name": "alyto-backend",
   "version": "1.0.0",
   "description": "Backend de aplicación de remesas multi-país con Vita Wallet API",
   "type": "module",
@@ -42,7 +42,7 @@
     "nodemon": "^3.1.0"
   },
   "keywords": [
-    "remesas",
+    "alyto",
     "vita-wallet",
     "node",
     "express",

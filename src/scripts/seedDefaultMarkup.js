@@ -23,7 +23,7 @@ const Markup = mongoose.model('Markup', markupSchema);
 async function seedDefaultMarkup() {
     try {
         // Conectar a MongoDB
-        const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/remesas-avf';
+        const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/alyto';
         await mongoose.connect(mongoUri);
         console.log('✅ Conectado a MongoDB');
 

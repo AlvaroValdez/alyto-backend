@@ -10,7 +10,7 @@ import { Router } from 'express';
 const router = Router();
 
 router.get('/', (req, res) => {
-    const base = process.env.BACKEND_URL || 'https://remesas-avf1-0.onrender.com';
+    const base = process.env.BACKEND_URL || 'https://api.alyto.app';
     const frontend = process.env.FRONTEND_URL || 'https://avf-vita-fe10.onrender.com';
 
     const toml = `

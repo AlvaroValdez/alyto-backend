@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const MONGO_URI = 'mongodb+srv://avfremesas:02HMxQz8jC3QMLSH@cluster0.vkpqf.mongodb.net/avf-remesas?retryWrites=true&w=majority';
+const MONGO_URI = 'mongodb+srv://avfremesas:02HMxQz8jC3QMLSH@cluster0.vkpqf.mongodb.net/alyto?retryWrites=true&w=majority';
 
 async function clearTransactions() {
     try {
