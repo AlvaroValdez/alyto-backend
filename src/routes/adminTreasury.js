@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import Transaction from '../models/Transaction.js';
-import { createWithdrawal } from '../services/vitaService.js';
+import { createWithdrawal, forceRefreshPrices } from '../services/vitaService.js';
 import { vita } from '../config/env.js';
 import { adminTreasuryLimiter } from '../middleware/rateLimiters.js';
 import { notifyManualPayoutCompleted, notifyProofUploaded, notifyTransactionRejected } from '../services/notificationService.js';
@@ -277,7 +277,23 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
         tx.status = 'processing';
         await tx.save();
 
-        const vitaRes = await createWithdrawal(finalPayload);
+        let vitaRes;
+        try {
+            vitaRes = await createWithdrawal(finalPayload);
+        } catch (firstError) {
+            const errorData = firstError.response?.data?.error || {};
+            const msg = `${errorData?.message || ''}`.toLowerCase();
+            if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
+                console.warn('⚠️ [treasury] Precios de Vita expirados. Refrescando y reintentando...');
+                await forceRefreshPrices();
+                await new Promise(r => setTimeout(r, 1500));
+                vitaRes = await createWithdrawal(finalPayload);
+                console.log('✅ [treasury] Reintento exitoso tras refrescar precios.');
+            } else {
+                throw firstError;
+            }
+        }
+
         tx.vitaResponse = vitaRes;
         tx.status = 'processing'; // IPN debe marcar succeeded/failed
         await tx.save();
