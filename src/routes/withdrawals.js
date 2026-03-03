@@ -9,7 +9,8 @@ import {
   notifyComplianceApprovalRequiredToAdmin,
   notifyComplianceRejectToAdmin,
   notifyAdminNewManualDeposit,
-  notifyOrderCreated // U1
+  notifyOrderCreated, // U1
+  notifyAdminNewTransaction // A1.5
 } from '../services/notificationService.js';
 
 const router = Router();
@@ -577,6 +578,10 @@ router.post('/', transactionLimiter, async (req, res) => {
     if (isManualOnRamp) {
       notifyAdminNewManualDeposit(newTransaction).catch(() => { });
     }
+
+    // 🔔 A1.5 — Notificar admins: Nueva transacción general
+    // Se notifica siempre independientemente del tipo de flow para que el admin esté enterado
+    notifyAdminNewTransaction(newTransaction).catch(() => { });
 
     return res.status(201).json({
       ok: true,

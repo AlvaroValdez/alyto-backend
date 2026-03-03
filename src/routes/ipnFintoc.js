@@ -6,6 +6,7 @@ import Transaction from '../models/Transaction.js';
 import { vita } from '../config/env.js';
 import {
     notifyPayinSuccess,
+    notifyAdminPayinSuccess,
     notifyAdminManualPayoutPending,
     notifyTransactionFailed,
     notifyAdminWithdrawalError
@@ -63,6 +64,9 @@ router.post('/', async (req, res) => {
 
             // 🔔 U2 — Notificar usuario: pago confirmado
             notifyPayinSuccess(transaction).catch(() => { });
+
+            // 🔔 A2.5 — Notificar admnis: pago de Fintoc recibido
+            notifyAdminPayinSuccess(transaction).catch(() => { });
 
             // Registrar evento de Fintoc
             if (!transaction.fintocWebhookEvents) {

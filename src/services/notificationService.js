@@ -276,6 +276,17 @@ export const notifyAdminNewManualDeposit = async (transaction) => {
 };
 
 // ─────────────────────────────────────────────
+// A1.5 — Admin: nueva transacción creada (NOTIFICACIÓN GENERAL)
+// ─────────────────────────────────────────────
+export const notifyAdminNewTransaction = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '💸 Nueva Transacción',
+    body: `El usuario ${transaction.createdBy?.email || 'Desconocido'} ha creado la orden #${transaction.order} (${transaction.amount} ${transaction.currency}).`,
+    data: { type: 'admin_new_transaction', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
 // A2 — Admin: pago Fintoc CL→BO confirmado (payout manual pendiente)
 // ─────────────────────────────────────────────
 export const notifyAdminManualPayoutPending = async (transaction) => {
@@ -283,6 +294,28 @@ export const notifyAdminManualPayoutPending = async (transaction) => {
     title: '💸 Payout Bolivia pendiente',
     body: `Fintoc confirmó pago para orden #${transaction.order}. Procesar envío a Bolivia.`,
     data: { type: 'admin_payout_pending', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A2.5 — Admin: pago Fintoc confirmado (general payin)
+// ─────────────────────────────────────────────
+export const notifyAdminPayinSuccess = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '✅ Pago de cliente recibido',
+    body: `El cliente para la orden #${transaction.order} ha pagado exitosamente.`,
+    data: { type: 'admin_payin_success', orderId: transaction.order }
+  }));
+};
+
+// ─────────────────────────────────────────────
+// A2.6 — Admin: Payout automátizado completado (Vita)
+// ─────────────────────────────────────────────
+export const notifyAdminPayoutSuccess = async (transaction) => {
+  pushSilent(notifyAdmins({
+    title: '🎉 Envío completado (Vita)',
+    body: `La orden #${transaction.order} fue procesada exitosamente por Vita.`,
+    data: { type: 'admin_payout_success', orderId: transaction.order }
   }));
 };
 

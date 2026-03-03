@@ -6,8 +6,10 @@ import Transaction from '../models/Transaction.js';
 import {
   notifyTransactionFailed,
   notifyPayinSuccess,
+  notifyAdminPayinSuccess,
   notifyPayoutProcessing,
   notifyPayoutSuccess,
+  notifyAdminPayoutSuccess,
   notifyAdminWithdrawalError
 } from '../services/notificationService.js';
 
@@ -46,6 +48,9 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
 
       // 🔔 U3 — Notificar usuario: pago recibido
       notifyPayinSuccess(transaction).catch(() => { });
+
+      // 🔔 A2.5 — Notificar admins: pago recibido
+      notifyAdminPayinSuccess(transaction).catch(() => { });
 
       // 🔄 Si tiene withdrawal diferido pendiente, ejecutarlo ahora
       if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
