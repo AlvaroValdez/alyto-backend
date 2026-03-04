@@ -31,10 +31,14 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
         const tx = await Transaction.findById(req.params.id);
         if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
 
-        if (tx.status !== 'pending_verification') {
+        // Allow re-approval if previous attempt got stuck in 'processing' due to a Vita error.
+        // We treat 'processing' without a vitaResponse as a retriable state.
+        const isStuckProcessing = tx.status === 'processing' && !tx.vitaResponse;
+        if (tx.status !== 'pending_verification' && !isStuckProcessing) {
             return res.status(409).json({
                 ok: false,
-                error: `Estado inválido para aprobar depósito: ${tx.status}`
+                error: `Estado inválido para aprobar: "${tx.status}". Solo se puede aprobar en estado pending_verification.`,
+                canRetry: false
             });
         }
 
@@ -291,29 +295,56 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
             }
         }
 
-        // Ejecutar envío real en Vita
-        tx.status = 'processing';
-        await tx.save();
-
+        // ═══════════════════════════════════════════════════════════════════
+        // ENVÍO A VITA
+        // Sólo marcamos como 'processing' si Vita acepta el request.
+        // Si falla, revertimos a 'pending_verification' para que el admin
+        // pueda reintentar sin trabas.
+        // ═══════════════════════════════════════════════════════════════════
         let vitaRes;
         try {
             vitaRes = await createWithdrawal(finalPayload);
         } catch (firstError) {
             const errorData = firstError.response?.data?.error || {};
-            const msg = `${errorData?.message || ''}`.toLowerCase();
+            const msg = `${errorData?.message || firstError.message || ''}`.toLowerCase();
+
             if (msg.includes('precio') || msg.includes('price') || msg.includes('caducaron')) {
                 console.warn('⚠️ [treasury] Precios de Vita expirados. Refrescando y reintentando...');
-                await forceRefreshPrices();
-                await new Promise(r => setTimeout(r, 1500));
-                vitaRes = await createWithdrawal(finalPayload);
-                console.log('✅ [treasury] Reintento exitoso tras refrescar precios.');
+                try {
+                    await forceRefreshPrices();
+                    await new Promise(r => setTimeout(r, 2000)); // wait for prices to propagate
+                    vitaRes = await createWithdrawal(finalPayload);
+                    console.log('✅ [treasury] Reintento exitoso tras refrescar precios.');
+                } catch (retryError) {
+                    // Revert status so admin can try again
+                    tx.status = 'pending_verification';
+                    await tx.save();
+                    console.error('❌ [treasury] Reintento fallido:', retryError.message);
+                    const retryData = retryError.response?.data;
+                    return res.status(502).json({
+                        ok: false,
+                        error: 'Los precios de Vita caducaron y el reintento automático también falló. Intenta aprobar nuevamente.',
+                        details: retryData || { message: retryError.message },
+                        canRetry: true
+                    });
+                }
             } else {
-                throw firstError;
+                // Non-price error: revert status and surface the real error
+                tx.status = 'pending_verification';
+                await tx.save();
+                const vitaErrData = firstError.response?.data;
+                return res.status(firstError.response?.status || 502).json({
+                    ok: false,
+                    error: 'Error al enviar a Vita. La transacción volvió a estado pendiente para reintentar.',
+                    details: vitaErrData || { message: firstError.message },
+                    canRetry: true
+                });
             }
         }
 
+        // ✅ Vita aceptó: ahora sí marcamos como processing
+        tx.status = 'processing';
         tx.vitaResponse = vitaRes;
-        tx.status = 'processing'; // IPN debe marcar succeeded/failed
         await tx.save();
 
         // ✅ FIX: Generar y enviar comprobante automáticamente
