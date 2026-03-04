@@ -176,6 +176,16 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
                     destReceiveAmount: freshQuote.amountOut || freshQuote.receiveAmount || 0
                 };
 
+                // Profit retention calculation for the database
+                const requiredClpForVita = freshQuote.rateTracking?.vitaRate > 0
+                    ? tx.amountsTracking.destReceiveAmount / freshQuote.rateTracking.vitaRate
+                    : amountForQuote;
+                const profitCLP = amountForQuote - requiredClpForVita;
+
+                tx.rateTracking.profitDestCurrency = profitCLP * (freshQuote.rateTracking?.vitaRate || 1);
+                tx.amountsTracking.profitOriginCurrency = profitCLP;
+                tx.amountsTracking.profitDestCurrency = tx.rateTracking.profitDestCurrency;
+
                 // Safety check for NaN
                 if (isNaN(tx.amountsTracking.destGrossAmount)) {
                     console.error('[treasury] ⚠️ Error de cálculo NaN en destGrossAmount. Usando valores seguros.');
@@ -204,10 +214,14 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
                     wallet: vita.walletUUID,
 
                     // ✅ FIX: 'currency' defines the SOURCE wallet (CLP), not destination!
-                    // Log showed 'co' (country code), which is wrong and causes Signature Error 300/303
                     currency: (freshQuote.originCurrency || basePayload.currency || 'CLP').toLowerCase(),
                     country: (destCountry || basePayload.country || '').toUpperCase(),
-                    amount: Number(freshQuote.amount || basePayload.amount), // Input Amount (CLP)
+
+                    // ✅ PROFIT RETENTION FIX:
+                    // Send exactly the CLP amount required to output the promised COP.
+                    // Instead of sending the full clpWithFee to Vita (which gives away our spread),
+                    // we send: (Promised Dest Amount) / (Vita's pure exchange rate)
+                    amount: Math.round(Number(tx.amountsTracking.destReceiveAmount) / (freshQuote.rateTracking?.vitaRate || 1)),
 
                     // Beneficiary Data
                     beneficiary_type: basePayload.beneficiary_type,
