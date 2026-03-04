@@ -131,11 +131,27 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
             console.log(`[treasury] 💰 Margen BOB manual: ${marginCLP} CLP (queda en wallet como ingreso por exchange rate)`);
 
             // ─── Actualizar tracking en BD ─────────────────────────────────
+            // IMPORTANTE: Guardamos tasas en unidades BOB→COP para que la
+            // tabla del admin muestre valores comparables u homogeíneos.
+            // Tasa Vita (BOB→COP puro): si Vita convirtiera el BOB directamente
+            //   = bobToClpBase (95) × clpToCopRate (4.36) = ~414.2 COP/BOB
+            // Tasa Alyto (BOB→COP cliente): monto prometido / monto BOB enviado
+            //   = promisedCOP / bobAmount  (ej: 398.495 / 1000 = 0.3985 COP/BOB)
+            const vitaRateBOBtoCOP = Number((bobToClpBase * clpToCopRate).toFixed(4)); // COP por 1 BOB (puro Vita)
+            const alytoRateBOBtoCOP = Number((promisedCOP / bobAmount).toFixed(4));    // COP por 1 BOB (lo que recibe el cliente)
+
+            console.log(`[treasury] 📊 Tasa Vita  (BOB→COP): ${vitaRateBOBtoCOP} COP/BOB`);
+            console.log(`[treasury] 📊 Tasa Alyto (BOB→COP): ${alytoRateBOBtoCOP} COP/BOB`);
+            console.log(`[treasury] 📊 Diferencial (ganancia por BOB): ${(vitaRateBOBtoCOP - alytoRateBOBtoCOP).toFixed(2)} COP/BOB × ${bobAmount} = ${Math.round((vitaRateBOBtoCOP - alytoRateBOBtoCOP) * bobAmount)} COP`);
+
             tx.rateTracking = {
-                vitaRate: Number(clpToCopRate.toFixed(4)),    // CLP→COP live de Vita
-                alytoRate: Number((promisedCOP / clpPrincipal).toFixed(4)), // Tasa efectiva que ve el cliente (CLP→COP con spread)
+                vitaRate: vitaRateBOBtoCOP,    // COP que Vita puede dar por 1 BOB (sin margen Alyto)
+                alytoRate: alytoRateBOBtoCOP,  // COP que recibe el cliente por 1 BOB (con margen Alyto)
                 spreadPercent: Number(feeAmount.toFixed(2)),
-                profitDestCurrency: Number(profitCOP.toFixed(0))
+                profitDestCurrency: Number(profitCOP.toFixed(0)),
+                // Tasas de apoyo (CLP→COP) para backend/debug
+                clpToCopRate: Number(clpToCopRate.toFixed(4)),
+                bobToClpBase: Number(bobToClpBase.toFixed(4))
             };
 
             tx.amountsTracking = {
