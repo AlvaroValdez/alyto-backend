@@ -46,245 +46,233 @@ router.put('/:id/approve-deposit', adminTreasuryLimiter, async (req, res) => {
         }
 
 
-        // ⚠️ CRÍTICO: Vita NO soporta moneda BOB
-        // Si el depósito es en BOB, debemos convertir a CLP primero
+        // ===================================================================
+        // ANCHOR MANUAL: Depósito BOB
+        // ===================================================================
+        // Vita NO soporta BOB. El flujo correcto es:
+        //   1. Leer el monto prometido en COP guardado en la cotización original.
+        //   2. Obtener la tasa CLP→COP LIVE de Vita (precio fresco).
+        //   3. Calcular el CLP mínimo necesario para depositar exactamente el COP prometido.
+        //   4. Enviarle ese monto (CLP) a Vita → el excedente queda como GANANCIA de Alyto.
+        // ===================================================================
         let finalPayload = { ...tx.withdrawalPayload };
+        let profitCLP = 0;  // Ganancia en CLP a registrar
+        let amountToSendToVita = 0; // CLP que se le envían a Vita
 
         if (tx.currency?.toUpperCase() === 'BOB') {
-            console.log('[treasury] 🇧🇴 Depósito BOB detectado - convirtiendo a CLP para Vita...');
+            console.log('[treasury] 🇧🇴 Depósito BOB detectado - calculando CLP exacto para Vita...');
 
-            // Obtener tasa de cambio BOB→CLP desde TransactionRules
+            // ─── Obtener config manual de Bolivia ──────────────────────────
             const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
-            const config = await TransactionConfig.findOne({
-                originCountry: 'BO',
-                isEnabled: true
-            });
-
+            const config = await TransactionConfig.findOne({ originCountry: 'BO', isEnabled: true });
             if (!config || !config.manualExchangeRate || config.manualExchangeRate <= 0) {
-                throw new Error('No hay configuración de tasa BOB→CLP en TransactionRules. Configure manualExchangeRate para BO.');
+                throw new Error('No hay configuración de tasa BOB→CLP. Configure manualExchangeRate para BO.');
             }
 
-            const bobAmount = tx.amount;
-            const bobToClpRate = config.manualExchangeRate; // 1 BOB = X CLP
-            const clpEquivalent = Math.round(bobAmount * bobToClpRate);
+            const bobAmount = tx.amount;                          // Ej: 1.000 BOB
+            const bobToClpBase = config.manualExchangeRate;       // Ej: 95 CLP/BOB (tasa base sin margen)
+            const feeType = config.feeType || 'percentage';
+            const feeAmount = Number(config.feeAmount || 0);
 
-            // 💰 Calcular comisión
-            let feeCLP = 0;
-            let feePercent = 0;
-            let feeOriginAmount = 0;
+            // Tasa ajustada que usa fx.js para la cotización (margen incluido en tasa)
+            const adjustedBobToClp = feeType === 'percentage'
+                ? bobToClpBase * (1 - feeAmount / 100)
+                : bobToClpBase;
 
-            if (config.feeType === 'percentage') {
-                feePercent = config.feeAmount || 0;
-                feeCLP = Math.round(clpEquivalent * (feePercent / 100));
-                feeOriginAmount = Number((bobAmount * (feePercent / 100)).toFixed(2));
-            } else if (config.feeType === 'fixed') {
-                feeCLP = config.feeAmount || 0;
-                feePercent = clpEquivalent > 0 ? Number(((feeCLP / clpEquivalent) * 100).toFixed(2)) : 0;
-                feeOriginAmount = Number((feeCLP / bobToClpRate).toFixed(2));
+            // CLP que corresponden al remitente (principal Alyto neto)
+            const clpPrincipal = Math.round(bobAmount * adjustedBobToClp); // Ej: 86.450 CLP
+
+            // CLP que corresponden al margen de Alyto (ganancia interna)
+            const marginCLP = Math.round(bobAmount * (bobToClpBase - adjustedBobToClp)); // Ej: 8.550 CLP
+
+            console.log(`[treasury] 📊 BOB Breakdown:`);
+            console.log(`   ${bobAmount} BOB × ${bobToClpBase} (base) = ${bobAmount * bobToClpBase} CLP bruto`);
+            console.log(`   Margen Alyto: ${feeAmount}% = ${marginCLP} CLP`);
+            console.log(`   CLP para enviar a destino: ${clpPrincipal} CLP`);
+
+            // ─── Obtener monto prometido de la cotización original ─────────
+            // Este es el monto EXACTO que el usuario fue cotizado.
+            // Si no está guardado (transacciones antiguas), lo recalculamos.
+            const { getListPrices } = await import('../services/vitaService.js');
+            const prices = await getListPrices();
+            const destCountryCode = tx.country?.toUpperCase();
+            const priceData = prices.find(p => p.code?.toUpperCase() === destCountryCode);
+
+            if (!priceData) {
+                throw new Error(`No hay tasa Vita disponible para ${destCountryCode}. Verifica precios de Vita.`);
             }
 
-            const clpWithFee = clpEquivalent + feeCLP;
+            const clpToCopRate = Number(priceData.rate); // Tasa pura CLP→COP de Vita (live)
+            const vitaFixedCost = Number(priceData.fixedCost || 0);
 
-            // Guardar comisión en transacción
-            tx.fee = feeCLP;
-            tx.feePercent = feePercent;
-            tx.feeOriginAmount = feeOriginAmount;
-            await tx.save();
+            // Monto prometido = guardado en la transacción, o recalculado si no está
+            let promisedCOP = tx.amountsTracking?.destReceiveAmount;
+            if (!promisedCOP || promisedCOP <= 0) {
+                // Recomputar: clpPrincipal → COP
+                promisedCOP = Math.round(clpPrincipal * clpToCopRate - vitaFixedCost);
+                console.warn(`[treasury] ⚠️ destReceiveAmount no guardado. Recalculando: ${promisedCOP} COP`);
+            }
 
-            console.log(`[treasury] Conversión: ${bobAmount} BOB × ${bobToClpRate} = ${clpEquivalent} CLP`);
-            console.log(`[treasury] 💰 Comisión: ${feePercent}% = ${feeCLP} CLP (${feeOriginAmount} BOB)`);
-            console.log(`[treasury] Total a debitar wallet: ${clpWithFee} CLP`);
+            // ─── CLP exacto a enviar a Vita ────────────────────────────────
+            // Para que el beneficiario reciba 'promisedCOP', necesitamos:
+            // CLP = (promisedCOP + fixedCost_COP) / clpToCopRate
+            const clpNeededByVita = Math.ceil((promisedCOP + vitaFixedCost) / clpToCopRate);
+            amountToSendToVita = clpNeededByVita;
 
-            // Modificar payload para usar CLP
-            finalPayload = {
-                ...tx.withdrawalPayload,
-                currency: 'clp',
-                amount: clpWithFee, // ✅ Incluye comisión
-                purpose_comentary: `BOB ${bobAmount} → CLP ${clpEquivalent} + fee ${feeCLP}`
+            // ─── Ganancia de Alyto ─────────────────────────────────────────
+            // Alyto tiene 'clpPrincipal' CLP disponibles en su wallet para este envío.
+            // Vita consumirá 'clpNeededByVita' CLP.
+            // La diferencia es la ganancia real de Alyto en CLP.
+            profitCLP = clpPrincipal - clpNeededByVita;
+            const profitCOP = Math.round(profitCLP * clpToCopRate);
+
+            console.log(`[treasury] 💰 CLP a enviar a Vita: ${clpNeededByVita} (para garantizar ${promisedCOP} COP al beneficiario)`);
+            console.log(`[treasury] 💰 Ganancia Alyto: ${profitCLP} CLP (~${profitCOP} COP)`);
+            console.log(`[treasury] 💰 Margen BOB manual: ${marginCLP} CLP (queda en wallet como ingreso por exchange rate)`);
+
+            // ─── Actualizar tracking en BD ─────────────────────────────────
+            tx.rateTracking = {
+                vitaRate: Number(clpToCopRate.toFixed(4)),    // CLP→COP live de Vita
+                alytoRate: Number((promisedCOP / clpPrincipal).toFixed(4)), // Tasa efectiva que ve el cliente (CLP→COP con spread)
+                spreadPercent: Number(feeAmount.toFixed(2)),
+                profitDestCurrency: Number(profitCOP.toFixed(0))
             };
 
-            // 🔄 Eliminar campos de quote expirado (Vita calculará frescos)
-            delete finalPayload.rate;
-            delete finalPayload.estimated_amount;
-            delete finalPayload.fee;
-            delete finalPayload.expires_at;
+            tx.amountsTracking = {
+                originCurrency: 'BOB',
+                originPrincipal: Number(bobAmount),           // 1.000 BOB (lo que envió el cliente)
+                originFee: 0,                                  // La comisión está en la tasa, no visible
+                originTotal: Number(bobAmount),                // 1.000 BOB (total origen)
 
-            console.log('[treasury] ✅ Payload con fee:', {
-                original: { currency: 'bob', amount: bobAmount },
-                converted: { currency: 'clp', amount: clpEquivalent, fee: feeCLP, total: clpWithFee }
+                destCurrency: priceData.code?.toUpperCase() || destCountryCode,
+                destGrossAmount: Number(promisedCOP + vitaFixedCost),
+                destVitaFixedCost: Number(vitaFixedCost),
+                destReceiveAmount: Number(promisedCOP),        // Lo que prometiste al beneficiario
+
+                profitOriginCurrency: Number(profitCLP),      // Ganancia en CLP
+                profitDestCurrency: Number(profitCOP)         // Ganancia en COP (aprox)
+            };
+
+            tx.fee = marginCLP;         // Margen obtenido por la tasa diferencial BOB→CLP
+            tx.feeOriginAmount = Number((marginCLP / bobToClpBase).toFixed(3)); // Equiv en BOB
+            tx.feePercent = feeAmount;
+
+            await tx.save();
+
+            // ─── Construir payload para Vita ───────────────────────────────
+            const basePayload = tx.withdrawalPayload || {};
+            const complianceFields = Object.keys(basePayload)
+                .filter(key => key.startsWith('fc_'))
+                .reduce((obj, key) => { obj[key] = basePayload[key]; return obj; }, {});
+
+            finalPayload = {
+                transactions_type: 'withdrawal',
+                order: tx.order,
+                url_notify: (process.env.VITA_NOTIFY_URL || basePayload.url_notify || '').trim(),
+                wallet: vita.walletUUID,
+                currency: 'clp',                              // Fuente: wallet CLP de Alyto
+                country: destCountryCode,
+                amount: amountToSendToVita,                   // CLP mínimos para el payout prometido
+
+                beneficiary_type: basePayload.beneficiary_type,
+                beneficiary_first_name: basePayload.beneficiary_first_name,
+                beneficiary_last_name: basePayload.beneficiary_last_name,
+                beneficiary_email: basePayload.beneficiary_email,
+                beneficiary_address: basePayload.beneficiary_address || 'N/A',
+                beneficiary_document_type: basePayload.beneficiary_document_type,
+                beneficiary_document_number: basePayload.beneficiary_document_number,
+                account_type_bank: basePayload.account_type_bank,
+                account_bank: basePayload.account_bank,
+                bank_code: basePayload.bank_code ? Number(basePayload.bank_code) : undefined,
+                purpose: basePayload.purpose,
+                purpose_comentary: `BOB ${bobAmount} → ${promisedCOP} COP (via ${clpNeededByVita} CLP)`,
+                ...complianceFields
+            };
+
+            // Limpiar campos vacíos/nulos
+            finalPayload = Object.fromEntries(
+                Object.entries(finalPayload).filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== '')
+            );
+
+            console.log('[treasury] ✅ Payload final:', {
+                currency: finalPayload.currency,
+                country: finalPayload.country,
+                amount: finalPayload.amount,
+                promisedCOP, vitaFixedCost, clpToCopRate
             });
-        }
 
-        // 🔄 CRÍTICO: Refrescar quote para obtener precios actuales de Vita
-        // Esto soluciona el error "Los precios caducaron"
-        try {
-            // ✅ FIX: Obtener destCountry de múltiples fuentes posibles
-            const destCountry = tx.country || tx.destCountry || tx.withdrawalPayload?.destination_country;
-            const originCurrency = finalPayload.currency?.toUpperCase() || 'CLP';
-            const originCountry = originCurrency === 'CLP' ? 'CL' : (tx.originCountry || 'CL');
-            const amountForQuote = finalPayload.amount; // CLP amount (with fee if BOB)
+        } else {
+            // ===================================================================
+            // FLUJO NO-BOB: Refrescar quote para evitar "Precios caducados"
+            // ===================================================================
+            try {
+                const destCountry = tx.country || tx.destCountry || tx.withdrawalPayload?.destination_country;
+                const originCurrency = (finalPayload.currency?.toUpperCase() || 'CLP');
+                const amountForQuote = finalPayload.amount;
 
-            if (!destCountry) {
-                throw new Error('[treasury] destCountry no está definido. Verifica tx.country o tx.destCountry');
-            }
+                if (!destCountry) throw new Error('destCountry no definido');
 
-            console.log(`[treasury] 🔄 Refrescando quote: ${amountForQuote} ${originCurrency} (${originCountry}) → ${destCountry}`);
-
-            // ✅ FIX: Call internal logic directly to avoid self-HTTP 500 Deadlock
-            const { calculateQuote } = await import('../services/fxCalculator.js');
-            const freshQuote = await calculateQuote({
-                amount: amountForQuote,
-                origin: originCurrency,
-                originCountry: originCountry,
-                destCountry: destCountry,
-                mode: 'send'
-            });
-
-            // Simulate API response structure for minimal code change below
-            const quoteResponse = { data: { ok: true, data: freshQuote } };
-
-            if (quoteResponse.data.ok) {
-                const freshQuote = quoteResponse.data.data;
-
-                // DEBUG: Confirm code version and inspected keys
-                console.log('[treasury] 🛠️ DEBUG: Validando respuesta de quote (versión parcheada)');
-                console.log('[treasury] Keys recibidas:', Object.keys(freshQuote));
-
-                console.log('[treasury] ✅ Quote refrescado:', {
-                    rate: freshQuote.rate,
-                    estimated: freshQuote.amountOut,
-                    payoutCost: freshQuote.payoutFixedCost
+                const { calculateQuote } = await import('../services/fxCalculator.js');
+                const freshQuote = await calculateQuote({
+                    amount: amountForQuote,
+                    origin: originCurrency,
+                    originCountry: 'CL',
+                    destCountry,
+                    mode: 'send'
                 });
 
-                // Actualizar transacción con tracking data fresco
-                tx.rateTracking = {
-                    vitaRate: freshQuote.rate || 0,
-                    alytoRate: freshQuote.rateWithMarkup || freshQuote.rate || 0,
-                    spreadPercent: freshQuote.spread || 0,
-                    profitDestCurrency: 0 // Se calculará si aplica
-                };
+                if (freshQuote && !freshQuote.error) {
+                    const basePayload2 = tx.withdrawalPayload || {};
+                    const complianceFields2 = Object.keys(basePayload2)
+                        .filter(k => k.startsWith('fc_'))
+                        .reduce((obj, k) => { obj[k] = basePayload2[k]; return obj; }, {});
 
-                tx.amountsTracking = {
-                    originCurrency: tx.currency,
-                    originPrincipal: tx.amount,
-                    originFee: tx.fee || 0,
-                    originTotal: tx.amount + (tx.fee || 0),
-                    originTotal: tx.amount + (tx.fee || 0),
-                    destCurrency: freshQuote.destCurrency,
-                    destGrossAmount: (freshQuote.amountOut || freshQuote.receiveAmount || 0) + (freshQuote.payoutFixedCost || 0),
-                    destVitaFixedCost: freshQuote.payoutFixedCost || 0,
-                    destReceiveAmount: freshQuote.amountOut || freshQuote.receiveAmount || 0
-                };
+                    const promisedDestAmount = tx.amountsTracking?.destReceiveAmount || freshQuote.receiveAmount || 0;
+                    const liveVitaRate = freshQuote.rateTracking?.vitaRate || 1;
+                    const liveClpNeeded = Math.ceil((promisedDestAmount + (freshQuote.payoutFixedCost || 0)) / liveVitaRate);
+                    const profitCLPNonBOB = amountForQuote - liveClpNeeded;
 
-                // Profit retention calculation for the database
-                const requiredClpForVita = freshQuote.rateTracking?.vitaRate > 0
-                    ? tx.amountsTracking.destReceiveAmount / freshQuote.rateTracking.vitaRate
-                    : amountForQuote;
-                const profitCLP = amountForQuote - requiredClpForVita;
-
-                tx.rateTracking.profitDestCurrency = profitCLP * (freshQuote.rateTracking?.vitaRate || 1);
-                tx.amountsTracking.profitOriginCurrency = profitCLP;
-                tx.amountsTracking.profitDestCurrency = tx.rateTracking.profitDestCurrency;
-
-                // Safety check for NaN
-                if (isNaN(tx.amountsTracking.destGrossAmount)) {
-                    console.error('[treasury] ⚠️ Error de cálculo NaN en destGrossAmount. Usando valores seguros.');
-                    tx.amountsTracking.destGrossAmount = 0;
-                    tx.amountsTracking.destReceiveAmount = 0;
-                }
-
-                await tx.save();
-
-                // Usar valores frescos en payload final para Vita
-                // ⚠️ CRÍTICO: Reconstruir payload explícitamente para evitar campos basura que rompan la firma (Error 303)
-                const basePayload = tx.withdrawalPayload || {};
-
-                // Extraer compliance fields (fc_*)
-                const complianceFields = Object.keys(basePayload)
-                    .filter(key => key.startsWith('fc_'))
-                    .reduce((obj, key) => {
-                        obj[key] = basePayload[key];
-                        return obj;
-                    }, {});
-
-                finalPayload = {
-                    transactions_type: 'withdrawal',
-                    order: tx.order,
-                    url_notify: (process.env.VITA_NOTIFY_URL || basePayload.url_notify || '').trim(),
-                    wallet: vita.walletUUID,
-
-                    // ✅ FIX: 'currency' defines the SOURCE wallet (CLP), not destination!
-                    currency: (freshQuote.originCurrency || basePayload.currency || 'CLP').toLowerCase(),
-                    country: (destCountry || basePayload.country || '').toUpperCase(),
-
-                    // ✅ PROFIT RETENTION FIX:
-                    // Send exactly the CLP amount required to output the promised COP.
-                    // Instead of sending the full clpWithFee to Vita (which gives away our spread),
-                    // we send: (Promised Dest Amount) / (Vita's pure exchange rate)
-                    amount: Math.round(Number(tx.amountsTracking.destReceiveAmount) / (freshQuote.rateTracking?.vitaRate || 1)),
-
-                    // Beneficiary Data
-                    beneficiary_type: basePayload.beneficiary_type,
-                    beneficiary_first_name: basePayload.beneficiary_first_name,
-                    beneficiary_last_name: basePayload.beneficiary_last_name,
-                    beneficiary_email: basePayload.beneficiary_email,
-                    beneficiary_address: basePayload.beneficiary_address || 'N/A',
-                    beneficiary_document_type: basePayload.beneficiary_document_type,
-                    beneficiary_document_number: basePayload.beneficiary_document_number,
-
-                    // Bank Data
-                    account_type_bank: basePayload.account_type_bank,
-                    account_bank: basePayload.account_bank,
-                    bank_code: basePayload.bank_code ? Number(basePayload.bank_code) : undefined,
-
-                    // Metadata
-                    purpose: basePayload.purpose,
-                    purpose_comentary: basePayload.purpose_comentary || 'Pago manual',
-
-                    // Compliance
-                    ...complianceFields
-                };
-
-                // 🧹 HELPER: Remove undefined/null/empty strings from payload
-                // Mirrors 'withdrawals.js' / 'buildFinalCustomerData' logic
-                const cleanObject = (obj) => {
-                    return Object.fromEntries(
-                        Object.entries(obj).filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== '')
-                    );
-                };
-
-                finalPayload = cleanObject(finalPayload);
-
-                // Validation Warning
-                if (!finalPayload.wallet) {
-                    console.warn('[treasury] ⚠️ ADVERTENCIA: wallet (UUID) no está definido en el payload. La transacción podría fallar.');
-                }
-
-                // SECURITY: NO loguear payload completo (contiene PII)
-                // Solo loguear estructura sin datos sensibles
-                if (process.env.NODE_ENV === 'development') {
-                    const safePayloadSummary = {
-                        transactions_type: finalPayload.transactions_type,
-                        order: finalPayload.order,
-                        currency: finalPayload.currency,
-                        country: finalPayload.country,
-                        amount: finalPayload.amount,
-                        hasWallet: !!finalPayload.wallet,
-                        hasBeneficiary: !!finalPayload.beneficiary_first_name,
-                        hasAccountNumber: !!finalPayload.account_number,
-                        fieldCount: Object.keys(finalPayload).length
+                    tx.rateTracking = {
+                        vitaRate: Number(liveVitaRate.toFixed(4)),
+                        alytoRate: Number((freshQuote.rateTracking?.alytoRate || freshQuote.rate || liveVitaRate).toFixed(4)),
+                        spreadPercent: freshQuote.rateTracking?.spreadPercent || 0,
+                        profitDestCurrency: Math.round(profitCLPNonBOB * liveVitaRate)
                     };
-                    console.log('[treasury] 📦 Payload Summary (Sanitized):', safePayloadSummary);
-                }
 
-                console.log('[treasury] 📦 Payload RECONSTRUIDO (Clean):', JSON.stringify(finalPayload, null, 2));
-            } else {
-                console.warn('[treasury] ⚠️ Error en respuesta de quote, usando valores guardados');
+                    tx.amountsTracking = {
+                        ...tx.amountsTracking,
+                        profitOriginCurrency: Number(profitCLPNonBOB.toFixed(0)),
+                        profitDestCurrency: Math.round(profitCLPNonBOB * liveVitaRate)
+                    };
+
+                    await tx.save();
+
+                    finalPayload = Object.fromEntries(Object.entries({
+                        transactions_type: 'withdrawal',
+                        order: tx.order,
+                        url_notify: (process.env.VITA_NOTIFY_URL || basePayload2.url_notify || '').trim(),
+                        wallet: vita.walletUUID,
+                        currency: (freshQuote.originCurrency || 'CLP').toLowerCase(),
+                        country: destCountry.toUpperCase(),
+                        amount: liveClpNeeded,
+                        beneficiary_type: basePayload2.beneficiary_type,
+                        beneficiary_first_name: basePayload2.beneficiary_first_name,
+                        beneficiary_last_name: basePayload2.beneficiary_last_name,
+                        beneficiary_email: basePayload2.beneficiary_email,
+                        beneficiary_address: basePayload2.beneficiary_address || 'N/A',
+                        beneficiary_document_type: basePayload2.beneficiary_document_type,
+                        beneficiary_document_number: basePayload2.beneficiary_document_number,
+                        account_type_bank: basePayload2.account_type_bank,
+                        account_bank: basePayload2.account_bank,
+                        bank_code: basePayload2.bank_code ? Number(basePayload2.bank_code) : undefined,
+                        purpose: basePayload2.purpose,
+                        purpose_comentary: basePayload2.purpose_comentary || 'Pago manual',
+                        ...complianceFields2
+                    }).filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== ''));
+                }
+            } catch (quoteErr) {
+                console.warn('[treasury] ⚠️ Error refrescando quote non-BOB:', quoteErr.message);
             }
-        } catch (quoteError) {
-            console.warn('[treasury] ⚠️ Error refrescando quote:', quoteError.message);
-            console.warn('[treasury] Continuando con valores guardados del payload original');
-            // No bloqueamos la aprobación si falla el refresh
         }
 
         // Ejecutar envío real en Vita
