@@ -325,65 +325,75 @@ router.get('/alyto-admin-summary', async (req, res) => {
 });
 
 // GET /api/prices/bob-summary - Bolivia (BOB) rates to all supported countries
-// Derived via cross-rate: BOB→CLP (inverted CLP→BOB rate) × CLP→dest
+// Uses the SAME BOB→CLP base rate as fx.js (boConfig.manualExchangeRate)
+// to ensure the marquee rate matches what the user actually gets on quote.
 router.get('/bob-summary', async (req, res) => {
   try {
     console.log('\n🇧🇴 [BobSummary] Iniciando cálculo de tasas BOB...');
     const TransactionConfig = (await import('../models/TransactionConfig.js')).default;
-    const Markup = (await import('../models/Markup.js')).default;
     const allRates = await getListPrices();
 
-    // 1. Obtener la tasa CLP→BOB manual (almacenada en config de Chile)
-    const clConfig = await TransactionConfig.findOne({ originCountry: 'CL' });
-    const boliviaDest = clConfig?.destinations?.find(d => d.countryCode === 'BO' && d.isEnabled);
+    // ── Fuente autoritativa: config de Bolivia origen (misma que usa fx.js) ──
+    // boConfig.manualExchangeRate = X CLP por 1 BOB (ej: 95)
+    // boConfig.feeAmount = margen % que se aplica sobre esa tasa (ej: 3)
+    const boConfig = await TransactionConfig.findOne({ originCountry: 'BO', isEnabled: true });
 
-    if (!boliviaDest || !boliviaDest.manualExchangeRate || boliviaDest.manualExchangeRate <= 0) {
+    if (!boConfig || !boConfig.manualExchangeRate || boConfig.manualExchangeRate <= 0) {
+      console.warn('[BobSummary] No hay config activa para BO. Rates vacías.');
       return res.json({ ok: true, data: { lastUpdate: new Date().toISOString(), rates: [] } });
     }
 
-    const clpToBob = Number(boliviaDest.manualExchangeRate); // e.g., 0.0075 (1 CLP = 0.0075 BOB)
-    const bobToClp = 1 / clpToBob; // e.g., 133.33 (1 BOB = 133.33 CLP)
+    // Tasa base BOB→CLP: MISMA que usa fx.js
+    const bobToClpBase = Number(boConfig.manualExchangeRate);  // ej: 95 CLP/BOB (sin margen)
+    const feeAmount = Number(boConfig.feeAmount || 0);
+    const feeType = boConfig.feeType || 'percentage';
 
-    console.log(`   [BOB] CLP→BOB: ${clpToBob} | BOB→CLP: ${bobToClp.toFixed(4)}`);
+    // Tasa ajustada (con margen): lo que ve el cliente
+    const adjustedBobToClp = feeType === 'percentage'
+      ? bobToClpBase * (1 - feeAmount / 100)
+      : bobToClpBase;                   // feeType=fixed: no se aplica a la tasa
 
-    // 2. Obtener tasas CLP→destination de Vita (filtrar BO)
+    console.log(`   [BOB] Base: ${bobToClpBase} CLP/BOB | Fee: ${feeAmount}% | Ajustada: ${adjustedBobToClp.toFixed(4)} CLP/BOB`);
+
+    // ── Tasas CLP→destino de Vita (excluir BO) ──────────────────────────────
     const clpRates = allRates.filter(r => r.sourceCurrency === 'CLP' && r.code !== 'BO');
 
-    // 3. Calcular BOB→dest mediante cross-rate y aplicar spread
-    const bobSummary = await Promise.all(clpRates.map(async (r) => {
-      const destCountry = r.code;
+    // ── Cross-rate: BOB→dest = adjustedBobToClp × clpToDest ─────────────────
+    //    NO aplicamos spread adicional: ya está incluido en adjustedBobToClp.
+    //    El fixedCost de Vita se descuenta SOLO en la cotización real (fx.js),
+    //    donde sabemos el monto exacto. En el marquee no lo aplicamos porque
+    //    depende del monto (es un costo fijo, no porcentual).
+    const bobSummary = clpRates.map(r => {
+      const clpToDest = Number(r.rate);
+      const bobRateRaw = adjustedBobToClp * clpToDest;  // COP/BOB para el cliente
 
-      // Buscar markup para esta ruta (misma lógica que alyto-summary)
-      let markup = await Markup.findOne({ originCountry: 'CL', destCountry });
-      if (!markup) markup = await Markup.findOne({ originCountry: 'CL', destCountry: { $exists: false } });
-      if (!markup) markup = await Markup.findOne({ isDefault: true });
-
-      const spreadPercent = markup?.percent || 2.0;
-      const clpToDest = Number(r.rate); // e.g., CLP→USD = 0.001
-
-      // Cross rate: BOB→CLP→dest
-      const baseCrossRate = bobToClp * clpToDest;
-      // Apply spread (same as Alyto for consistency)
-      const bobRate = baseCrossRate * (1 - spreadPercent / 100);
+      if (['CO', 'PE', 'AR', 'US'].includes(r.code)) {
+        console.log(`   [${r.code}] ${adjustedBobToClp.toFixed(4)} BOB→CLP × ${clpToDest} CLP→dest = ${bobRateRaw.toFixed(4)} per BOB`);
+      }
 
       return {
         from: 'BOB',
-        to: destCountry,
-        currency: destCountry,
-        bobRate: bobRate.toFixed(6),    // 1 BOB = how much of destCountry
-        spreadPercent: spreadPercent.toFixed(2),
+        to: r.code,
+        currency: r.code,
+        bobRate: bobRateRaw.toFixed(6),   // 1 BOB = how much of destCountry
+        vitaBaseRate: (bobToClpBase * clpToDest).toFixed(6),  // sin margen (para comparar)
+        spreadPercent: feeAmount.toFixed(2),
         fixedCost: Number(r.fixedCost || 0)
       };
-    }));
+    });
 
-    console.log(`✅ [BobSummary] Tasas calculadas: ${bobSummary.length}\n`);
+    // Filtrar rates positivas
+    const validRates = bobSummary.filter(r => parseFloat(r.bobRate) > 0);
+    console.log(`✅ [BobSummary] Tasas calculadas: ${validRates.length}\n`);
 
     return res.json({
       ok: true,
       data: {
         lastUpdate: new Date().toISOString(),
-        bobToClp: bobToClp.toFixed(4),
-        rates: bobSummary.filter(r => r.bobRate > 0).sort((a, b) => a.to.localeCompare(b.to))
+        bobToClpBase: bobToClpBase.toFixed(4),
+        adjustedBobToClp: adjustedBobToClp.toFixed(4),
+        spreadPercent: feeAmount.toFixed(2),
+        rates: validRates.sort((a, b) => a.to.localeCompare(b.to))
       }
     });
   } catch (error) {
@@ -391,5 +401,6 @@ router.get('/bob-summary', async (req, res) => {
     res.status(500).json({ ok: false, error: error.message });
   }
 });
+
 
 export default router;
