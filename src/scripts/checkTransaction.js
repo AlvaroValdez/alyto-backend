@@ -13,7 +13,7 @@ async function run() {
         await mongoose.connect(mongoUri);
         console.log('Connected to DB');
 
-        const tx = await Transaction.findOne({ order: 'ORD-1772581258244' });
+        const tx = await Transaction.findOne({}).sort({ createdAt: -1 });
         if (!tx) {
             console.log('Transaction not found!');
         } else {
