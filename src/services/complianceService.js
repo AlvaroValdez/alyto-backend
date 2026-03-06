@@ -31,6 +31,24 @@ export async function validateComplianceLimits(userId, amount, currency, country
             return { valid: false, reason: 'Usuario no encontrado' };
         }
 
+        // ── GATE: el usuario debe tener KYC aprobado ────────────────────────
+        // Esta es una segunda línea de defensa — la primera está en withdrawals.js.
+        const kycStatus = user.kyc?.status;
+        if (kycStatus !== 'approved') {
+            const statusMsg = {
+                unverified: 'Tu identidad no ha sido verificada. Sube tus documentos de identidad.',
+                pending: 'Tu verificación está pendiente de revisión por el equipo de Alyto.',
+                review: 'Tu documentación está siendo revisada por el equipo de Alyto.',
+                rejected: `Tu verificación fue rechazada: ${user.kyc?.rejectionReason || 'Sin detalle.'}`,
+            };
+            return {
+                valid: false,
+                reason: statusMsg[kycStatus] || 'Cuenta no verificada.',
+                kycStatus
+            };
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         const kycLevel = user.kyc?.level || 1;
         const levelLimits = limits.kycLevels[`level${kycLevel}`];
 

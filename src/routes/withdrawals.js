@@ -60,6 +60,26 @@ router.post('/', transactionLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Faltan datos obligatorios.' });
     }
 
+    // ⭐ GATE de KYC — El usuario debe estar aprobado por el admin antes de poder transaccionar
+    // req.user viene del middleware de autenticación (JWT), que carga el usuario de BD.
+    const kycStatus = req.user?.kyc?.status;
+    if (kycStatus !== 'approved') {
+      const kycMessages = {
+        unverified: 'Tu identidad aún no ha sido verificada. Por favor completa tu perfil y sube los documentos requeridos.',
+        pending: 'Tu solicitud de verificación está en revisión. Te notificaremos cuando esté aprobada.',
+        review: 'Tu documentación está siendo revisada por nuestro equipo. Te contactaremos pronto.',
+        rejected: `Tu verificación fue rechazada. Motivo: ${req.user?.kyc?.rejectionReason || 'Ver notificación enviada.'}`,
+      };
+      const message = kycMessages[kycStatus] || 'Tu cuenta no está verificada para realizar transacciones.';
+      console.warn(`[withdrawals] ❌ KYC GATE: userId=${userId} status=${kycStatus} — transacción bloqueada`);
+      return res.status(403).json({
+        ok: false,
+        error: message,
+        code: 'KYC_NOT_APPROVED',
+        kycStatus: kycStatus || 'unverified'
+      });
+    }
+
     // ⭐ VALIDACIÓN DE CUMPLIMIENTO
     const { SUPPORTED_ORIGINS } = await import('../data/supportedOrigins.js');
     const inferredOriginCountry = SUPPORTED_ORIGINS.find(o => o.currency === String(currency).toUpperCase())?.code || 'CL';

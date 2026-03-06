@@ -111,7 +111,9 @@ userSchema.pre('save', async function (next) {
     }
   }
 
-  // Lógica automática Nivel 1: Si tiene datos básicos, es Nivel 1
+  // Lógica automática Nivel 1: Si tiene datos básicos, se marca el perfil completo
+  // IMPORTANTE: El nivel puede avanzar automáticamente con datos personales,
+  // pero kyc.status NO se toca aquí — debe ser aprobado manualmente por el admin.
   const hasIndividualData = this.firstName && this.lastName && this.documentNumber && this.phoneNumber && this.address;
   const hasBusinessData = this.business?.name && this.business?.taxId && this.business?.registeredAddress;
 
@@ -119,10 +121,11 @@ userSchema.pre('save', async function (next) {
 
   if (hasBasicData) {
     this.isProfileComplete = true;
-    // Si estaba en nivel 0, lo subimos a 1 automáticamente
+    // Solo avanzamos el nivel numérico si estaba en 0,
+    // pero el STATUS permanece 'unverified' hasta aprobación manual del admin.
     if (this.kyc.level < 1) {
       this.kyc.level = 1;
-      this.kyc.status = 'approved'; // El nivel 1 es automático
+      // ⚠️ NO auto-approvamos: this.kyc.status permanece 'unverified'
     }
   } else {
     this.isProfileComplete = false;
