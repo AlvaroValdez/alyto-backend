@@ -5,7 +5,9 @@ const connectMongo = async () => {
   const uri = process.env.MONGO_URI;
 
   if (!uri) {
-    console.error('[mongo] ERROR: No está definida la variable MONGO_URI');
+    const msg = '[mongo] ERROR: No está definida la variable MONGO_URI';
+    console.error(msg);
+    if (process.env.NODE_ENV === 'test') throw new Error(msg);
     process.exit(1);
   }
 
@@ -15,6 +17,7 @@ const connectMongo = async () => {
     console.log('[mongo] Conectado a MongoDB');
   } catch (err) {
     console.error('[mongo] Error de conexión:', err);
+    if (process.env.NODE_ENV === 'test') throw err;
     process.exit(1);
   }
 };

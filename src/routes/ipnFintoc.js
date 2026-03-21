@@ -53,8 +53,9 @@ router.post('/', async (req, res) => {
             const transaction = await Transaction.findOne({ order: orderId });
 
             if (!transaction) {
-                console.error(`❌ [Fintoc IPN] Transacción no encontrada: ${orderId}`);
-                return res.status(404).json({ ok: false, error: 'Transaction not found' });
+                console.warn(`⚠️ [Fintoc IPN] Transacción no encontrada: ${orderId}`);
+                // Retornar 200 para que Fintoc no reintente indefinidamente
+                return res.json({ ok: true, message: 'Transaction not found, ignoring' });
             }
 
             console.log(`✅ [Fintoc IPN] Pago confirmado para orden: ${orderId}`);
@@ -80,6 +81,19 @@ router.post('/', async (req, res) => {
 
             // 🚀 EJECUTAR WITHDRAWAL INMEDIATO (si hay payload diferido)
             if (transaction.deferredWithdrawalPayload && transaction.payoutStatus === 'pending') {
+                // 🔒 Atomic claim: evita doble ejecución en IPNs concurrentes
+                const claimed = await Transaction.findOneAndUpdate(
+                    { _id: transaction._id, payoutStatus: 'pending' },
+                    { $set: { payoutStatus: 'claiming' } },
+                    { new: false }
+                );
+
+                if (!claimed) {
+                    console.log(`[Fintoc IPN] ⚠️ Withdrawal ya reclamado para orden: ${orderId}. Ignorando duplicado.`);
+                    await transaction.save();
+                    return res.json({ ok: true, message: 'Payment processed (withdrawal already in progress)' });
+                }
+
                 console.log(`[Fintoc IPN] ⭐ Ejecutando withdrawal diferido para orden: ${orderId}`);
 
                 try {

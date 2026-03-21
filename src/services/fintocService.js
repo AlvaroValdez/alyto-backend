@@ -126,8 +126,12 @@ export async function createWidgetLink(params) {
 export function verifyFintocWebhook(payload, signature) {
     try {
         if (!FINTOC_WEBHOOK_SECRET) {
-            console.warn('⚠️ [fintocService] FINTOC_WEBHOOK_SECRET no configurado. Saltando verificación.');
-            return true; // En desarrollo, permitir sin verificación
+            if (process.env.NODE_ENV === 'production') {
+                console.error('❌ [fintocService] FINTOC_WEBHOOK_SECRET no configurado en producción. Rechazando webhook.');
+                return false;
+            }
+            console.warn('⚠️ [fintocService] FINTOC_WEBHOOK_SECRET no configurado. Saltando verificación en desarrollo/test.');
+            return true;
         }
 
         if (!signature) {

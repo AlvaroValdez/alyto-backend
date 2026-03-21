@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "cross-env NODE_ENV=development nodemon src/server.js",
     "seed": "node scripts/seed.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "vitest run --reporter verbose",
+    "test:watch": "vitest --reporter verbose"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",
@@ -39,7 +41,11 @@
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "vitest": "^2.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "supertest": "^7.0.0",
+    "nock": "^13.5.0"
   },
   "keywords": [
     "alyto",

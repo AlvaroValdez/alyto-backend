@@ -617,6 +617,11 @@ router.post('/', transactionLimiter, async (req, res) => {
   } catch (e) {
     console.error('❌ [withdrawals] Error Final:', e);
 
+    // MongoDB duplicate key (ej: order ID ya existe)
+    if (e.code === 11000) {
+      const field = Object.keys(e.keyPattern || {})[0] || 'order';
+      return res.status(409).json({ ok: false, error: `Ya existe una transacción con ese ${field}.`, code: 'DUPLICATE_ORDER' });
+    }
     if (e.response) {
       return res.status(e.response.status).json({
         ok: false,

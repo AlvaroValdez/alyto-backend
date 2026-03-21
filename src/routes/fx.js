@@ -99,6 +99,10 @@ router.get('/quote', async (req, res) => {
     const prices = await getListPrices();
     const inputAmount = Number(amount);
 
+    if (!isFinite(inputAmount) || inputAmount <= 0) {
+      return res.status(400).json({ ok: false, error: 'El monto debe ser un número positivo' });
+    }
+
     // 2) Encontrar tasa destino (flexible)
     const targetCode = destCountry.toUpperCase();
     const priceData = prices.find(p => {

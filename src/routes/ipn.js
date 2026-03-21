@@ -1,5 +1,5 @@
 // backend/src/routes/ipn.js
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { verifyVitaSignature } from '../middleware/vitaSignature.js';
 import VitaEvent from '../models/VitaEvent.js';
 import Transaction from '../models/Transaction.js';
@@ -15,7 +15,13 @@ import {
 
 const router = Router();
 
-router.post('/vita', verifyVitaSignature, async (req, res) => {
+// Body parser necesario — esta ruta se monta ANTES de express.json() en app.js
+router.use(express.json());
+
+// FIX: ruta '/' porque el mount point ya incluye '/api/ipn/vita'
+// VITA_NOTIFY_URL apunta a /api/ipn/vita — con router.post('/vita') el endpoint
+// real sería /api/ipn/vita/vita (doble). Corregido a '/'.
+router.post('/', verifyVitaSignature, async (req, res) => {
   const event = req.body;
 
   // Logs para depuración en Render
@@ -168,30 +174,31 @@ router.post('/vita', verifyVitaSignature, async (req, res) => {
       const { createWithdrawal, forceRefreshPrices } = await import('../services/vitaService.js');
       const { vita } = await import('../config/env.js');
 
+      // Declarar fuera del try para que el bloque catch tenga acceso en el retry
+      const withdrawalPayload = {
+        url_notify: vita.notifyUrl || 'https://google.com',
+        currency: String(metadata.destination.currency).toLowerCase(),
+        country: String(metadata.destination.country).toUpperCase(),
+        amount: Number(metadata.destination.amount),
+        order: event.order,
+        transactions_type: 'withdrawal',
+        wallet: vita.walletUUID,
+
+        beneficiary_type: metadata.beneficiary.type || 'person',
+        beneficiary_first_name: metadata.beneficiary.first_name,
+        beneficiary_last_name: metadata.beneficiary.last_name,
+        beneficiary_email: metadata.beneficiary.email,
+        beneficiary_document_type: metadata.beneficiary.document_type,
+        beneficiary_document_number: metadata.beneficiary.document_number,
+        account_type_bank: metadata.beneficiary.account_type_bank,
+        account_bank: metadata.beneficiary.account_bank,
+        bank_code: metadata.beneficiary.bank_code,
+
+        purpose: transaction.purpose || 'EPFAMT',
+        purpose_comentary: transaction.purpose_comentary || 'Transferencia familiar'
+      };
+
       try {
-        const withdrawalPayload = {
-          url_notify: vita.notifyUrl || 'https://google.com',
-          currency: String(metadata.destination.currency).toLowerCase(),
-          country: String(metadata.destination.country).toUpperCase(),
-          amount: Number(metadata.destination.amount),
-          order: event.order,
-          transactions_type: 'withdrawal',
-          wallet: vita.walletUUID,
-
-          beneficiary_type: metadata.beneficiary.type || 'person',
-          beneficiary_first_name: metadata.beneficiary.first_name,
-          beneficiary_last_name: metadata.beneficiary.last_name,
-          beneficiary_email: metadata.beneficiary.email,
-          beneficiary_document_type: metadata.beneficiary.document_type,
-          beneficiary_document_number: metadata.beneficiary.document_number,
-          account_type_bank: metadata.beneficiary.account_type_bank,
-          account_bank: metadata.beneficiary.account_bank,
-          bank_code: metadata.beneficiary.bank_code,
-
-          purpose: transaction.purpose || 'EPFAMT',
-          purpose_comentary: transaction.purpose_comentary || 'Transferencia familiar'
-        };
-
         const withdrawalResp = await createWithdrawal(withdrawalPayload);
         const wData = withdrawalResp?.data ?? withdrawalResp;
 

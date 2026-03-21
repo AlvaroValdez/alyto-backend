@@ -12,6 +12,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 export const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
     max: 5, // 5 intentos por ventana
+    skip: (req) => process.env.NODE_ENV === 'test',
     message: {
         ok: false,
         error: 'Demasiados intentos de inicio de sesión. Por favor, inténtalo nuevamente en 15 minutos.'
@@ -38,6 +39,7 @@ export const loginLimiter = rateLimit({
 export const registerLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hora
     max: 3, // 3 registros por hora por IP
+    skip: (req) => process.env.NODE_ENV === 'test',
     message: {
         ok: false,
         error: 'Demasiados intentos de registro. Por favor, inténtalo nuevamente más tarde.'
@@ -61,6 +63,7 @@ export const registerLimiter = rateLimit({
 export const passwordResetLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
     max: 3, // 3 intentos por ventana
+    skip: (req) => process.env.NODE_ENV === 'test',
     message: {
         ok: false,
         error: 'Demasiadas solicitudes de recuperación de contraseña. Intenta en 15 minutos.'
@@ -99,8 +102,8 @@ export const transactionLimiter = rateLimit({
         const clientIp = req['ip'];
         return ipKeyGenerator(clientIp, 64);
     },
-    // Omitir rate limit en desarrollo
-    skip: (req) => process.env.NODE_ENV === 'development',
+    // Omitir rate limit en desarrollo y test
+    skip: (req) => ['development', 'test'].includes(process.env.NODE_ENV),
     handler: (req, res) => {
         const identifier = req.user?._id || req['ip'];
         console.warn(`[SECURITY] Transaction rate limit exceeded for: ${identifier}`);
@@ -128,7 +131,7 @@ export const adminTreasuryLimiter = rateLimit({
         const clientIp = req['ip'];
         return req.user?._id ? `admin_${req.user._id}` : ipKeyGenerator(clientIp, 64);
     },
-    skip: (req) => process.env.NODE_ENV === 'development',
+    skip: (req) => ['development', 'test'].includes(process.env.NODE_ENV),
     handler: (req, res) => {
         console.warn(`[SECURITY] Admin treasury rate limit exceeded for: ${req.user?._id || req['ip']}`);
         res.status(429).json({
@@ -145,6 +148,7 @@ export const adminTreasuryLimiter = rateLimit({
 export const kycUploadLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 24 horas
     max: 10, // 10 uploads por día (permite algunos reintentos)
+    skip: (req) => process.env.NODE_ENV === 'test',
     message: {
         ok: false,
         error: 'Has alcanzado el límite diario de subida de documentos.'

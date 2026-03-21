@@ -12,9 +12,11 @@ router.get('/', async (req, res) => {
     const skip = (page - 1) * limit;
 
     // 2. Filtros Dinámicos: Construye un objeto de consulta solo con los filtros que llegan
+    const VALID_STATUSES = ['pending', 'pending_verification', 'pending_manual_payout', 'claiming', 'processing', 'succeeded', 'failed', 'cancelled'];
+    const VALID_COUNTRIES = ['CL', 'CO', 'AR', 'MX', 'BR', 'PE', 'BO', 'US'];
     const filters = {};
-    if (req.query.status) filters.status = req.query.status;
-    if (req.query.country) filters.country = req.query.country;
+    if (req.query.status && VALID_STATUSES.includes(req.query.status)) filters.status = req.query.status;
+    if (req.query.country && VALID_COUNTRIES.includes(req.query.country)) filters.country = req.query.country;
     if (req.query.order) filters.order = req.query.order;
 
     // --- LÓGICA DE ROLES ---
