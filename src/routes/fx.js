@@ -228,13 +228,15 @@ router.get('/quote', async (req, res) => {
       const fintocConfig = config?.fintocConfig || { ufValue: 37500, tier: 1 };
 
       const { calculateFintocFee } = await import('../utils/fintocFees.js');
-      const { fixedFee: fintocFixedFee, percentage: fintocFeePercent } = calculateFintocFee(inputAmount, fintocConfig);
+      // fixedFee es constante (depende del tier/UF, NO del monto)
+      const { fixedFee: fintocFixedFee } = calculateFintocFee(10000, fintocConfig);
 
-      const payinFee = {
+      // Se recalcula tras la lógica bidireccional; inicializamos con valores send-mode
+      let payinFee = {
         grossAmount: inputAmount,
         totalFee: fintocFixedFee,
         netAmount: inputAmount - fintocFixedFee,
-        feePercent: fintocFeePercent
+        feePercent: inputAmount > 0 ? (fintocFixedFee / inputAmount) * 100 : 0
       };
 
       console.log(`💳 [FX-PAYIN] Gross: ${payinFee.grossAmount}, Fee: ${payinFee.totalFee} CLP (${payinFee.feePercent.toFixed(2)}%), Net: ${payinFee.netAmount}`);
@@ -276,50 +278,55 @@ router.get('/quote', async (req, res) => {
 
       console.log(`🔧 [FX-SPREAD] Vita: ${vitaRate.toFixed(4)}, Spread: ${spreadPercent}%, Alyto: ${alytoRate.toFixed(4)}`);
 
-      //--- CALCULADORA BIDIRECCIONAL CON SPREAD (AHORA SOBRE MONTO NETO) ---
-      let principal = 0;           // Monto en CLP (NETO después de payin fees)
+      //--- CALCULADORA BIDIRECCIONAL CON SPREAD ---
+      let principal = 0;           // CLP neto (después de payin fees)
       let destReceiveAmount = 0;   // Monto que recibe el cliente
-      let destGrossAmount = 0;     // Monto bruto (antes de costo Vita)
-      let profitCOP = 0;           // Ganancia en COP
+      let destGrossAmount = 0;     // Monto bruto destino (antes de payout fixed cost)
+      let profitCOP = 0;           // Ganancia en moneda destino
+      let grossOriginAmount = 0;   // CLP bruto que paga el usuario (incluye payin fee)
 
       if (mode === 'receive') {
-        // MODO INVERSO: Usuario dice cuánto quiere que reciban
+        // MODO INVERSO: usuario dice cuánto quiere que reciban
         destReceiveAmount = inputAmount;
-
-        // Calcular cantidad bruta necesaria (antes de fixed cost)
         destGrossAmount = destReceiveAmount + payoutFixedCost;
 
-        // Calcular principal NETO usando tasa Alyto (con spread)
+        // Principal neto necesario (antes de payin fee)
         principal = destGrossAmount / alytoRate;
 
-        // Calcular lo que enviaríamos con tasa real Vita
+        // Revertir payin fee: fee es fijo en CLP, por lo que grossCLP = principal + fixedFee
+        grossOriginAmount = principal + fintocFixedFee;
+
+        // Actualizar payinFee con los valores correctos
+        payinFee = {
+          grossAmount: grossOriginAmount,
+          totalFee: fintocFixedFee,
+          netAmount: principal,
+          feePercent: grossOriginAmount > 0 ? (fintocFixedFee / grossOriginAmount) * 100 : 0
+        };
+
         const vitaGrossAmount = principal * vitaRate;
         profitCOP = vitaGrossAmount - destGrossAmount;
 
       } else {
-        // MODO NORMAL: Usuario dice cuánto envía (BRUTO)
-        // CRÍTICO: Usar monto NETO (después de payin fees) para cálculos
-        principal = payinFee.netAmount;
+        // MODO NORMAL: usuario dice cuánto envía (bruto en CLP)
+        grossOriginAmount = inputAmount;
+        principal = payinFee.netAmount; // = inputAmount - fintocFixedFee
 
-        // Con tasa Alyto (cliente ve)
         destGrossAmount = principal * alytoRate;
         destReceiveAmount = destGrossAmount - payoutFixedCost;
 
-        // Con tasa Vita (real)
         const vitaGrossAmount = principal * vitaRate;
         profitCOP = vitaGrossAmount - destGrossAmount;
       }
 
-      const profitCLP = profitCOP / vitaRate; // Aproximado
+      const profitCLP = profitCOP / vitaRate;
 
-      console.log(`💰 [FX-SPREAD-RESULT] Gross: ${inputAmount} CLP, Net: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} COP`);
-      console.log(`💰 [FX-SPREAD-PROFIT] Profit: ${profitCOP.toFixed(2)} COP (~${profitCLP.toFixed(2)} CLP retained)`);
+      console.log(`💰 [FX-SPREAD-RESULT] Mode: ${mode}, GrossOrigin: ${grossOriginAmount.toFixed(2)} CLP, Net: ${principal.toFixed(2)} CLP, Receive: ${destReceiveAmount.toFixed(2)} ${destCurrency}`);
+      console.log(`💰 [FX-SPREAD-PROFIT] Profit: ${profitCOP.toFixed(2)} ${destCurrency} (~${profitCLP.toFixed(2)} CLP)`);
 
-      // 🎯 TASA EFECTIVA TODO INCLUIDO (absorbe fees de pasarela)
-      // Esta es la tasa que el cliente ve: Cuánto CLP cuesta enviar 1 unidad de destino
-      // Incluye: Fees de pasarela + Spread de Alyto + Costos Vita
-      const effectiveAllInclusiveRate = inputAmount / destReceiveAmount; // CLP por cada 1 COP
-      console.log(`📊 [FX-EFFECTIVE-RATE] All-inclusive: ${effectiveAllInclusiveRate.toFixed(4)} ${originCurrency}/${priceData.code} (absorbe todos los costos)`);
+      // 🎯 TASA EFECTIVA TODO INCLUIDO: CLP bruto por cada 1 unidad destino
+      const effectiveAllInclusiveRate = grossOriginAmount / destReceiveAmount;
+      console.log(`📊 [FX-EFFECTIVE-RATE] All-inclusive: ${effectiveAllInclusiveRate.toFixed(4)} ${originCurrency}/${priceData.code}`);
 
       return res.json({
         ok: true,
@@ -331,9 +338,9 @@ router.get('/quote', async (req, res) => {
           // 🎯 Tasa TODO INCLUIDO que ve el cliente (absorbe fees de pasarela + spread + costos)
           rate: Number(effectiveAllInclusiveRate.toFixed(4)),
 
-          // Montos cliente (BRUTO)
-          amount: Number(inputAmount.toFixed(2)),           // Monto que paga el usuario
-          clpAmountWithFee: Number(inputAmount.toFixed(2)), // Total que paga
+          // Montos cliente
+          amount: Number(grossOriginAmount.toFixed(2)),           // CLP bruto que paga el usuario
+          clpAmountWithFee: Number(grossOriginAmount.toFixed(2)), // Total que paga
           receiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
           amountOut: Number(Math.max(0, destReceiveAmount).toFixed(2)), // Alias for consistency
 
@@ -367,9 +374,9 @@ router.get('/quote', async (req, res) => {
 
           amountsTracking: {
             originCurrency,
-            originPrincipal: Number(principal.toFixed(2)),      // Neto después de payin
-            originFee: payinFee.totalFee,                       // Fee de pasarela
-            originTotal: Number(inputAmount.toFixed(2)),        // Bruto que paga
+            originPrincipal: Number(principal.toFixed(2)),         // Neto después de payin
+            originFee: payinFee.totalFee,                        // Fee de pasarela
+            originTotal: Number(grossOriginAmount.toFixed(2)),   // Bruto que paga
 
             destCurrency: priceData.code,
             destGrossAmount: Number(destGrossAmount.toFixed(2)),
@@ -427,53 +434,58 @@ router.get('/quote', async (req, res) => {
         // (Se manejará después de la conversión)
       }
 
-      // 1. Convertir monto origen a CLP (pivot) usando tasa ajustada
-      const clpAmount = inputAmount * adjustedRate;
+      const payoutFixedCost = Number(priceData.fixedCost || 0);
 
-      console.log(`\n💱 [FX] PASO 1: ${originCurrency} → CLP`);
-      console.log(`├─ Monto origen: ${inputAmount} ${originCurrency}`);
-      console.log(`├─ Tasa base: 1 ${originCurrency} = ${manualRate} CLP`);
-      console.log(`├─ Margen aplicado: ${feeAmount}%`);
-      console.log(`├─ Tasa ajustada: 1 ${originCurrency} = ${adjustedRate.toFixed(4)} CLP (con margen)`);
-      console.log(`└─ Resultado: ${clpAmount.toFixed(2)} CLP\n`);
+      // Variables bidireccionales
+      let totalOriginAmount, clpAmount, finalCLP, grossDestAmount, finalAmount, ourMarginCLP;
 
-      // 2. NO cobramos fee adicional - el usuario paga exactamente lo que ingresó
-      const totalOriginAmount = inputAmount;
+      if (mode === 'receive') {
+        // MODO INVERSO: usuario dice cuánto quiere que reciban en destino
+        finalAmount = inputAmount;
+        grossDestAmount = finalAmount + payoutFixedCost;
 
-      // Para efectos internos, calculamos cuánto es nuestro margen (en CLP)
-      const ourMarginCLP = (manualRate - adjustedRate) * inputAmount;
-      console.log(`💰 [FX] Margen Alyto: ${ourMarginCLP.toFixed(2)} CLP (oculto en la tasa)`);
+        // Paso 2 inverso: destino → CLP
+        finalCLP = grossDestAmount / clpToDestRate;
 
-      // 3. Si hay fee fijo, lo descontamos del CLP
-      let finalCLP = clpAmount;
-      if (feeType === 'fixed' && feeAmount > 0) {
-        finalCLP = clpAmount - feeAmount;
-        console.log(`💸 [FX] Fee fijo descontado: ${feeAmount} CLP`);
+        // Paso 1 inverso: CLP → origen
+        let clpBeforeFee = finalCLP;
+        if (feeType === 'fixed' && feeAmount > 0) {
+          clpBeforeFee = finalCLP + feeAmount;
+        }
+        clpAmount = clpBeforeFee;
+        totalOriginAmount = clpAmount / adjustedRate;
+        ourMarginCLP = (manualRate - adjustedRate) * totalOriginAmount;
+
+      } else {
+        // MODO NORMAL: usuario dice cuánto envía
+        totalOriginAmount = inputAmount;
+
+        // Paso 1: origen → CLP
+        clpAmount = inputAmount * adjustedRate;
+        ourMarginCLP = (manualRate - adjustedRate) * inputAmount;
+
+        // Paso 2: aplicar fee fijo si corresponde
+        finalCLP = clpAmount;
+        if (feeType === 'fixed' && feeAmount > 0) {
+          finalCLP = clpAmount - feeAmount;
+        }
+
+        // Paso 3: CLP → destino
+        grossDestAmount = finalCLP * clpToDestRate;
+        finalAmount = grossDestAmount - payoutFixedCost;
       }
 
-      // 4. Convertir a Destino usando tasa Vita (CLP → Destino)
-      const grossDestAmount = finalCLP * clpToDestRate;
-
-      console.log(`💱 [FX] PASO 2: CLP → ${priceData.code}`);
-      console.log(`├─ Monto CLP: ${finalCLP.toFixed(2)}`);
-      console.log(`├─ Tasa Vita: 1 CLP = ${clpToDestRate.toFixed(4)} ${priceData.code}`);
-      console.log(`└─ Resultado bruto: ${grossDestAmount.toFixed(2)} ${priceData.code}\n`);
-
-      // 5. Descontar costo fijo de payout (en destino)
-      const payoutFixedCost = Number(priceData.fixedCost || 0);
-      const finalAmount = grossDestAmount - payoutFixedCost;
-
-      console.log(`📊 [FX] RESUMEN FINAL:`);
-      console.log(`├─ Usuario envía: ${inputAmount} ${originCurrency}`);
-      console.log(`├─ Equivalente CLP: ${clpAmount.toFixed(2)} (antes de fee fijo)`);
-      console.log(`├─ CLP final: ${finalCLP.toFixed(2)} (después de fee fijo si aplica)`);
-      console.log(`├─ Margen Alyto: ${ourMarginCLP.toFixed(2)} CLP (${feeAmount}%)`);
+      console.log(`\n📊 [FX] RESUMEN FINAL (mode=${mode}):`);
+      console.log(`├─ Usuario envía: ${totalOriginAmount.toFixed(4)} ${originCurrency}`);
+      console.log(`├─ CLP equivalente: ${clpAmount.toFixed(2)} (ajustado con margen)`);
+      console.log(`├─ CLP final: ${finalCLP.toFixed(2)}`);
+      console.log(`├─ Margen Alyto: ${ourMarginCLP.toFixed(2)} CLP`);
       console.log(`├─ Bruto destino: ${grossDestAmount.toFixed(2)} ${priceData.code}`);
-      console.log(`├─ Costo Vita: ${payoutFixedCost.toFixed(2)} ${priceData.code}`);
+      console.log(`├─ Costo payout: ${payoutFixedCost.toFixed(2)} ${priceData.code}`);
       console.log(`└─ Usuario recibe: ${finalAmount.toFixed(2)} ${priceData.code}\n`);
 
       // Calcular tasa efectiva BOB→Destino para mostrar al usuario
-      const effectiveRate = finalAmount / inputAmount;
+      const effectiveRate = totalOriginAmount > 0 ? finalAmount / totalOriginAmount : 0;
 
       return res.json({
         ok: true,
@@ -485,8 +497,8 @@ router.get('/quote', async (req, res) => {
           currency: priceData.code,            // COP (legacy)
 
           // Montos principales
-          amount: inputAmount,                 // 1,000 BOB (lo que ingresó el usuario)
-          amountIn: totalOriginAmount,         // 1,000 BOB (SIN fee adicional visible)
+          amount: Number(totalOriginAmount.toFixed(4)),        // BOB que paga el usuario
+          amountIn: Number(totalOriginAmount.toFixed(4)),      // BOB que paga el usuario
           amountOut: Number(Math.max(0, finalAmount).toFixed(2)), // Monto final en COP
           receiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Alias
 
@@ -532,10 +544,10 @@ router.get('/quote', async (req, res) => {
           },
 
           amountsTracking: {
-            originCurrency: originCurrency,                          // BOB
-            originPrincipal: Number(inputAmount.toFixed(2)),         // 1,000 BOB
-            originFee: 0,                                            // No visible fee
-            originTotal: Number(totalOriginAmount.toFixed(2)),       // 1,000 BOB
+            originCurrency: originCurrency,                           // BOB
+            originPrincipal: Number(totalOriginAmount.toFixed(4)),   // BOB que paga
+            originFee: 0,                                             // No visible fee
+            originTotal: Number(totalOriginAmount.toFixed(4)),        // BOB que paga
 
             destCurrency: priceData.code,                            // COP
             destGrossAmount: Number(grossDestAmount.toFixed(2)),     // Before payout cost

@@ -235,18 +235,36 @@ export const notifyTransactionFailed = async (transaction, reason = 'Error desco
 // ─────────────────────────────────────────────
 export const notifyKycResult = async (user, approved, reason = '') => {
   const userId = user._id;
-  if (approved) {
-    pushSilent(notifyUser(userId, {
-      title: '✅ Verificación aprobada',
-      body: 'Tu identidad fue verificada. Ahora tienes límites ampliados.',
-      data: { type: 'kyc_approved' }
-    }));
-  } else {
-    pushSilent(notifyUser(userId, {
-      title: '❌ Verificación rechazada',
-      body: `Tu solicitud fue rechazada. Motivo: ${reason || 'Documentos no válidos'}`,
-      data: { type: 'kyc_rejected' }
-    }));
+  const statusLabel = approved ? '✅ Aprobado' : '❌ Rechazado';
+
+  // Push al usuario
+  pushSilent(notifyUser(userId, {
+    title: `KYC ${statusLabel}`,
+    body: approved
+      ? '¡Tu identidad fue verificada! Ya puedes enviar dinero sin restricciones.'
+      : `Tu solicitud fue rechazada. Motivo: ${reason || 'Documentos no válidos'}`,
+    data: { type: approved ? 'kyc_approved' : 'kyc_rejected' }
+  }));
+
+  // Email al usuario
+  if (user.email) {
+    const html = emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">Verificación de Identidad ${statusLabel}</h2>
+      <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Actualización de tu cuenta Alyto</p>
+      <p>Hola <strong>${user.name || user.email}</strong>,</p>
+      ${approved
+        ? `<p>Tu identidad ha sido verificada exitosamente. Ya puedes realizar envíos con los límites completos de tu nivel.</p>
+           ${infoBox('<strong>¡Bienvenido a Alyto verificado!</strong> Inicia sesión y comienza a enviar.', '#00A89D')}`
+        : `<p>Lamentablemente tu solicitud de verificación fue rechazada.</p>
+           ${reason ? infoBox(`<strong>Motivo:</strong> ${reason}`, '#dc3545') : ''}
+           <p>Puedes corregir tus documentos y volver a enviarlos desde tu perfil.</p>`
+      }
+    `);
+    sendEmail({
+      to: user.email,
+      subject: `Verificación KYC ${statusLabel} — Alyto`,
+      html,
+    }).catch(err => console.error('[notifyKycResult] Email error:', err.message));
   }
 };
 
