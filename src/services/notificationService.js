@@ -92,7 +92,7 @@ export const notifyOrderCreated = async ({ orderId, amount, country, email, user
   if (userId) pushSilent(notifyUser(userId, {
     title: '💸 Envío iniciado',
     body: `Tu orden #${orderId} fue creada. Completa el pago para continuar.`,
-    data: { type: 'order_created', orderId }
+    data: { type: 'order_created', orderId, url: '/transactions' }
   }));
 };
 
@@ -117,7 +117,7 @@ export const notifyPayinSuccess = async (transaction) => {
   if (userId) pushSilent(notifyUser(userId, {
     title: '✅ Pago recibido',
     body: `Recibimos tu pago. Procesando envío de la orden #${transaction.order}.`,
-    data: { type: 'payin_success', orderId: transaction.order }
+    data: { type: 'payin_success', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -131,7 +131,7 @@ export const notifyPayoutProcessing = async (transaction) => {
   pushSilent(notifyUser(userId, {
     title: '🚀 Enviando dinero',
     body: `Tu envío de la orden #${transaction.order} está en camino.`,
-    data: { type: 'payout_processing', orderId: transaction.order }
+    data: { type: 'payout_processing', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -160,7 +160,7 @@ export const notifyPayoutSuccess = async (transaction) => {
   if (userId) pushSilent(notifyUser(userId, {
     title: '🎉 ¡Envío completado!',
     body: `Tu beneficiario recibió el dinero de la orden #${transaction.order}.`,
-    data: { type: 'payout_success', orderId: transaction.order }
+    data: { type: 'payout_success', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -187,7 +187,7 @@ export const notifyManualPayoutCompleted = async (transaction) => {
   if (userId) pushSilent(notifyUser(userId, {
     title: '🎉 Transferencia enviada',
     body: `Tu envío fue completado. Revisa el comprobante bancario.`,
-    data: { type: 'manual_payout_complete', orderId: transaction.order }
+    data: { type: 'manual_payout_complete', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -201,7 +201,7 @@ export const notifyProofUploaded = async (transaction) => {
   pushSilent(notifyUser(userId, {
     title: '📄 Comprobante listo',
     body: `Ya puedes ver el comprobante de tu transferencia #${transaction.order}.`,
-    data: { type: 'proof_uploaded', orderId: transaction.order }
+    data: { type: 'proof_uploaded', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -226,7 +226,7 @@ export const notifyTransactionFailed = async (transaction, reason = 'Error desco
   if (userId) pushSilent(notifyUser(userId, {
     title: '❌ Problema con tu envío',
     body: `Hubo un inconveniente con la orden #${transaction.order}. Contáctanos.`,
-    data: { type: 'transaction_failed', orderId: transaction.order }
+    data: { type: 'transaction_failed', orderId: transaction.order, url: '/transactions' }
   }));
 };
 
@@ -243,7 +243,7 @@ export const notifyKycResult = async (user, approved, reason = '') => {
     body: approved
       ? '¡Tu identidad fue verificada! Ya puedes enviar dinero sin restricciones.'
       : `Tu solicitud fue rechazada. Motivo: ${reason || 'Documentos no válidos'}`,
-    data: { type: approved ? 'kyc_approved' : 'kyc_rejected' }
+    data: { type: approved ? 'kyc_approved' : 'kyc_rejected', url: '/profile' }
   }));
 
   // Email al usuario

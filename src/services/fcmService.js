@@ -43,11 +43,18 @@ const initFirebase = () => {
 // Inicializar al importar
 initFirebase();
 
+// Exponer estado de inicialización para diagnóstico
+export const isFcmReady = () => initialized;
+
 /**
  * Enviar push a un dispositivo específico por token
  */
 export const sendPushNotification = async ({ token, title, body, data = {} }) => {
     if (!token) return { skipped: true, reason: 'no_token' };
+    if (!initialized) {
+        console.error('[FCM] ⚠️ Firebase Admin no está inicializado — push NO enviada. Verifica FIREBASE_SERVICE_ACCOUNT o el archivo de service account.');
+        return { skipped: true, reason: 'firebase_not_initialized' };
+    }
 
     try {
         // Convertir todos los valores de data a strings (requerido por FCM)
