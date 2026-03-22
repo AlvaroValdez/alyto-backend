@@ -117,10 +117,9 @@ router.get('/quote', async (req, res) => {
 
     // --- LOGICA MANUAL DE DESTINO (SPREAD MODEL) ---
     if (destOverride && destOverride.manualExchangeRate > 0) {
-      console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}`);
+      console.log(`[FX] Usando tasa manual (Spread) para ${safeOriginCountry} -> ${targetCode}, mode=${mode}`);
 
       const manualExchangeRate = Number(destOverride.manualExchangeRate);
-      const inputCLP = inputAmount;
 
       // 1. Margen
       let marginPercent = 0;
@@ -131,12 +130,21 @@ router.get('/quote', async (req, res) => {
       // 2. Tasa Cliente (con margen incluido)
       const clientRate = manualExchangeRate * (1 - marginPercent);
 
-      // 3. Monto Recibir Bruto (lo que se envía al beneficiario antes de fees)
-      const grossReceiveAmount = inputCLP * clientRate;
-
       // 4. Payout Fixed Fee
       const payoutFixedCost = Number(destOverride.payoutFixedFee || 0);
-      const finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
+
+      // 3. Cálculo bidireccional
+      let inputCLP, grossReceiveAmount, finalReceiveAmount;
+      if (mode === 'receive') {
+        // MODO INVERSO: usuario dice cuánto quiere que reciban
+        finalReceiveAmount = inputAmount;
+        grossReceiveAmount = finalReceiveAmount + payoutFixedCost;
+        inputCLP = grossReceiveAmount / clientRate;
+      } else {
+        inputCLP = inputAmount;
+        grossReceiveAmount = inputCLP * clientRate;
+        finalReceiveAmount = grossReceiveAmount - payoutFixedCost;
+      }
 
       // 5. Calcular Ganancia (Profit)
       // La ganancia es la diferencia entre la tasa base y la tasa con margen
