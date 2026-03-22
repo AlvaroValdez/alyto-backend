@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { notifyAdminNewKyc, notifyKycDocsReceived } from '../services/notificationService.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
@@ -7,8 +6,8 @@ import { jwtSecret, jwtExpiresIn } from '../config/env.js';
 import { sendEmail, getVerificationEmailTemplate } from '../services/emailService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
-import { notifyAdminNewUser, notifyWelcomeUser, notifyAdminNewKyc } from '../services/notificationService.js';
-import { notifyUser } from '../services/fcmService.js';
+import { notifyAdminNewUser, notifyWelcomeUser, notifyAdminNewKyc, notifyKycDocsReceived } from '../services/notificationService.js';
+import { notifyUser, sendPushNotification } from '../services/fcmService.js';
 import {
   loginLimiter,
   registerLimiter,
@@ -532,7 +531,23 @@ router.put('/fcm-token', protect, async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ ok: false, error: 'token es requerido' });
+
+    // Detectar si es el primer token del usuario (para enviar bienvenida)
+    const existing = await User.findById(req.user._id).select('fcmToken');
+    const isFirstToken = !existing?.fcmToken;
+
     await User.findByIdAndUpdate(req.user._id, { fcmToken: token, fcmTokenUpdatedAt: new Date() });
+
+    // Enviar push de bienvenida la primera vez que el usuario registra un dispositivo
+    if (isFirstToken) {
+      sendPushNotification({
+        token,
+        title: '👋 ¡Bienvenido a Alyto!',
+        body: 'Tu cuenta está lista. Completa tu perfil para empezar a enviar dinero.',
+        data: { type: 'welcome' }
+      }).catch(() => { });
+    }
+
     res.json({ ok: true, message: 'FCM token registrado' });
   } catch (error) {
     console.error('[auth/fcm-token] Error:', error.message);
