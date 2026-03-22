@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { notifyAdminNewKyc, notifyKycDocsReceived } from '../services/notificationService.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
@@ -406,6 +407,8 @@ router.post('/kyc-documents', protect, kycUploadLimiter, (req, res, next) => {
 
     // 🔔 A3 — Notificar admins: nuevo KYC pendiente
     notifyAdminNewKyc(user).catch(() => { });
+    // 🔔 U-KYC — Confirmar al usuario que sus docs fueron recibidos
+    notifyKycDocsReceived(user).catch(() => { });
 
     res.json({
       ok: true,

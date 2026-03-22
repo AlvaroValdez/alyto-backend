@@ -349,6 +349,39 @@ export const notifyAdminNewKyc = async (user) => {
 };
 
 // ─────────────────────────────────────────────
+// U-KYC — Confirmación de recepción de docs KYC al usuario
+// ─────────────────────────────────────────────
+export const notifyKycDocsReceived = async (user) => {
+  if (!user?.email) return;
+
+  const html = emailWrapper(`
+    <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">📄 Documentos Recibidos</h2>
+    <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Verificación KYC en proceso</p>
+    <p>Hola <strong>${user.name || user.email}</strong>,</p>
+    <p>Hemos recibido tus documentos de identidad correctamente. Nuestro equipo de compliance los revisará en las próximas horas.</p>
+    ${infoBox(`
+      <strong>Estado actual:</strong> <span style="color:#e67e22;">⏳ En Revisión</span><br>
+      Te notificaremos por este correo y por la app cuando tu cuenta sea verificada.
+    `, '#F5C400')}
+    <p style="color:#666;font-size:13px;">Si tienes dudas, contáctanos en <a href="mailto:soporte@alyto.app">soporte@alyto.app</a>.</p>
+  `);
+
+  // Email de confirmación
+  sendEmail({
+    to: user.email,
+    subject: '📄 Documentos KYC recibidos — Alyto',
+    html,
+  }).catch(err => console.error('[notifyKycDocsReceived] Email error:', err.message));
+
+  // Push opcional al usuario
+  pushSilent(notifyUser(user._id?.toString(), {
+    title: '📄 Documentos recibidos',
+    body: 'Tus documentos KYC fueron recibidos. Te notificaremos el resultado pronto.',
+    data: { type: 'kyc_docs_received' }
+  }));
+};
+
+// ─────────────────────────────────────────────
 // U13 — Límite de compliance alcanzado
 // ─────────────────────────────────────────────
 export const notifyComplianceLimitReached = async (userId, amount, currency) => {
