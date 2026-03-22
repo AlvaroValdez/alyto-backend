@@ -73,7 +73,12 @@ router.post('/register', registerLimiter, async (req, res) => {
     await newUser.save();
 
     // 3. Enviar correo (Con validación de éxito)
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+    // Nunca usar localhost en producción — si la var no apunta a producción, usamos el dominio real
+    const rawFrontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = rawFrontendUrl.includes('localhost')
+      ? 'https://avf-vita-fe10.onrender.com'
+      : rawFrontendUrl;
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
     const htmlMessage = getVerificationEmailTemplate(verificationUrl, newUser.name);
     // Intentar enviar email y manejar fallos
     let emailSent = true;
@@ -469,7 +474,11 @@ router.post('/forgotpassword', passwordResetLimiter, async (req, res) => {
     const resetToken = user.getResetPasswordToken();
     await user.save({ validateBeforeSave: false });
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const rawFrontendUrlPwd = process.env.FRONTEND_URL || '';
+    const frontendUrlPwd = rawFrontendUrlPwd.includes('localhost')
+      ? 'https://avf-vita-fe10.onrender.com'
+      : rawFrontendUrlPwd;
+    const resetUrl = `${frontendUrlPwd}/reset-password/${resetToken}`;
     const message = `
       <h3>Restablecer Contraseña</h3>
       <p>Haz clic aquí: <a href="${resetUrl}">${resetUrl}</a></p>
