@@ -248,21 +248,114 @@ export const notifyKycResult = async (user, approved, reason = '') => {
 
   // Email al usuario
   if (user.email) {
-    const html = emailWrapper(`
-      <h2 style="margin:0 0 8px;color:#233E58;font-size:20px;">Verificación de Identidad ${statusLabel}</h2>
-      <p style="margin:0 0 16px;color:#666;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">Actualización de tu cuenta Alyto</p>
-      <p>Hola <strong>${user.name || user.email}</strong>,</p>
-      ${approved
-        ? `<p>Tu identidad ha sido verificada exitosamente. Ya puedes realizar envíos con los límites completos de tu nivel.</p>
-           ${infoBox('<strong>¡Bienvenido a Alyto verificado!</strong> Inicia sesión y comienza a enviar.', '#00A89D')}`
-        : `<p>Lamentablemente tu solicitud de verificación fue rechazada.</p>
-           ${reason ? infoBox(`<strong>Motivo:</strong> ${reason}`, '#dc3545') : ''}
-           <p>Puedes corregir tus documentos y volver a enviarlos desde tu perfil.</p>`
-      }
-    `);
+    const rawFrontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = rawFrontendUrl.includes('localhost')
+      ? 'https://avf-vita-fe10.onrender.com'
+      : rawFrontendUrl;
+    const profileUrl = `${frontendUrl}/profile`;
+
+    const rejectionBody = `
+      <h2 style="margin:0 0 6px;color:#c0392b;font-size:22px;font-weight:700;">Verificación de identidad rechazada</h2>
+      <p style="margin:0 0 20px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.8px;">Acción requerida en tu cuenta Alyto</p>
+
+      <p style="margin:0 0 12px;">Hola <strong>${user.name || user.email}</strong>,</p>
+      <p style="margin:0 0 20px;line-height:1.7;">
+        Revisamos los documentos que enviaste para verificar tu identidad, pero <strong>no pudimos completar la verificación</strong>
+        por el siguiente motivo:
+      </p>
+
+      <div style="background:#fdf0f0;border-left:4px solid #c0392b;border-radius:0 8px 8px 0;padding:16px 20px;margin:0 0 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#c0392b;text-transform:uppercase;letter-spacing:0.5px;">Motivo del rechazo</p>
+        <p style="margin:0;font-size:15px;color:#333;line-height:1.6;">${reason || 'Los documentos enviados no cumplen con los requisitos de calidad o validez necesarios.'}</p>
+      </div>
+
+      <p style="margin:0 0 12px;font-weight:600;color:#233E58;">¿Qué debo hacer ahora?</p>
+      <p style="margin:0 0 8px;line-height:1.7;">
+        Puedes corregir tus documentos y volver a enviarlos directamente desde tu perfil en la app.
+        Asegúrate de que las fotos cumplan con los siguientes requisitos:
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;margin:12px 0 24px;">
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;width:24px;">
+            <span style="color:#00A89D;font-size:16px;">✓</span>
+          </td>
+          <td style="padding:8px 0 8px 10px;border-bottom:1px solid #f0f0f0;color:#444;font-size:14px;line-height:1.5;">
+            La imagen debe ser <strong>nítida y bien iluminada</strong>, sin reflejos ni sombras que tapen los datos.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;width:24px;">
+            <span style="color:#00A89D;font-size:16px;">✓</span>
+          </td>
+          <td style="padding:8px 0 8px 10px;border-bottom:1px solid #f0f0f0;color:#444;font-size:14px;line-height:1.5;">
+            El documento debe estar <strong>vigente</strong> (no vencido) y mostrar todos sus bordes completos.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;width:24px;">
+            <span style="color:#00A89D;font-size:16px;">✓</span>
+          </td>
+          <td style="padding:8px 0 8px 10px;border-bottom:1px solid #f0f0f0;color:#444;font-size:14px;line-height:1.5;">
+            El nombre, fecha de nacimiento y número de documento deben ser <strong>completamente legibles</strong>.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;vertical-align:top;width:24px;">
+            <span style="color:#00A89D;font-size:16px;">✓</span>
+          </td>
+          <td style="padding:8px 0 8px 10px;color:#444;font-size:14px;line-height:1.5;">
+            La <strong>selfie</strong> debe mostrar tu rostro claramente junto al documento, sin filtros ni ediciones.
+          </td>
+        </tr>
+      </table>
+
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${profileUrl}"
+           style="display:inline-block;background-color:#233E58;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:30px;letter-spacing:0.3px;">
+          Corregir y reenviar documentos →
+        </a>
+      </div>
+
+      <div style="background:#f8f9fa;border-radius:8px;padding:16px 20px;margin-top:8px;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#555;">¿Necesitas ayuda?</p>
+        <p style="margin:0;font-size:13px;color:#666;line-height:1.6;">
+          Si tienes dudas sobre qué documento enviar o por qué fue rechazado, escríbenos a
+          <a href="mailto:soporte@alyto.app" style="color:#233E58;font-weight:600;text-decoration:none;"> soporte@alyto.app</a>
+          y te ayudamos a completar tu verificación.
+        </p>
+      </div>
+    `;
+
+    const approvalBody = `
+      <h2 style="margin:0 0 6px;color:#233E58;font-size:22px;font-weight:700;">¡Identidad verificada exitosamente!</h2>
+      <p style="margin:0 0 20px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.8px;">Actualización de tu cuenta Alyto</p>
+
+      <p style="margin:0 0 16px;">Hola <strong>${user.name || user.email}</strong>,</p>
+      <p style="margin:0 0 20px;line-height:1.7;">
+        Tu identidad ha sido <strong>verificada correctamente</strong>. Ya puedes enviar dinero con los límites ampliados de tu cuenta.
+      </p>
+
+      ${infoBox(`
+        <strong style="color:#233E58;">¡Bienvenido a Alyto Verificado!</strong><br>
+        Ahora tienes acceso a límites de envío mayores. Inicia sesión y comienza a enviar.
+      `, '#00A89D')}
+
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${frontendUrl}"
+           style="display:inline-block;background-color:#233E58;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:30px;letter-spacing:0.3px;">
+          Ir a Alyto →
+        </a>
+      </div>
+    `;
+
+    const html = emailWrapper(approved ? approvalBody : rejectionBody);
+
     sendEmail({
       to: user.email,
-      subject: `Verificación KYC ${statusLabel} — Alyto`,
+      subject: approved
+        ? '✅ Tu identidad fue verificada — Alyto'
+        : '⚠️ Acción requerida: verifica tus documentos — Alyto',
       html,
     }).catch(err => console.error('[notifyKycResult] Email error:', err.message));
   }
