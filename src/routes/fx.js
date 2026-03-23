@@ -6,6 +6,18 @@ import { SUPPORTED_ORIGINS } from '../data/supportedOrigins.js';
 const router = Router();
 
 /**
+ * Convierte código de mercado Vita/país (CL, CO, PE…) a código ISO de moneda (CLP, COP, PEN…).
+ * Vita usa códigos de mercado/país, no ISO 4217. Esto garantiza coherencia en toda la plataforma.
+ */
+const VITA_MARKET_TO_ISO_CURRENCY = {
+  CL: 'CLP', CO: 'COP', AR: 'ARS', MX: 'MXN', BR: 'BRL', PE: 'PEN',
+  BO: 'BOB', VE: 'VES', EC: 'USD', PA: 'USD', GT: 'GTQ', SV: 'USD',
+  DO: 'DOP', CR: 'CRC', PY: 'PYG', UY: 'UYU', US: 'USD', EU: 'EUR',
+  GB: 'GBP', PL: 'PLN', AU: 'AUD', CN: 'CNY', HT: 'HTG'
+};
+const toISOCurrency = (code) => VITA_MARKET_TO_ISO_CURRENCY[code?.toUpperCase()] || code || '';
+
+/**
  * Helper: Calcula el monto neto que llegará al wallet después de fees de pasarela
  * NUEVO: Usa fees de Fintoc Directo en lugar de Vita Payment Orders
  * @param {string} country - Código del país (ej: 'CL')
@@ -220,7 +232,7 @@ router.get('/quote', async (req, res) => {
     // --- Caso 1: Origen CLP (flujo spread) ---
     if (originCurrency === 'CLP') {
       const inputIsOrigin = mode === 'send';
-      const destCurrency = priceData.code;
+      const destCurrency = toISOCurrency(priceData.code);
       console.log(`📄 [FX-QUOTE] Modo: ${mode}, Input: ${inputAmount} ${inputIsOrigin ? 'CLP (origen)' : destCurrency + ' (destino)'}`);
 
       // 💳 Obtener fees de Fintoc dinámicos desde config
@@ -334,7 +346,7 @@ router.get('/quote', async (req, res) => {
         data: {
           originCurrency,
           originCountry: safeOriginCountry,
-          destCurrency: priceData.code,
+          destCurrency,
 
           // 🎯 Tasa TODO INCLUIDO que ve el cliente (absorbe fees de pasarela + spread + costos)
           rate: Number(effectiveAllInclusiveRate.toFixed(4)),
@@ -365,12 +377,13 @@ router.get('/quote', async (req, res) => {
           feeOriginAmount: payinFee.totalFee,
 
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
-          currency: priceData.code,
+          currency: destCurrency,
 
           // Tracking data (para guardar en Transaction)
           rateTracking: {
             vitaRate: Number(vitaRate.toFixed(4)),
             alytoRate: Number(alytoRate.toFixed(4)),
+            destCurrency,
             spreadPercent: Number(spreadPercent.toFixed(2)),
             profitDestCurrency: Number(profitCOP.toFixed(2))
           },
@@ -381,7 +394,7 @@ router.get('/quote', async (req, res) => {
             originFee: payinFee.totalFee,                        // Fee de pasarela
             originTotal: Number(grossOriginAmount.toFixed(2)),   // Bruto que paga
 
-            destCurrency: priceData.code,
+            destCurrency,
             destGrossAmount: Number(destGrossAmount.toFixed(2)),
             destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),
             destReceiveAmount: Number(Math.max(0, destReceiveAmount).toFixed(2)),
@@ -496,8 +509,8 @@ router.get('/quote', async (req, res) => {
           // === CAMPOS ESPERADOS POR EL FRONTEND ===
           origin: originCurrency,              // BOB
           originCurrency: originCurrency,       // BOB
-          destCurrency: priceData.code,        // COP
-          currency: priceData.code,            // COP (legacy)
+          destCurrency: toISOCurrency(priceData.code),
+          currency: toISOCurrency(priceData.code),
 
           // Montos principales
           amount: Number(totalOriginAmount.toFixed(4)),        // BOB que paga el usuario
@@ -538,21 +551,22 @@ router.get('/quote', async (req, res) => {
             vitaRate: Number(clpToDestRate.toFixed(4)),              // CLP→COP rate from Vita
 
             // Tasa efectiva final: Origen → Destino
-            alytoRate: Number(effectiveRate.toFixed(4)),            // BOB→COP effective rate
+            alytoRate: Number(effectiveRate.toFixed(4)),
+            destCurrency: toISOCurrency(priceData.code),
 
             // Profit
-            spreadPercent: Number(feeAmount.toFixed(2)),            // Our margin %
-            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)), // Profit in dest currency
-            profitOriginCurrency: Number(ourMarginCLP.toFixed(2))   // Profit in CLP
+            spreadPercent: Number(feeAmount.toFixed(2)),
+            profitDestCurrency: Number((ourMarginCLP * clpToDestRate).toFixed(2)),
+            profitOriginCurrency: Number(ourMarginCLP.toFixed(2))
           },
 
           amountsTracking: {
-            originCurrency: originCurrency,                           // BOB
-            originPrincipal: Number(totalOriginAmount.toFixed(4)),   // BOB que paga
-            originFee: 0,                                             // No visible fee
-            originTotal: Number(totalOriginAmount.toFixed(4)),        // BOB que paga
+            originCurrency: originCurrency,
+            originPrincipal: Number(totalOriginAmount.toFixed(4)),
+            originFee: 0,
+            originTotal: Number(totalOriginAmount.toFixed(4)),
 
-            destCurrency: priceData.code,                            // COP
+            destCurrency: toISOCurrency(priceData.code),
             destGrossAmount: Number(grossDestAmount.toFixed(2)),     // Before payout cost
             destVitaFixedCost: Number(payoutFixedCost.toFixed(2)),   // Vita's fixed cost
             destReceiveAmount: Number(Math.max(0, finalAmount).toFixed(2)), // Final amount
