@@ -387,6 +387,28 @@ router.post('/kyc-documents', protect, kycUploadLimiter, (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'No se recibieron archivos.' });
     }
 
+    // --- Datos personales obligatorios para KYC ---
+    const birthDate = req.body.birthDate || user.birthDate;
+    const address = req.body.address || user.address;
+    const registrationCountry = req.body.registrationCountry || user.registrationCountry;
+
+    const missing = [];
+    if (!birthDate) missing.push('fecha de nacimiento');
+    if (!address) missing.push('dirección');
+    if (!registrationCountry) missing.push('país de registro');
+
+    if (missing.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `Faltan datos obligatorios para el KYC: ${missing.join(', ')}.`
+      });
+    }
+
+    // Guardar datos personales si vienen en el request
+    if (req.body.birthDate) user.birthDate = new Date(req.body.birthDate);
+    if (req.body.address) user.address = req.body.address;
+    if (req.body.registrationCountry) user.registrationCountry = req.body.registrationCountry;
+
     // Asegurar estructura
     if (!user.kyc) user.kyc = {};
     if (!user.kyc.documents) user.kyc.documents = {};
@@ -463,6 +485,42 @@ router.post('/kyb-documents', protect, kycUploadLimiter, (req, res, next) => {
   } catch (error) {
     console.error('[auth/kyb-documents] Error:', error);
     res.status(500).json({ ok: false, error: 'Error al procesar documentos KYB.' });
+  }
+});
+
+// --- REENVÍO DE VERIFICACIÓN DE EMAIL ---
+router.post('/resend-verification', passwordResetLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ ok: false, error: 'Correo requerido.' });
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Respuesta genérica para no revelar si el correo existe
+    if (!user || user.isEmailVerified) {
+      return res.json({ ok: true, message: 'Si el correo existe y no está verificado, recibirás un nuevo enlace.' });
+    }
+
+    const verificationToken = user.generateEmailVerificationToken();
+    await user.save({ validateBeforeSave: false });
+
+    const rawFrontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = rawFrontendUrl.includes('localhost')
+      ? 'https://avf-vita-fe10.onrender.com'
+      : rawFrontendUrl;
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+    const htmlMessage = getVerificationEmailTemplate(verificationUrl, user.name);
+
+    await sendEmail({
+      to: user.email,
+      subject: '✅ Verifica tu cuenta en Alyto',
+      html: htmlMessage,
+    });
+
+    res.json({ ok: true, message: 'Si el correo existe y no está verificado, recibirás un nuevo enlace.' });
+  } catch (error) {
+    console.error('[auth/resend-verification] Error:', error);
+    res.status(500).json({ ok: false, error: 'Error al reenviar el correo de verificación.' });
   }
 });
 

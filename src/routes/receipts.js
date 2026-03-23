@@ -55,6 +55,30 @@ router.post('/generate', protect, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/receipts/:receiptNumber/view
+ * @desc    Ver comprobante como HTML (público — para compartir por WhatsApp/redes)
+ * @access  Public
+ */
+router.get('/:receiptNumber/view', async (req, res) => {
+    try {
+        const { receiptNumber } = req.params;
+        const receipt = await Receipt.findByReceiptNumber(receiptNumber);
+
+        if (!receipt || receipt.isVoided) {
+            return res.status(404).send('<html><body><h2>Comprobante no encontrado o anulado.</h2></body></html>');
+        }
+
+        const { generateReceiptHTML } = await import('../templates/receiptTemplate.js');
+        const html = generateReceiptHTML(receipt.receiptData);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+    } catch (error) {
+        console.error('Error sirviendo comprobante público:', error);
+        res.status(500).send('<html><body><h2>Error al cargar el comprobante.</h2></body></html>');
+    }
+});
+
+/**
  * @route   GET /api/receipts/:receiptNumber
  * @desc    Obtener información del comprobante
  * @access  Protected

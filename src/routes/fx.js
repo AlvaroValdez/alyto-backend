@@ -169,6 +169,7 @@ router.get('/quote', async (req, res) => {
           clpAmountWithFee: inputCLP,
           manualExchangeRate,
           rate: Number(clientRate.toFixed(8)),
+          rateWithMarkup: Number(clientRate.toFixed(6)), // dest/origin (ej: 32.5 COP por 1 BOB)
           fee: 0,
           feePercent: Number((marginPercent * 100).toFixed(2)),
           payoutFixedCost: Number(payoutFixedCost.toFixed(2)),
@@ -337,6 +338,8 @@ router.get('/quote', async (req, res) => {
 
           // 🎯 Tasa TODO INCLUIDO que ve el cliente (absorbe fees de pasarela + spread + costos)
           rate: Number(effectiveAllInclusiveRate.toFixed(4)),
+          // rateWithMarkup: cuántas unidades destino recibe por 1 unidad origen (ej: 1 CLP = 0.239 COP)
+          rateWithMarkup: Number((destReceiveAmount / grossOriginAmount).toFixed(6)),
 
           // Montos cliente
           amount: Number(grossOriginAmount.toFixed(2)),           // CLP bruto que paga el usuario

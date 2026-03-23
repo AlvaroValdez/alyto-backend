@@ -309,6 +309,14 @@ const receiptSchema = new mongoose.Schema({
     },
 
     /**
+     * Datos completos usados para generar el HTML/PDF del comprobante
+     * Se usa para re-renderizar el comprobante en el endpoint /view (WhatsApp share)
+     */
+    receiptData: {
+        type: mongoose.Schema.Types.Mixed
+    },
+
+    /**
      * Buffer del PDF (opcional, para almacenamiento directo en MongoDB)
      * Nota: No recomendado para PDFs grandes
      */

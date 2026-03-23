@@ -12,7 +12,7 @@ export function generateReceiptHTML(data) {
         transaction,
         client,
         amount,
-        crypto,
+        destination,
         verification,
         generatedAt,
         timezone
@@ -30,10 +30,14 @@ export function generateReceiptHTML(data) {
         return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
     };
 
-    // Formatear montos
-    const formatBOB = (value) => `Bs. ${Number(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
-    const formatUSD = (value) => `$${Number(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
-    const formatCrypto = (value, symbol) => `${Number(value).toFixed(8)} ${symbol}`;
+    // Formatear monto con símbolo de moneda
+    const formatAmount = (value, currency) => {
+        const num = Number(value || 0);
+        const formatted = num.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const symbols = { BOB: 'Bs.', CLP: '$', COP: 'COP', PEN: 'S/.', USD: 'US$', ARS: '$' };
+        const sym = symbols[currency] || currency || '';
+        return `${sym} ${formatted}`;
+    };
 
     // Truncar wallet
     const truncateWallet = (wallet) => {
@@ -57,12 +61,35 @@ export function generateReceiptHTML(data) {
         'FALLIDA': '❌ FALLIDA'
     };
 
+    // Datos de destino
+    const dest = destination || {};
+    const originCurrency  = amount.originCurrency || amount.currency || 'CLP';
+    const destCurrency    = dest.currency || amount.destCurrency || '';
+    const originTotal     = amount.originTotal     ?? amount.received  ?? 0;
+    const originFee       = amount.originFee       ?? amount.feeAmount ?? 0;
+    const originPrincipal = amount.originPrincipal ?? amount.netAmount ?? (originTotal - originFee);
+    const exchangeRate    = amount.exchangeRate     ?? 0;
+    const destReceive     = dest.receiveAmount      ?? amount.destReceiveAmount ?? 0;
+    const destGross       = dest.grossAmount        ?? amount.destGrossAmount   ?? destReceive;
+    const destFixedCost   = dest.fixedCost          ?? amount.destVitaFixedCost ?? 0;
+
+    // Resumen para meta OG (WhatsApp link preview)
+    const ogDescription = destReceive > 0 && destCurrency
+        ? `${formatAmount(originTotal, originCurrency)} → ${formatAmount(destReceive, destCurrency)} · Tasa: 1 ${originCurrency} = ${Number(exchangeRate).toFixed(4)} ${destCurrency}`
+        : `Comprobante de transferencia internacional`;
+
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comprobante Oficial de Transacción - ${receiptNumber}</title>
+    <title>Comprobante Alyto ${receiptNumber}</title>
+    <meta property="og:title" content="Comprobante de transferencia Alyto ${receiptNumber}" />
+    <meta property="og:description" content="${ogDescription}" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Comprobante Alyto ${receiptNumber}" />
+    <meta name="twitter:description" content="${ogDescription}" />
     <style>
         * {
             margin: 0;
@@ -427,7 +454,7 @@ export function generateReceiptHTML(data) {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Tipo de Operación</span>
-                        <span class="info-value highlight">${transactionTypes[transaction.type] || transaction.type}</span>
+                        <span class="info-value highlight">${displayMap[transaction.type] || transaction.type}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Red Blockchain</span>
@@ -474,47 +501,46 @@ export function generateReceiptHTML(data) {
             <!-- SECCIÓN C: DETALLE ECONÓMICO -->
             <div class="section">
                 <div class="section-title">💰 Detalle Económico de la Operación</div>
-                
+
                 <table class="economic-table">
+                    <!-- ORIGEN -->
                     <tr>
-                        <td>Moneda de Origen</td>
-                        <td>${amount.currency === 'BOB' ? 'Bolivianos (BOB)' : amount.currency}</td>
+                        <td>Monto enviado (${originCurrency})</td>
+                        <td>${formatAmount(originTotal, originCurrency)}</td>
                     </tr>
-                    <tr>
-                        <td>Monto Recibido del Cliente</td>
-                        <td>${formatBOB(amount.received)}</td>
-                    </tr>
-                    <tr>
-                        <td>Tipo de Cambio Aplicado (BOB/USD)</td>
-                        <td>${Number(amount.exchangeRate).toFixed(2)} Bs/USD</td>
-                    </tr>
-                    <tr>
-                        <td>Equivalente en USD</td>
-                        <td>${formatUSD(amount.usdEquivalent)}</td>
-                    </tr>
+                    ${originFee > 0 ? `
                     <tr class="subtotal-row">
-                        <td>Comisión del Servicio (Fee ${Number(amount.feePercentage).toFixed(2)}%)</td>
-                        <td>${formatBOB(amount.feeAmount)}</td>
+                        <td>Comisión de pasarela de pago</td>
+                        <td>- ${formatAmount(originFee, originCurrency)}</td>
                     </tr>
                     <tr>
-                        <td>Monto Neto para Conversión</td>
-                        <td>${formatBOB(amount.netAmount)}</td>
-                    </tr>
-                    <tr>
-                        <td>Activo Virtual Entregado</td>
-                        <td>${formatCrypto(crypto.amount, crypto.symbol)}</td>
-                    </tr>
-                    ${crypto.destinationWallet ? `
-                    <tr>
-                        <td>Dirección de Wallet de Destino</td>
-                        <td style="font-family: 'Courier New', monospace; font-size: 11px; word-break: break-all;">
-                            ${truncateWallet(crypto.destinationWallet)}
-                        </td>
+                        <td>Monto neto enviado al tipo de cambio</td>
+                        <td>${formatAmount(originPrincipal, originCurrency)}</td>
                     </tr>
                     ` : ''}
+
+                    <!-- TIPO DE CAMBIO -->
+                    <tr>
+                        <td>Tipo de cambio aplicado (${originCurrency} → ${destCurrency})</td>
+                        <td>1 ${originCurrency} = ${Number(exchangeRate).toFixed(4)} ${destCurrency}</td>
+                    </tr>
+
+                    <!-- DESTINO -->
+                    ${destFixedCost > 0 ? `
+                    <tr>
+                        <td>Monto bruto en destino (${destCurrency})</td>
+                        <td>${formatAmount(destGross, destCurrency)}</td>
+                    </tr>
+                    <tr class="subtotal-row">
+                        <td>Costo fijo del pago al beneficiario</td>
+                        <td>- ${formatAmount(destFixedCost, destCurrency)}</td>
+                    </tr>
+                    ` : ''}
+
+                    <!-- TOTAL QUE RECIBE EL BENEFICIARIO -->
                     <tr class="total-row">
-                        <td>TOTAL OPERACIÓN</td>
-                        <td>${formatBOB(amount.total)}</td>
+                        <td>✅ EL BENEFICIARIO RECIBE (${destCurrency})</td>
+                        <td>${formatAmount(destReceive, destCurrency)}</td>
                     </tr>
                 </table>
             </div>

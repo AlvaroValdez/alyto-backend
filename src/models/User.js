@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
   accountType: { type: String, enum: ['individual', 'business'], default: 'individual' },
-  registrationCountry: { type: String, enum: ['BO', 'CL', 'OTHER'], default: 'BO' },
+  registrationCountry: { type: String, enum: ['BO', 'CL', 'CO', 'AR', 'MX', 'BR', 'PE', 'OTHER'], default: 'BO' },
 
   // --- SEGURIDAD DE ACCESO (Account Lockout) ---
   loginAttempts: { type: Number, default: 0 },
@@ -142,7 +142,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 userSchema.methods.generateEmailVerificationToken = function () {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   this.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
-  this.emailVerificationExpires = Date.now() + 10 * 60 * 1000;
+  this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
   return verificationToken;
 };
 

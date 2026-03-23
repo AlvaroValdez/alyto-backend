@@ -61,52 +61,66 @@ class ReceiptService {
         // Determinar tipo de operación
         let transactionType = 'COMPRA_ACTIVOS'; // default
         if (transaction.country) {
-            transactionType = 'REMESA_SALIENTE'; // Internal enum remains same, but label is "Transferencia"
+            transactionType = 'REMESA_SALIENTE';
         }
 
-        // Calcular montos usando Decimal.js para precisión
-        const received = new Decimal(transaction.amount || 0);
-        const feePercentage = new Decimal(transaction.feePercent || 0);
-        const feeAmount = received.times(feePercentage).div(100);
-        const netAmount = received.minus(feeAmount);
+        const at = transaction.amountsTracking || {};
+        const rt = transaction.rateTracking || {};
 
-        // Obtener tipo de cambio
-        const exchangeRate = new Decimal(
-            transaction.rateTracking?.alytoRate ||
+        // --- Origen ---
+        const originCurrency = at.originCurrency || transaction.currency || 'CLP';
+        const originTotal    = new Decimal(at.originTotal    ?? transaction.amount ?? 0);
+        const originFee      = new Decimal(at.originFee      ?? transaction.fee    ?? 0);
+        const originPrincipal = new Decimal(at.originPrincipal ?? originTotal.minus(originFee).toNumber());
+
+        // --- Destino (lo que REALMENTE recibe el beneficiario) ---
+        const destCurrency      = at.destCurrency || transaction.country || '';
+        const destReceiveAmount = new Decimal(at.destReceiveAmount ?? 0);   // ✅ monto real al beneficiario
+        const destGrossAmount   = new Decimal(at.destGrossAmount   ?? destReceiveAmount.toNumber());
+        const destVitaCost      = new Decimal(at.destVitaFixedCost ?? 0);
+
+        // --- Tasa efectiva que ve el cliente (lo que paga / lo que recibe) ---
+        const alytoRate = new Decimal(
+            rt.alytoRate ||
             transaction.manualRate ||
-            6.91
+            (destReceiveAmount.gt(0) ? originTotal.div(destReceiveAmount).toNumber() : 1)
         );
 
-        const usdEquivalent = received.div(exchangeRate);
-
-        // Monto de cripto (puede venir de vitaResponse o calcularse)
-        const cryptoAmount = transaction.rateTracking?.profitDestCurrency ||
-            transaction.amountsTracking?.destReceiveAmount ||
-            netAmount.div(exchangeRate).toNumber();
-
-        // Símbolo del cripto (puede ser dinámico)
-        const cryptoSymbol = transaction.currency === 'CLP' ? 'USDT' : 'USDC';
-
-        // Hash de blockchain (puede venir de Vita o generarse mock para testing)
-        const txHash = transaction.vitaWithdrawalId ||
-            this.generateMockTxHash();
+        // Hash de la transacción
+        const txHash = transaction.vitaWithdrawalId || this.generateMockTxHash();
 
         return {
             transactionType,
             amount: {
-                currency: transaction.currency || 'BOB',
-                received: received.toNumber(),
-                exchangeRate: exchangeRate.toNumber(),
-                usdEquivalent: usdEquivalent.toNumber(),
-                feePercentage: feePercentage.toNumber(),
-                feeAmount: feeAmount.toNumber(),
-                netAmount: netAmount.toNumber(),
-                total: received.toNumber()
+                // Origen
+                originCurrency,
+                originTotal:     originTotal.toNumber(),       // Total que pagó el usuario
+                originFee:       originFee.toNumber(),         // Comisión pasarela (Fintoc)
+                originPrincipal: originPrincipal.toNumber(),   // Neto enviado al tipo de cambio
+
+                // Tasa
+                exchangeRate: alytoRate.toNumber(),            // Tasa efectiva cliente
+
+                // Destino
+                destCurrency,
+                destGrossAmount:   destGrossAmount.toNumber(),  // Bruto antes de costo fijo
+                destVitaFixedCost: destVitaCost.toNumber(),     // Costo fijo del payout
+                destReceiveAmount: destReceiveAmount.toNumber(), // ✅ Lo que recibe el beneficiario
+
+                // Legacy (compatibilidad PDF template)
+                currency:    originCurrency,
+                received:    originTotal.toNumber(),
+                feePercentage: new Decimal(transaction.feePercent ?? 0).toNumber(),
+                feeAmount:   originFee.toNumber(),
+                netAmount:   originPrincipal.toNumber(),
+                total:       originTotal.toNumber()
             },
-            crypto: {
-                amount: cryptoAmount,
-                symbol: cryptoSymbol,
-                destinationWallet: this.extractWalletFromResponse(transaction.vitaResponse)
+            destination: {
+                currency:       destCurrency,
+                receiveAmount:  destReceiveAmount.toNumber(),
+                grossAmount:    destGrossAmount.toNumber(),
+                fixedCost:      destVitaCost.toNumber(),
+                country:        transaction.country || ''
             },
             transaction: {
                 timestamp: transaction.createdAt,
@@ -205,7 +219,7 @@ class ReceiptService {
                 },
                 client: receiptData.client,
                 amount: receiptData.amount,
-                crypto: receiptData.crypto,
+                destination: receiptData.destination,
                 verification,
                 generatedAt: new Date(),
                 timezone: 'GMT-4'
@@ -232,6 +246,8 @@ class ReceiptService {
                 amount: receiptData.amount,
                 crypto: receiptData.crypto,
                 verification,
+
+                receiptData: completeReceiptData, // Para re-renderizar HTML en /view (WhatsApp share)
 
                 pdfBuffer, // Guardar PDF en MongoDB (opcional)
 

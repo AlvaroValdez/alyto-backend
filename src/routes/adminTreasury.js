@@ -23,6 +23,121 @@ router.get('/pending', async (req, res) => {
     }
 });
 
+// GET /api/admin/treasury/:id
+// Detalle completo de una transacción para revisión del admin antes de aprobar
+router.get('/:id', async (req, res) => {
+    try {
+        const tx = await Transaction.findById(req.params.id)
+            .populate('createdBy', 'name email firstName lastName phoneNumber documentType documentNumber registrationCountry kyc')
+            .populate('approvedDepositBy', 'name email')
+            .populate('rejectedBy', 'name email');
+
+        if (!tx) return res.status(404).json({ ok: false, error: 'Transacción no encontrada.' });
+
+        const p = tx.withdrawalPayload || {};
+
+        res.json({
+            ok: true,
+            transaction: {
+                // Identificación
+                id: tx._id,
+                order: tx.order,
+                createdAt: tx.createdAt,
+                updatedAt: tx.updatedAt,
+
+                // Estados
+                status: tx.status,
+                payinStatus: tx.payinStatus,
+                payoutStatus: tx.payoutStatus,
+
+                // Remitente
+                sender: {
+                    id: tx.createdBy?._id,
+                    name: tx.createdBy?.name,
+                    fullName: [tx.createdBy?.firstName, tx.createdBy?.lastName].filter(Boolean).join(' ') || tx.createdBy?.name,
+                    email: tx.createdBy?.email,
+                    phone: tx.createdBy?.phoneNumber,
+                    document: {
+                        type: tx.createdBy?.documentType,
+                        number: tx.createdBy?.documentNumber,
+                    },
+                    registrationCountry: tx.createdBy?.registrationCountry,
+                    kycLevel: tx.createdBy?.kyc?.level,
+                    kycStatus: tx.createdBy?.kyc?.status,
+                },
+
+                // Montos
+                origin: {
+                    currency: tx.currency,
+                    amount: tx.amount,
+                    fee: tx.fee,
+                    feePercent: tx.feePercent,
+                    principal: tx.amountsTracking?.originPrincipal,
+                    total: tx.amountsTracking?.originTotal,
+                },
+                destination: {
+                    country: tx.country,
+                    currency: tx.amountsTracking?.destCurrency,
+                    grossAmount: tx.amountsTracking?.destGrossAmount,
+                    vitaFixedCost: tx.amountsTracking?.destVitaFixedCost,
+                    receiveAmount: tx.amountsTracking?.destReceiveAmount,
+                },
+
+                // Tasas
+                rates: {
+                    vitaRate: tx.rateTracking?.vitaRate,
+                    alytoRate: tx.rateTracking?.alytoRate,
+                    spreadPercent: tx.rateTracking?.spreadPercent,
+                    profitDestCurrency: tx.rateTracking?.profitDestCurrency,
+                },
+
+                // Beneficiario
+                beneficiary: {
+                    type: p.beneficiary_type || tx.beneficiary_type,
+                    firstName: p.beneficiary_first_name || tx.beneficiary_first_name,
+                    lastName: p.beneficiary_last_name || tx.beneficiary_last_name,
+                    fullName: [p.beneficiary_first_name || tx.beneficiary_first_name, p.beneficiary_last_name || tx.beneficiary_last_name].filter(Boolean).join(' '),
+                    email: p.beneficiary_email || tx.beneficiary_email,
+                    address: p.beneficiary_address,
+                    document: {
+                        type: p.beneficiary_document_type,
+                        number: p.beneficiary_document_number,
+                    },
+                    bank: {
+                        code: p.bank_code,
+                        accountType: p.account_type_bank,
+                        accountNumber: p.account_bank,
+                    },
+                },
+
+                // Pago
+                paymentMethod: tx.paymentMethod,
+                purpose: tx.purpose,
+                fintocPaymentIntentId: tx.fintocPaymentIntentId,
+                vitaWithdrawalId: tx.vitaWithdrawalId,
+
+                // Comprobante y notas
+                proofOfPayment: tx.proofOfPayment,
+                adminNotes: tx.adminNotes,
+
+                // Auditoría
+                approvedBy: tx.approvedDepositBy
+                    ? { name: tx.approvedDepositBy.name, email: tx.approvedDepositBy.email, at: tx.approvedDepositAt }
+                    : null,
+                rejectedBy: tx.rejectedBy
+                    ? { name: tx.rejectedBy.name, email: tx.rejectedBy.email, at: tx.rejectedAt, reason: tx.rejectionReason }
+                    : null,
+
+                // Treasury hold
+                treasuryHold: tx.treasuryHold?.blockedAt ? tx.treasuryHold : null,
+            }
+        });
+    } catch (error) {
+        console.error('[treasury/:id] Error:', error);
+        res.status(500).json({ ok: false, error: 'Error al obtener detalle de transacción.' });
+    }
+});
+
 // PUT /api/admin/treasury/:id/approve-deposit
 // Admin confirma que el depósito/entrada fue recibido y, si hay payload guardado,
 // ejecuta el envío real (withdrawal) en Vita.
